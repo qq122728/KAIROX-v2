@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { badRequest, handleError, json, readJson } from "@/lib/api";
+import { badRequest, handleError, json, readJson, tooManyRequests } from "@/lib/api";
 import { getDb, inTransaction } from "@/lib/db";
 import { getSettings, settingBool } from "@/lib/settings";
 import type { Market } from "@/lib/trading";
@@ -7,6 +7,10 @@ import { emitRealtime, userRoom } from "@/lib/realtime";
 import { ensureUserAssetRow, freezeAvailableAssetBalance, syncUserStableBalance } from "@/lib/balances";
 import { getExecutionPrice } from "@/lib/execution-price";
 import { binaryOrderRiskAmount, getBinaryOptionPreset } from "@/lib/binary-options";
+import { consumeUserRate } from "@/lib/rate-limit";
+
+const binaryOrderLimit = Math.max(1, Number(process.env.PERP_SIM_BINARY_ORDER_LIMIT || 30));
+const binaryOrderWindowMs = Math.max(1000, Number(process.env.PERP_SIM_BINARY_ORDER_WINDOW_MS || 60_000));
 
 export async function POST(request: Request) {
   try {
@@ -18,6 +22,9 @@ export async function POST(request: Request) {
       .prepare("SELECT COALESCE(trading_enabled, 1) AS trading_enabled FROM users WHERE id = ?")
       .get(user.id) as { trading_enabled: number } | undefined;
     if (access?.trading_enabled === 0) return badRequest("Account trading is disabled");
+
+    const limit = consumeUserRate(user.id, "binary-order", binaryOrderLimit, binaryOrderWindowMs);
+    if (!limit.allowed) return tooManyRequests("Too many order requests. Please slow down.", limit.retryAfterMs);
 
     const body = await readJson<{ marketId: number; direction: "call" | "put"; stake: number; durationSeconds: number }>(request);
     if (body.direction !== "call" && body.direction !== "put") return badRequest("Invalid direction");

@@ -209,6 +209,8 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [tickers, setTickers] = useState<Tickers>({});
   const [assets, setAssets] = useState<AssetData | null>(null);
   const [currentSymbol, setCurrentSymbol] = useState(initialSymbol);
+  const currentSymbolRef = useRef(currentSymbol);
+  currentSymbolRef.current = currentSymbol;
   const [marketSort, setMarketSort] = useState<"hot" | "gainers" | "losers">("hot");
   const [marketQuery, setMarketQuery] = useState("");
   const [favorites, setFavorites] = useState<Set<string>>(() => readFavoritesStorage());
@@ -315,7 +317,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
       setMarkets(summary.markets || []);
       const summaryOrders = summary.orders || [];
       setOrders(summaryOrders.map(mapApiOrder));
-      if (!summary.markets.find((m) => m.symbol === currentSymbol) && summary.markets[0]) setCurrentSymbol(summary.markets[0].symbol);
+      if (!summary.markets.find((m) => m.symbol === currentSymbolRef.current) && summary.markets[0]) setCurrentSymbol(summary.markets[0].symbol);
       setAuthChecked(true);
       fetch("/api/market-data/tickers", { cache: "no-store" })
         .then((r) => r.json())
@@ -2409,7 +2411,7 @@ function WithdrawForm({ coin, network, assets, form, setForm, done }: { coin: st
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const available = availableForAsset(assets, coin);
-  const minWithdrawal = Number(assets?.settings?.min_withdrawal_usdc || assets?.settings?.min_withdrawal_amount || 10);
+  const minWithdrawal = displayAsset(coin) === "USDC" ? Number(assets?.settings?.min_withdrawal_usdc || assets?.settings?.min_withdrawal_amount || 10) : 0;
   async function submit() {
     setError("");
     const numericAmount = Number(form.amount);

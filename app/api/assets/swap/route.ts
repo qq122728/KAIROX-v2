@@ -10,10 +10,24 @@ type SwapBody = { fromAsset?: string; toAsset?: string; amount?: number | string
 
 const swapLimit = Math.max(1, Number(process.env.PERP_SIM_SWAP_LIMIT || 30));
 const swapWindowMs = Math.max(1000, Number(process.env.PERP_SIM_SWAP_WINDOW_MS || 60_000));
+const swapQuoteLimit = Math.max(1, Number(process.env.PERP_SIM_SWAP_QUOTE_LIMIT || 60));
+const swapQuoteWindowMs = Math.max(1000, Number(process.env.PERP_SIM_SWAP_QUOTE_WINDOW_MS || swapWindowMs));
 
 export async function GET(request: Request) {
   try {
-    await requireUser();
+    const user = await requireUser();
+
+    const settings = getSettings();
+    if (!settingBool(settings.trading_enabled, true)) return badRequest("Trading is currently disabled");
+
+    const access = getDb()
+      .prepare("SELECT COALESCE(trading_enabled, 1) AS trading_enabled FROM users WHERE id = ?")
+      .get(user.id) as { trading_enabled: number } | undefined;
+    if (access?.trading_enabled === 0) return badRequest("Account trading is disabled");
+
+    const limit = consumeUserRate(user.id, "swap:quote", swapQuoteLimit, swapQuoteWindowMs);
+    if (!limit.allowed) return tooManyRequests("Too many quote requests. Please slow down.", limit.retryAfterMs);
+
     const url = new URL(request.url);
     const fromAsset = String(url.searchParams.get("fromAsset") || "");
     const toAsset = String(url.searchParams.get("toAsset") || "");

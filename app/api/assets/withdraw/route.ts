@@ -5,8 +5,16 @@ import { verifyPassword } from "@/lib/password";
 import { getSettings, settingBool } from "@/lib/settings";
 import { emitRealtime, userRoom } from "@/lib/realtime";
 import { ensureUserAssetRow, freezeAvailableAssetBalance, isStableAsset, normalizeAsset, syncUserStableBalance } from "@/lib/balances";
+import { getAssetUsdPrice } from "@/lib/swap";
 
 const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
+
+async function withdrawalUsdValue(asset: string, amount: number) {
+  if (isStableAsset(asset)) return amount;
+  const price = await getAssetUsdPrice(asset);
+  if (!price.price || price.price <= 0) throw new Error("Price unavailable");
+  return amount * price.price;
+}
 
 export async function POST(request: Request) {
   try {
@@ -17,10 +25,14 @@ export async function POST(request: Request) {
     const body = await readJson<{ asset?: string; amount: number; address: string; network?: string; withdrawalPassword: string }>(request);
     const asset = normalizeAsset(String(body.asset || "USDC"));
     const amount = Number(body.amount);
-    const min = Number(settings.min_withdrawal_usdc || settings.min_withdrawal_amount || 10);
+    const minUsd = Number(settings.min_withdrawal_usdc || settings.min_withdrawal_amount || 10);
     if (!asset) return badRequest("Asset is required");
     if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
-    if (!Number.isFinite(amount) || amount < min) return badRequest(`Minimum withdrawal is ${min} ${asset}`);
+    if (!Number.isFinite(amount) || amount <= 0) return badRequest("Invalid withdrawal amount");
+    if (Number.isFinite(minUsd) && minUsd > 0) {
+      const usdValue = await withdrawalUsdValue(asset, amount);
+      if (usdValue < minUsd) return badRequest(`Minimum withdrawal value is ${minUsd} USDC`);
+    }
     if (!body.address?.trim()) return badRequest("Withdrawal address is required");
 
     const passwordRow = getDb()
