@@ -58,6 +58,12 @@ function roundAmount(value: number, decimals: number) {
   return Math.round(value * factor) / factor;
 }
 
+function normalizeInputAmount(value: number, decimals: number) {
+  if (!Number.isFinite(value)) return 0;
+  const factor = 10 ** decimals;
+  return Math.floor(value * factor + Number.EPSILON * factor) / factor;
+}
+
 export type SwapQuote = {
   fromAsset: SwapAsset;
   toAsset: SwapAsset;
@@ -80,22 +86,24 @@ export async function buildSwapQuote(fromAsset: string, toAsset: string, fromAmo
   if (!isSwapAsset(to)) throw new Error("Unsupported target asset");
   if (from === to) throw new Error("From and to assets must differ");
   if (!Number.isFinite(fromAmount) || fromAmount <= 0) throw new Error("Invalid amount");
+  const normalizedFromAmount = normalizeInputAmount(fromAmount, assetUsdDecimals(from));
+  if (normalizedFromAmount <= 0) throw new Error("Amount too small");
 
   const fromPrice = await getAssetUsdPrice(from);
   const toPrice = await getAssetUsdPrice(to);
   if (!fromPrice.price || !toPrice.price) throw new Error("Price unavailable");
 
-  const fromUsdValue = fromAmount * fromPrice.price;
+  const fromUsdValue = normalizedFromAmount * fromPrice.price;
   const toAmountGross = fromUsdValue / toPrice.price;
   const feeAmount = roundAmount(toAmountGross * SWAP_FEE_RATE, assetUsdDecimals(to));
   const toAmount = roundAmount(toAmountGross - feeAmount, assetUsdDecimals(to));
   const feeUsdValue = feeAmount * toPrice.price;
-  const rate = fromUsdValue > 0 ? toAmount / fromAmount : 0;
+  const rate = fromUsdValue > 0 ? toAmount / normalizedFromAmount : 0;
 
   return {
     fromAsset: from as SwapAsset,
     toAsset: to as SwapAsset,
-    fromAmount: roundAmount(fromAmount, assetUsdDecimals(from)),
+    fromAmount: normalizedFromAmount,
     fromUsdPrice: fromPrice.price,
     toUsdPrice: toPrice.price,
     fromUsdValue: roundAmount(fromUsdValue, 2),
