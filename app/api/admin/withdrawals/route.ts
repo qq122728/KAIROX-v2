@@ -22,7 +22,7 @@ function resolveUserId(input?: number | string) {
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const body = await readJson<WithdrawalCreatePayload>(request);
     const asset = normalizeAsset(String(body.asset || "USDC"));
     if (!body.userId) return badRequest("User is required");
@@ -59,8 +59,8 @@ export async function POST(request: Request) {
           .run(userId, frozenAsset, body.amount, body.address?.trim() || user.wallet || null, body.network?.trim() || null, body.note?.trim() || "System created withdrawal");
         withdrawalId = Number(result.lastInsertRowid);
         getDb()
-          .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'withdrawal_request', ?, 'pending', ?)")
-          .run(userId, frozenAsset, -body.amount, body.note?.trim() || `Withdrawal request #${withdrawalId}`);
+          .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note, actor_id) VALUES (?, ?, 'withdrawal_request', ?, 'pending', ?, ?)")
+          .run(userId, frozenAsset, -body.amount, body.note?.trim() || `Withdrawal request #${withdrawalId} (admin#${admin.id})`, admin.id);
       });
     } catch (error) {
       if (insufficientBalance) return badRequest("Insufficient user balance");
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const body = await readJson<{ withdrawalId: number; status: WithdrawalStatus; note?: string }>(request);
     if (!body.withdrawalId) return badRequest("Missing withdrawal record");
     if (!["approved", "rejected", "paid"].includes(body.status)) return badRequest("Invalid withdrawal status");
@@ -92,10 +92,10 @@ export async function PATCH(request: Request) {
         const update = getDb()
           .prepare(
             `UPDATE withdrawals
-             SET status = ?, note = COALESCE(?, note), processed_at = CURRENT_TIMESTAMP
+             SET status = ?, note = COALESCE(?, note), processed_by = ?, processed_at = CURRENT_TIMESTAMP
              WHERE id = ? AND status = 'pending'`
           )
-          .run(body.status, body.note?.trim() || null, row.id);
+          .run(body.status, body.note?.trim() || null, admin.id, row.id);
         if (Number(update.changes || 0) !== 1) {
           alreadyProcessed = true;
           throw new Error("Withdrawal record has already been processed");
@@ -108,8 +108,8 @@ export async function PATCH(request: Request) {
             .run(row.amount, row.user_id, asset, row.amount);
           if (Number(release.changes || 0) !== 1) throw new Error("Withdrawal locked balance is inconsistent");
           getDb()
-            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'withdrawal_completed', ?, 'completed', ?)")
-            .run(row.user_id, asset, -row.amount, body.note?.trim() || "System processed");
+            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note, actor_id) VALUES (?, ?, 'withdrawal_completed', ?, 'completed', ?, ?)")
+            .run(row.user_id, asset, -row.amount, body.note?.trim() || "System processed", admin.id);
         }
 
         if (body.status === "rejected") {
@@ -119,8 +119,8 @@ export async function PATCH(request: Request) {
           if (Number(refund.changes || 0) !== 1) throw new Error("Withdrawal locked balance is inconsistent");
           if (isStableAsset(asset)) syncUserStableBalance(row.user_id);
           getDb()
-            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'withdrawal_rejected', ?, 'completed', ?)")
-            .run(row.user_id, asset, row.amount, body.note?.trim() || "System processed");
+            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note, actor_id) VALUES (?, ?, 'withdrawal_rejected', ?, 'completed', ?, ?)")
+            .run(row.user_id, asset, row.amount, body.note?.trim() || "System processed", admin.id);
         }
       });
     } catch (error) {

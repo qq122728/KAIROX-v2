@@ -55,7 +55,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const body = await readJson<AddressPayload>(request);
     const asset = normalizeAsset(clean(body.asset));
     const network = normalizeNetwork(clean(body.network));
@@ -67,22 +67,22 @@ export async function POST(request: Request) {
     if (body.scope === "default") {
       getDb()
         .prepare(
-          `INSERT INTO deposit_addresses (asset, network, address, is_active)
-           VALUES (?, ?, ?, 1)
-           ON CONFLICT(asset, network) DO UPDATE SET address = excluded.address, is_active = 1`
+          `INSERT INTO deposit_addresses (asset, network, address, is_active, updated_by, updated_at)
+           VALUES (?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(asset, network) DO UPDATE SET address = excluded.address, is_active = 1, updated_by = excluded.updated_by, updated_at = CURRENT_TIMESTAMP`
         )
-        .run(asset, network, address);
+        .run(asset, network, address, admin.id);
     } else {
       const user = resolveUserId(body.userId);
       if (!user) return badRequest("User does not exist");
       resolvedUserId = user.id;
       getDb()
         .prepare(
-          `INSERT INTO user_deposit_addresses (user_id, asset, network, address, is_active)
-           VALUES (?, ?, ?, ?, 1)
-           ON CONFLICT(user_id, asset, network) DO UPDATE SET address = excluded.address, is_active = 1`
+          `INSERT INTO user_deposit_addresses (user_id, asset, network, address, is_active, updated_by, updated_at)
+           VALUES (?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(user_id, asset, network) DO UPDATE SET address = excluded.address, is_active = 1, updated_by = excluded.updated_by, updated_at = CURRENT_TIMESTAMP`
         )
-        .run(resolvedUserId, asset, network, address);
+        .run(resolvedUserId, asset, network, address, admin.id);
     }
 
     emitRealtime("admin:update", { room: "admin", payload: { type: "deposit-addresses:update" } });
@@ -97,14 +97,14 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const body = await readJson<AddressPayload>(request);
     if (!body.id) return badRequest("Address ID is required");
     const table = body.scope === "user" ? "user_deposit_addresses" : "deposit_addresses";
     const current = body.scope === "user" ? getDb().prepare("SELECT user_id FROM user_deposit_addresses WHERE id = ?").get(body.id) as { user_id: number } | undefined : undefined;
     getDb()
-      .prepare(`UPDATE ${table} SET address = COALESCE(?, address), is_active = COALESCE(?, is_active) WHERE id = ?`)
-      .run(clean(body.address) || null, typeof body.isActive === "boolean" ? (body.isActive ? 1 : 0) : null, body.id);
+      .prepare(`UPDATE ${table} SET address = COALESCE(?, address), is_active = COALESCE(?, is_active), updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+      .run(clean(body.address) || null, typeof body.isActive === "boolean" ? (body.isActive ? 1 : 0) : null, admin.id, body.id);
     emitRealtime("admin:update", { room: "admin", payload: { type: "deposit-addresses:update" } });
     emitRealtime("deposit-addresses:update", { payload: { scope: body.scope } });
     if (current?.user_id) emitRealtime("user:update", { room: userRoom(current.user_id), payload: { type: "deposit-addresses:update" } });

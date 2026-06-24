@@ -91,13 +91,13 @@ export async function PATCH(request: Request) {
 
           getDb()
             .prepare(
-              `INSERT INTO orders (user_id, market_id, position_id, action, side, price, fee, pnl, note)
-               VALUES (?, ?, ?, 'force_close', ?, ?, ?, ?, ?)`
+              `INSERT INTO orders (user_id, market_id, position_id, action, side, price, fee, pnl, note, actor_id)
+               VALUES (?, ?, ?, 'force_close', ?, ?, ?, ?, ?, ?)`
             )
-            .run(position.user_id, position.market_id, position.id, position.side, position.mark_price, fee, pnl - fee, body.note || `Admin #${admin.id} force close`);
+            .run(position.user_id, position.market_id, position.id, position.side, position.mark_price, fee, pnl - fee, body.note || `Admin #${admin.id} force close`, admin.id);
           getDb()
-            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, 'USDC', 'admin_force_close', ?, 'completed', ?)")
-            .run(position.user_id, payout, `admin#${admin.id} force close position #${position.id}; pnl ${pnl}; fee ${fee}`);
+            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note, actor_id) VALUES (?, 'USDC', 'admin_force_close', ?, 'completed', ?, ?)")
+            .run(position.user_id, payout, `admin#${admin.id} force close position #${position.id}; pnl ${pnl}; fee ${fee}`, admin.id);
         });
       } catch (error) {
         if (positionAlreadyClosed) return badRequest("Position not found");
@@ -114,10 +114,10 @@ export async function PATCH(request: Request) {
         .run(nextOverride, position.id);
       getDb()
         .prepare(
-          `INSERT INTO orders (user_id, market_id, position_id, action, side, price, fee, pnl, note)
-           VALUES (?, ?, ?, 'pnl_override', ?, ?, 0, ?, ?)`
+          `INSERT INTO orders (user_id, market_id, position_id, action, side, price, fee, pnl, note, actor_id)
+           VALUES (?, ?, ?, 'pnl_override', ?, ?, 0, ?, ?, ?)`
         )
-        .run(position.user_id, position.market_id, position.id, position.side, position.mark_price, nextOverride, `admin#${admin.id} updated pnl override`);
+        .run(position.user_id, position.market_id, position.id, position.side, position.mark_price, nextOverride, `admin#${admin.id} updated pnl override`, admin.id);
     }
     return json({ ok: true });
   } catch (error) {

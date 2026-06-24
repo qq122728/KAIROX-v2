@@ -80,8 +80,8 @@ async function providerSettlePrice(order: Pick<BinaryOrderRow, "symbol" | "marke
   }
 }
 
-export function settleBinaryOrder(orderId: number, result: SettlementResult, settlePrice?: number, note?: string) {
-  const order = getDb().prepare("SELECT * FROM binary_orders WHERE id = ?").get(orderId) as BinaryOrderRow | undefined;
+export function settleBinaryOrder(orderId: number, result: SettlementResult, settlePrice?: number, note?: string, actorId?: number | null) {
+  const order = getDb().prepare("SELECT * FROM binary_orders WHERE id = ?").get(orderId) as (BinaryOrderRow & { manual_set_by?: number | null }) | undefined;
   if (!order) throw new Error("Order not found");
   if (order.status !== "open") throw new Error("Order has already been settled");
   if (!orderExpired(order)) throw new Error("Order has not expired yet");
@@ -90,6 +90,8 @@ export function settleBinaryOrder(orderId: number, result: SettlementResult, set
   const riskAmount = binaryOrderRiskAmount(order.stake, order.odds, order.risk_amount);
   const profit = result === "won" ? order.stake * order.odds : -riskAmount;
   const payout = result === "won" ? riskAmount + order.stake * order.odds : 0;
+  /* Pin the ledger actor: explicit argument > admin who set the manual_result > none (market settlement). */
+  const ledgerActorId = typeof actorId === "number" ? actorId : order.manual_set_by ?? null;
   let changed = 0;
 
   inTransaction(() => {
@@ -112,8 +114,8 @@ export function settleBinaryOrder(orderId: number, result: SettlementResult, set
     syncUserStableBalance(order.user_id);
 
     getDb()
-      .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, note) VALUES (?, 'USDC', 'binary_order_settlement', ?, ?)")
-      .run(order.user_id, profit, note?.trim() || `Manual settlement ${order.symbol} as ${result}`);
+      .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, note, actor_id) VALUES (?, 'USDC', 'binary_order_settlement', ?, ?, ?)")
+      .run(order.user_id, profit, note?.trim() || `Manual settlement ${order.symbol} as ${result}`, ledgerActorId);
   });
 
   if (changed !== 1) throw new Error("Order has not expired yet or has already been settled");
@@ -124,14 +126,20 @@ export function settleBinaryOrder(orderId: number, result: SettlementResult, set
   return { order, result, profit, payout, settlePrice: price };
 }
 
-export function setBinaryOrderManualResult(orderId: number, result: SettlementResult, settlePrice?: number, note?: string) {
-  const order = getDb().prepare("SELECT * FROM binary_orders WHERE id = ?").get(orderId) as BinaryOrderRow | undefined;
+export function setBinaryOrderManualResult(orderId: number, result: SettlementResult, settlePrice?: number, note?: string, actorId?: number | null) {
+  const order = getDb().prepare("SELECT * FROM binary_orders WHERE id = ?").get(orderId) as (BinaryOrderRow & { manual_set_by?: number | null }) | undefined;
   if (!order) throw new Error("Order not found");
   if (order.status !== "open") throw new Error("Order has already been settled");
 
   if (orderExpired(order)) {
     if (order.manual_result === "won" || order.manual_result === "lost") {
-      const settled = settleBinaryOrder(order.id, order.manual_result, order.manual_settle_price ?? undefined, order.manual_note || `Manual preset settled as ${order.manual_result}`);
+      const settled = settleBinaryOrder(
+        order.id,
+        order.manual_result,
+        order.manual_settle_price ?? undefined,
+        order.manual_note || `Manual preset settled as ${order.manual_result}`,
+        actorId ?? order.manual_set_by ?? null,
+      );
       return { action: "settled" as const, ...settled };
     }
     throw new Error("Order has expired and will follow the market result");
@@ -139,14 +147,15 @@ export function setBinaryOrderManualResult(orderId: number, result: SettlementRe
 
   const price = Number.isFinite(settlePrice) && Number(settlePrice) > 0 ? Number(settlePrice) : order.entry_price;
   const manualNote = note?.trim() || `Admin preset ${order.symbol} as ${result}`;
+  const setBy = typeof actorId === "number" ? actorId : null;
 
   const update = getDb()
     .prepare(
       `UPDATE binary_orders
-       SET manual_result = ?, manual_settle_price = ?, manual_note = ?, manual_result_set_at = CURRENT_TIMESTAMP
+       SET manual_result = ?, manual_settle_price = ?, manual_note = ?, manual_result_set_at = CURRENT_TIMESTAMP, manual_set_by = ?
        WHERE id = ? AND status = 'open' AND datetime(expires_at) > CURRENT_TIMESTAMP`
     )
-    .run(result, price, manualNote, order.id);
+    .run(result, price, manualNote, setBy, order.id);
   if (Number(update.changes || 0) !== 1) throw new Error("Order has expired and will follow the market result");
 
   emitRealtime("admin:update", { room: "admin", payload: { type: "binary:configured", orderId: order.id, userId: order.user_id, result } });

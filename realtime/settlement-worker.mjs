@@ -47,6 +47,7 @@ function ensureSchemaReady() {
   addColumn("binary_orders", "manual_settle_price", "REAL");
   addColumn("binary_orders", "manual_note", "TEXT");
   addColumn("binary_orders", "manual_result_set_at", "TEXT");
+  addColumn("asset_transactions", "actor_id", "INTEGER");
   schemaReady = true;
   return true;
 }
@@ -111,7 +112,7 @@ function settleConfigured(order) {
       db.exec("ROLLBACK");
       return false;
     }
-    db.prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, note) VALUES (?, 'USDC', 'binary_order_settlement', ?, ?)").run(order.user_id, profit, note);
+    db.prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, note, actor_id) VALUES (?, 'USDC', 'binary_order_settlement', ?, ?, ?)").run(order.user_id, profit, note, order.manual_set_by ?? null);
     db.exec("COMMIT");
     emit("admin:update", "admin", { type: "binary:settled", orderId: order.id, userId: order.user_id });
     emit("binary:settled", `user:${order.user_id}`, { orderId: order.id, result });
@@ -256,7 +257,7 @@ async function settleMarket(order) {
       db.exec("ROLLBACK");
       return false;
     }
-    db.prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, note) VALUES (?, 'USDC', 'binary_order_settlement', ?, ?)").run(order.user_id, profit, note);
+    db.prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, note, actor_id) VALUES (?, 'USDC', 'binary_order_settlement', ?, ?, ?)").run(order.user_id, profit, note, order.manual_set_by ?? null);
     db.exec("COMMIT");
     emit("admin:update", "admin", { type: "binary:settled", orderId: order.id, userId: order.user_id });
     emit("binary:settled", `user:${order.user_id}`, { orderId: order.id, result });

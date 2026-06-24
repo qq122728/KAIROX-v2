@@ -70,8 +70,8 @@ export async function PATCH(request: Request) {
             .run(row.amount, row.user_id, asset);
           if (isStableAsset(asset)) syncUserStableBalance(row.user_id);
           getDb()
-            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'deposit', ?, 'completed', ?)")
-            .run(row.user_id, asset, row.amount, "System processed");
+            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note, actor_id) VALUES (?, ?, 'deposit', ?, 'completed', ?, ?)")
+            .run(row.user_id, asset, row.amount, "System processed", admin.id);
         }
       });
     } catch (error) {

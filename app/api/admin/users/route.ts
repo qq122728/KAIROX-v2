@@ -100,8 +100,8 @@ export async function PATCH(request: Request) {
 
           if (isStableAsset(asset)) syncUserStableBalance(userId);
           getDb()
-            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, note) VALUES (?, ?, 'admin_adjust', ?, ?)")
-            .run(userId, asset, operation === "debit" || operation === "freeze" ? -amount : amount, `admin#${admin.id} ${operation}`);
+            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, note, actor_id) VALUES (?, ?, 'admin_adjust', ?, ?, ?)")
+            .run(userId, asset, operation === "debit" || operation === "freeze" ? -amount : amount, `admin#${admin.id} ${operation}`, admin.id);
         });
       } catch (error) {
         if (invalidBalance) return badRequest(operation === "unfreeze" ? "Insufficient locked balance" : "Insufficient user balance");
