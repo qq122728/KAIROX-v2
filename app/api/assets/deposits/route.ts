@@ -1,11 +1,15 @@
 import { requireUser } from "@/lib/auth";
-import { badRequest, handleError, json, requireSameOrigin } from "@/lib/api";
+import { badRequest, handleError, json, requireSameOrigin, tooManyRequests } from "@/lib/api";
 import { getDb, inTransaction } from "@/lib/db";
 import { emitRealtime, userRoom } from "@/lib/realtime";
 import { normalizeAsset } from "@/lib/balances";
 import { sanitizePublicRecords, type PublicRecordRow } from "@/lib/public-records";
+import { normalizeNetwork } from "@/lib/networks";
+import { consumeUserRate } from "@/lib/rate-limit";
 
 const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
+const depositLimit = Math.max(1, Number(process.env.PERP_SIM_DEPOSIT_LIMIT || 10));
+const depositWindowMs = Math.max(1000, Number(process.env.PERP_SIM_DEPOSIT_WINDOW_MS || 60_000));
 
 function isDuplicateTxHashError(error: unknown) {
   return error instanceof Error && /deposits\.tx_hash|idx_deposits_tx_hash/i.test(error.message);
@@ -32,9 +36,12 @@ export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
     const user = await requireUser();
+    const limit = consumeUserRate(user.id, "deposit", depositLimit, depositWindowMs);
+    if (!limit.allowed) return tooManyRequests("Too many deposit requests. Please slow down.", limit.retryAfterMs);
+
     const form = await request.formData();
     const asset = normalizeAsset(String(form.get("asset") || "USDC"));
-    const network = String(form.get("network") || "").trim();
+    const network = normalizeNetwork(String(form.get("network") || ""));
     const amount = Number(form.get("amount") || 0);
     const txHash = String(form.get("txHash") || "").trim() || null;
     if (!asset || !network) return badRequest("Asset and network are required");
@@ -52,12 +59,12 @@ export async function POST(request: Request) {
                 CASE WHEN u.address IS NULL THEN 'default' ELSE 'custom' END AS source
          FROM deposit_addresses d
          LEFT JOIN user_deposit_addresses u
-           ON u.user_id = ? AND u.asset = d.asset AND u.network = d.network AND u.is_active = 1
-         WHERE d.asset = ? AND d.network = ? AND d.is_active = 1
+           ON u.user_id = ? AND u.asset = d.asset AND UPPER(TRIM(u.network)) = UPPER(TRIM(d.network)) AND u.is_active = 1
+         WHERE d.asset = ? AND UPPER(TRIM(d.network)) = ? AND d.is_active = 1
          UNION
          SELECT u.asset, u.network, u.address, 'custom' AS source
          FROM user_deposit_addresses u
-         WHERE u.user_id = ? AND u.asset = ? AND u.network = ? AND u.is_active = 1
+         WHERE u.user_id = ? AND u.asset = ? AND UPPER(TRIM(u.network)) = ? AND u.is_active = 1
          LIMIT 1`
       )
       .get(user.id, asset, network, user.id, asset, network) as { address: string; source: string } | undefined;

@@ -9,7 +9,12 @@ export async function GET() {
     await requireAdmin();
     const deposits = getDb()
       .prepare(
-        `SELECT d.*, u.public_uid AS user_public_uid, u.email, u.username
+        `SELECT d.id, d.user_id, d.asset, d.network, d.amount, d.tx_hash,
+                d.proof_name, d.proof_mime,
+                CASE WHEN d.proof_data IS NULL OR d.proof_data = '' THEN 0 ELSE 1 END AS has_proof,
+                d.deposit_address, d.address_source, d.status, d.note, d.admin_note, d.processed_by,
+                d.created_at, d.processed_at,
+                u.public_uid AS user_public_uid, u.email, u.username
          FROM deposits d
          JOIN users u ON u.id = d.user_id
          ORDER BY d.created_at DESC

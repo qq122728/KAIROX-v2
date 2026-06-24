@@ -3,6 +3,7 @@ import { badRequest, handleError, json, readJson } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { emitRealtime, userRoom } from "@/lib/realtime";
 import { normalizeAsset } from "@/lib/balances";
+import { normalizeNetwork } from "@/lib/networks";
 
 const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
 
@@ -35,10 +36,11 @@ export async function GET() {
   try {
     await requireAdmin();
     return json({
-      defaultAddresses: getDb().prepare("SELECT * FROM deposit_addresses WHERE asset IN ('USDC', 'BTC', 'ETH', 'SOL') ORDER BY asset, network").all(),
+      defaultAddresses: getDb().prepare("SELECT id, asset, UPPER(TRIM(network)) AS network, address, is_active, created_at FROM deposit_addresses WHERE asset IN ('USDC', 'BTC', 'ETH', 'SOL') ORDER BY asset, network").all(),
       userAddresses: getDb()
         .prepare(
-          `SELECT a.*, u.public_uid AS user_public_uid, u.email, u.username
+          `SELECT a.id, a.user_id, a.asset, UPPER(TRIM(a.network)) AS network, a.address, a.is_active, a.created_at,
+                  u.public_uid AS user_public_uid, u.email, u.username
            FROM user_deposit_addresses a
            JOIN users u ON u.id = a.user_id
            WHERE a.asset IN ('USDC', 'BTC', 'ETH', 'SOL')
@@ -56,7 +58,7 @@ export async function POST(request: Request) {
     await requireAdmin();
     const body = await readJson<AddressPayload>(request);
     const asset = normalizeAsset(clean(body.asset));
-    const network = clean(body.network);
+    const network = normalizeNetwork(clean(body.network));
     const address = clean(body.address);
     if (!asset || !network || !address) return badRequest("Asset, network, and address are required");
     if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");

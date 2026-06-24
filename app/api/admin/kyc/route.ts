@@ -8,7 +8,13 @@ export async function GET() {
     await requireAdmin();
     const submissions = getDb()
       .prepare(
-        `SELECT k.*, u.public_uid AS user_public_uid, u.email, u.username
+        `SELECT k.id, k.user_id, k.status, k.legal_name, k.document_type,
+                k.front_name, k.front_mime,
+                CASE WHEN k.front_data IS NULL OR k.front_data = '' THEN 0 ELSE 1 END AS has_front,
+                k.back_name, k.back_mime,
+                CASE WHEN k.back_data IS NULL OR k.back_data = '' THEN 0 ELSE 1 END AS has_back,
+                k.rejection_reason, k.reviewed_by, k.reviewed_at, k.created_at, k.updated_at,
+                u.public_uid AS user_public_uid, u.email, u.username
          FROM kyc_submissions k
          JOIN users u ON u.id = k.user_id
          ORDER BY k.created_at DESC

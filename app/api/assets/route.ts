@@ -37,22 +37,22 @@ export async function GET() {
     const lockedBalance = Number(stable?.locked || 0);
     const depositAddresses = getDb()
       .prepare(
-        `SELECT d.asset, d.network,
+        `SELECT d.asset, UPPER(TRIM(d.network)) AS network,
                 COALESCE(u.address, d.address) AS address,
                 CASE WHEN u.address IS NULL THEN 'default' ELSE 'custom' END AS source
          FROM deposit_addresses d
          LEFT JOIN user_deposit_addresses u
-           ON u.user_id = ? AND u.asset = d.asset AND u.network = d.network AND u.is_active = 1
+           ON u.user_id = ? AND u.asset = d.asset AND UPPER(TRIM(u.network)) = UPPER(TRIM(d.network)) AND u.is_active = 1
          WHERE d.is_active = 1
            AND d.asset IN ('USDC', 'BTC', 'ETH', 'SOL')
          UNION
-         SELECT u.asset, u.network, u.address, 'custom' AS source
+         SELECT u.asset, UPPER(TRIM(u.network)) AS network, u.address, 'custom' AS source
          FROM user_deposit_addresses u
          WHERE u.user_id = ? AND u.is_active = 1
            AND u.asset IN ('USDC', 'BTC', 'ETH', 'SOL')
            AND NOT EXISTS (
              SELECT 1 FROM deposit_addresses d
-             WHERE d.asset = u.asset AND d.network = u.network AND d.is_active = 1
+             WHERE d.asset = u.asset AND UPPER(TRIM(d.network)) = UPPER(TRIM(u.network)) AND d.is_active = 1
            )
          ORDER BY asset, network`
       )

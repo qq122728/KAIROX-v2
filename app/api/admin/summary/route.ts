@@ -13,7 +13,7 @@ export async function GET() {
                 COALESCE(u.trading_enabled, 1) AS trading_enabled,
                 COALESCE(u.login_enabled, 1) AS login_enabled,
                 u.created_at,
-                COALESCE((SELECT SUM(balance) FROM user_assets WHERE user_id = u.id AND asset = 'USDC'), u.balance) AS total_assets
+                COALESCE((SELECT SUM(balance + locked) FROM user_assets WHERE user_id = u.id AND asset = 'USDC'), u.balance) AS total_assets
          FROM users u
          ORDER BY u.created_at DESC`
       )
@@ -41,7 +41,12 @@ export async function GET() {
       .all();
     const deposits = getDb()
       .prepare(
-        `SELECT d.*, u.public_uid AS user_public_uid, u.email, u.username
+        `SELECT d.id, d.user_id, d.asset, d.network, d.amount, d.tx_hash,
+                d.proof_name, d.proof_mime,
+                CASE WHEN d.proof_data IS NULL OR d.proof_data = '' THEN 0 ELSE 1 END AS has_proof,
+                d.deposit_address, d.address_source, d.status, d.note, d.admin_note, d.processed_by,
+                d.created_at, d.processed_at,
+                u.public_uid AS user_public_uid, u.email, u.username
          FROM deposits d
          JOIN users u ON u.id = d.user_id
          ORDER BY d.created_at DESC
@@ -50,7 +55,13 @@ export async function GET() {
       .all();
     const kycSubmissions = getDb()
       .prepare(
-        `SELECT k.*, u.public_uid AS user_public_uid, u.email, u.username
+        `SELECT k.id, k.user_id, k.status, k.legal_name, k.document_type,
+                k.front_name, k.front_mime,
+                CASE WHEN k.front_data IS NULL OR k.front_data = '' THEN 0 ELSE 1 END AS has_front,
+                k.back_name, k.back_mime,
+                CASE WHEN k.back_data IS NULL OR k.back_data = '' THEN 0 ELSE 1 END AS has_back,
+                k.rejection_reason, k.reviewed_by, k.reviewed_at, k.created_at, k.updated_at,
+                u.public_uid AS user_public_uid, u.email, u.username
          FROM kyc_submissions k
          JOIN users u ON u.id = k.user_id
          ORDER BY k.created_at DESC
@@ -78,7 +89,8 @@ export async function GET() {
           (SELECT COUNT(*) FROM kyc_submissions WHERE status = 'pending') AS pending_kyc,
           (SELECT COUNT(*) FROM binary_orders WHERE status = 'open') AS open_binary_orders,
           (SELECT COUNT(*) FROM markets) AS markets,
-          (SELECT COALESCE(SUM(balance), 0) FROM user_assets WHERE asset = 'USDC') AS total_stable_balance
+          (SELECT COALESCE(SUM(balance + locked), 0) FROM user_assets WHERE asset = 'USDC') AS total_stable_balance,
+          (SELECT COALESCE(SUM(locked), 0) FROM user_assets WHERE asset = 'USDC') AS total_stable_locked
         `
       )
       .get();

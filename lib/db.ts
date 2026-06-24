@@ -89,7 +89,64 @@ function consolidateLegacyUsdt(database: DatabaseSync) {
   database
     .prepare(
       `UPDATE users
-       SET balance = COALESCE((SELECT balance FROM user_assets WHERE user_id = users.id AND asset = 'USDC'), balance)`
+       SET balance = COALESCE((SELECT balance + locked FROM user_assets WHERE user_id = users.id AND asset = 'USDC'), balance)`
+    )
+    .run();
+}
+
+function normalizeStoredDepositNetworks(database: DatabaseSync) {
+  database.prepare("UPDATE deposits SET network = UPPER(TRIM(network)) WHERE network IS NOT NULL").run();
+  database
+    .prepare(
+      `UPDATE OR IGNORE deposit_addresses
+       SET network = UPPER(TRIM(network))
+       WHERE network IS NOT NULL`
+    )
+    .run();
+  database
+    .prepare(
+      `DELETE FROM deposit_addresses
+       WHERE network IS NOT NULL
+         AND network <> UPPER(TRIM(network))
+         AND EXISTS (
+           SELECT 1 FROM deposit_addresses normalized
+           WHERE normalized.asset = deposit_addresses.asset
+             AND normalized.network = UPPER(TRIM(deposit_addresses.network))
+             AND normalized.id <> deposit_addresses.id
+         )`
+    )
+    .run();
+  database
+    .prepare(
+      `UPDATE OR IGNORE user_deposit_addresses
+       SET network = UPPER(TRIM(network))
+       WHERE network IS NOT NULL`
+    )
+    .run();
+  database
+    .prepare(
+      `DELETE FROM user_deposit_addresses
+       WHERE network IS NOT NULL
+         AND network <> UPPER(TRIM(network))
+         AND EXISTS (
+           SELECT 1 FROM user_deposit_addresses normalized
+           WHERE normalized.user_id = user_deposit_addresses.user_id
+             AND normalized.asset = user_deposit_addresses.asset
+             AND normalized.network = UPPER(TRIM(user_deposit_addresses.network))
+             AND normalized.id <> user_deposit_addresses.id
+         )`
+    )
+    .run();
+}
+
+function syncAllStableBalances(database: DatabaseSync) {
+  database
+    .prepare(
+      `UPDATE users
+       SET balance = COALESCE(
+         (SELECT SUM(balance + locked) FROM user_assets WHERE user_id = users.id AND asset = 'USDC'),
+         balance
+       )`
     )
     .run();
 }
@@ -455,6 +512,7 @@ function initialize(database: DatabaseSync) {
   database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_deposits_tx_hash ON deposits(tx_hash) WHERE tx_hash IS NOT NULL;");
   database.exec("CREATE INDEX IF NOT EXISTS idx_kyc_user_created ON kyc_submissions(user_id, created_at);");
   database.exec("CREATE INDEX IF NOT EXISTS idx_kyc_status_created ON kyc_submissions(status, created_at);");
+  normalizeStoredDepositNetworks(database);
 
   const userCount = database.prepare("SELECT COUNT(*) AS count FROM users").get() as { count: number };
   if (userCount.count === 0) {
@@ -481,7 +539,7 @@ function initialize(database: DatabaseSync) {
   );
   insertAddress.run("USDC", "TRC20", "TDefaultUSDCTRC20Address000000000");
   insertAddress.run("USDC", "ERC20", "0xDefaultUSDCERC20Address000000000000000000");
-  insertAddress.run("BTC", "Bitcoin", "bc1qdefaultbtcaddress000000000000000000");
+  insertAddress.run("BTC", "BITCOIN", "bc1qdefaultbtcaddress000000000000000000");
   insertAddress.run("ETH", "ERC20", "0xDefaultETHAddress000000000000000000000000");
   insertAddress.run("BNB", "BEP20", "0xDefaultBNBAddress000000000000000000000000");
   insertAddress.run("SOL", "SOL", "DefaultSolanaAddress0000000000000000000000");
@@ -492,6 +550,8 @@ function initialize(database: DatabaseSync) {
   );
   for (const user of users) insertAsset.run(user.id, user.balance);
   consolidateLegacyUsdt(database);
+  normalizeStoredDepositNetworks(database);
+  syncAllStableBalances(database);
 }
 
 export function getDb() {

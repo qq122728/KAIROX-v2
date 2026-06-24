@@ -54,7 +54,7 @@ export function syncUserStableBalance(userId: number) {
     .prepare(
       `UPDATE users
        SET balance = COALESCE(
-         (SELECT SUM(balance) FROM user_assets WHERE user_id = ? AND asset = 'USDC'),
+         (SELECT SUM(balance + locked) FROM user_assets WHERE user_id = ? AND asset = 'USDC'),
          balance
        )
        WHERE id = ?`
