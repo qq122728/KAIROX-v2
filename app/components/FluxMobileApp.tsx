@@ -2,18 +2,20 @@
 
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUpDown, BadgeCheck, ChevronRight, FileText, Headphones, Info, LockKeyhole, ShieldCheck,
-  Search, Bell, Gem, Eye, ArrowUpRight, Mail,
+  ArrowUpDown, BadgeCheck, ChevronLeft, ChevronRight, FileText, Headphones, Info, LockKeyhole, ShieldCheck,
+  Search, Bell, Gem, Eye, EyeOff, ArrowUpRight, Mail,
   Download, Upload, ArrowLeftRight, Clock,
   LayoutGrid, BarChart3, Wallet, User as UserIcon,
-  Star, BookOpen
+  Star, BookOpen, LogOut,
+  MessageCircle, Send, Paperclip, MoreHorizontal,
+  Home, ClipboardList
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MarketChartPanel } from "./MarketData";
 import { connectRealtime } from "./realtime-client";
 import { displayUid } from "@/lib/uid";
 
-type Tab = "markets" | "trade" | "assets" | "profile";
+type Tab = "home" | "markets" | "trade" | "orders" | "account";
 type StackPage =
   | { id: "deposit-asset"; title: string }
   | { id: "deposit-network"; title: string }
@@ -26,12 +28,14 @@ type StackPage =
   | { id: "withdraw-history"; title: "Withdraw History" }
   | { id: "funding-records"; title: "Funding Records" }
   | { id: "swap"; title: "Swap" }
-  | { id: "security"; title: "Security" }
+  | { id: "security"; title: "Security Settings" }
   | { id: "kyc"; title: "KYC Verification" }
-  | { id: "about"; title: "About" }
+  | { id: "about"; title: "About" | "About VORX" }
   | { id: "terms"; title: "Terms of Service" }
   | { id: "privacy"; title: "Privacy Policy" }
-  | { id: "support"; title: "Support" };
+  | { id: "support"; title: "Support" }
+  | { id: "support-chat"; title: "Online Support" }
+  | { id: "asset-overview"; title: "Assets" };
 
 type Market = { id: number; symbol: string; price: number; max_leverage?: number; is_active: number };
 type User = { id?: number; public_uid?: string | null; email: string | null; balance: number; kyc_status?: "none" | "pending" | "approved" | "rejected"; kyc_rejected_reason?: string | null; created_at?: string };
@@ -56,11 +60,15 @@ type Tickers = Record<string, { price: number; change: number; source: string }>
 type Duration = { label: string; seconds: number; odds: number; lossRate: number };
 type BinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; riskAmount?: number; duration: Duration; entry: number; expiresAt: number; status: "open" | "win" | "loss"; profit?: number };
 
-const tabPath = (tab: Tab, symbol = "BTC-PERP") => tab === "markets" ? "/markets" : tab === "trade" ? `/trade/${symbol}` : `/${tab}`;
+const tabPath = (tab: Tab, symbol = "BTC-PERP") => tab === "home" ? "/" : tab === "trade" ? `/trade/${symbol}` : `/${tab}`;
 const routeStateFromPath = (pathname: string): { tab: Tab; symbol?: string } | null => {
-  if (pathname === "/" || pathname === "/markets") return { tab: "markets" };
-  if (pathname === "/assets") return { tab: "assets" };
-  if (pathname === "/profile") return { tab: "profile" };
+  if (pathname === "/" || pathname === "/home") return { tab: "home" };
+  if (pathname === "/markets") return { tab: "markets" };
+  if (pathname === "/orders") return { tab: "orders" };
+  if (pathname === "/account") return { tab: "account" };
+  /* legacy URL compatibility */
+  if (pathname === "/profile") return { tab: "account" };
+  if (pathname === "/assets") return { tab: "home" };
   if (pathname === "/trade") return { tab: "trade" };
   if (pathname.startsWith("/trade/")) return { tab: "trade", symbol: decodeURIComponent(pathname.slice("/trade/".length)).toUpperCase() };
   return null;
@@ -191,7 +199,7 @@ function assetTone(asset: string) {
   return "default";
 }
 
-export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login", initialSymbol = "BTC-PERP" }: { initialTab?: Tab; initialAuthMode?: "login" | "register"; initialSymbol?: string }) {
+export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", initialSymbol = "BTC-PERP" }: { initialTab?: Tab; initialAuthMode?: "login" | "register"; initialSymbol?: string }) {
   const router = useRouter();
   const [authMode, setAuthMode] = useState(initialAuthMode);
   const [user, setUser] = useState<User | null>(null);
@@ -203,11 +211,23 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
   const [currentSymbol, setCurrentSymbol] = useState(initialSymbol);
   const [marketSort, setMarketSort] = useState<"hot" | "gainers" | "losers">("hot");
   const [marketQuery, setMarketQuery] = useState("");
+  const [favorites, setFavorites] = useState<Set<string>>(() => readFavoritesStorage());
+  const toggleFavorite = (symbol: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(symbol)) next.delete(symbol);
+      else next.add(symbol);
+      writeFavoritesStorage(next);
+      return next;
+    });
+  };
   const [selectedCoin, setSelectedCoin] = useState("USDC");
   const [selectedNetwork, setSelectedNetwork] = useState("TRC20");
   const [orders, setOrders] = useState<BinaryOrder[]>([]);
   const [orderSheet, setOrderSheet] = useState<"call" | "put" | null>(null);
   const [placingOrder, setPlacingOrder] = useState(false);
+  const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
+  const [sheetMinimized, setSheetMinimized] = useState(false);
   const [stake, setStake] = useState(50);
   const [durationOptions, setDurationOptions] = useState<Duration[]>(defaultDurations);
   const [duration, setDuration] = useState(defaultDurations[0]);
@@ -216,7 +236,7 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
   const [support, setSupport] = useState({ telegram: "", whatsapp: "" });
   const [publicSettings, setPublicSettings] = useState<Partial<PublicSettings>>({});
   const [withdrawForm, setWithdrawForm] = useState({ address: "", amount: "10", password: "" });
-  const [swap, setSwap] = useState({ from: "USDC", to: "USDC", amount: "100" });
+  const [swap, setSwap] = useState({ from: "USDC", to: "BTC", amount: "100" });
   const [kycStatus, setKycStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
   const [expandedSecurity, setExpandedSecurity] = useState<"login" | "withdraw" | null>("login");
   const [authForm, setAuthForm] = useState({ email: "", password: "", confirmPassword: "", name: "", withdrawPassword: "", confirmWithdrawPassword: "", invite: "" });
@@ -239,6 +259,12 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
   const currentMarket = markets.find((m) => m.symbol === currentSymbol) || markets[0];
   const openOrders = orders.filter((order) => order.status === "open");
   const history = orders.filter((order) => order.status !== "open");
+  const activeOrder = activeOrderId != null ? orders.find((o) => o.id === activeOrderId) || null : null;
+
+  useEffect(() => {
+    if (!activeOrder) return;
+    if (activeOrder.status !== "open" && sheetMinimized) setSheetMinimized(false);
+  }, [activeOrder, sheetMinimized]);
 
   useEffect(() => {
     setTab(initialTab);
@@ -473,7 +499,9 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
         password: authForm.password,
         confirmPassword: authForm.confirmPassword,
         withdrawalPassword: authForm.withdrawPassword,
-        confirmWithdrawalPassword: authForm.confirmWithdrawPassword
+        confirmWithdrawalPassword: authForm.confirmWithdrawPassword,
+        nickname: authForm.name,
+        inviteCode: authForm.invite
       })
     });
     if (!res.ok) {
@@ -528,7 +556,9 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
         status: "open"
       };
       setOrders((items) => [order, ...items].slice(0, 100));
-      setOrderSheet(null);
+      setActiveOrderId(order.id);
+      setSheetMinimized(false);
+      setOrderSheet(direction);
       showToast("ok", `${direction.toUpperCase()} order placed`);
       await load();
     } finally {
@@ -560,7 +590,7 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
   return (
     <main className="mobile-shell">
       {toast && <div className="mobile-toast-wrap"><div className={`mobile-toast ${toast.type}`}>{toast.text}</div></div>}
-      <MobileHeader activeStack={activeStack} pop={pop} currentMarket={currentMarket} tickers={tickers} support={support} activeTab={tab} />
+      <MobileHeader activeStack={activeStack} pop={pop} currentMarket={currentMarket} tickers={tickers} support={support} activeTab={tab} goTab={switchTab} showToast={showToast} />
       <section className="mobile-scroll">
         {activeStack ? (
           <StackContent
@@ -589,15 +619,38 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
           />
         ) : (
           <>
-            {tab === "markets" && <MarketsTab rows={filteredMarkets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} sort={marketSort} setSort={setMarketSort} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} goTab={switchTab} push={push} kycStatus={kycStatus} totalEquity={assets?.summary.totalEquity ?? user.balance} availableBalance={assets?.summary.availableBalance ?? user.balance} pnl={assets?.summary.unrealizedPnl ?? 0} />}
-            {tab === "trade" && currentMarket && <TradeTab market={currentMarket} tickers={tickers} setCurrentSymbol={(symbol) => { setCurrentSymbol(symbol); pushMobileUrl(tabPath("trade", symbol)); }} markets={markets} openOrders={openOrders} history={history} now={now} openSheet={setOrderSheet} stake={stake} setStake={setStake} duration={duration} durations={durationOptions} setDuration={setDuration} availableBalance={assets?.summary.availableBalance ?? user.balance} />}
-            {tab === "assets" && <AssetsTab assets={assets} push={push} />}
-            {tab === "profile" && <ProfileTab user={user} kycStatus={kycStatus} push={push} logout={logout} />}
+            {tab === "home" && <HomeTab rows={filteredMarkets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} sort={marketSort} setSort={setMarketSort} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} goTab={switchTab} push={push} kycStatus={kycStatus} totalEquity={assets?.summary.totalEquity ?? user.balance} availableBalance={assets?.summary.availableBalance ?? user.balance} pnl={assets?.summary.unrealizedPnl ?? 0} favorites={favorites} toggleFavorite={toggleFavorite} />}
+            {tab === "markets" && <MarketsListTab rows={markets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} favorites={favorites} toggleFavorite={toggleFavorite} />}
+            {tab === "trade" && currentMarket && <TradeTab market={currentMarket} tickers={tickers} setCurrentSymbol={(symbol) => { setCurrentSymbol(symbol); pushMobileUrl(tabPath("trade", symbol)); }} markets={markets} openSheet={setOrderSheet} stake={stake} setStake={setStake} duration={duration} durations={durationOptions} setDuration={setDuration} availableBalance={assets?.summary.availableBalance ?? user.balance} favorites={favorites} toggleFavorite={toggleFavorite} />}
+            {tab === "orders" && <OrdersTab openOrders={openOrders} history={history} now={now} onOpenRunningOrder={(order) => { setActiveOrderId(order.id); setOrderSheet(order.direction); setSheetMinimized(false); setTab("trade"); }} />}
+            {tab === "account" && <AccountTab user={user} kycStatus={kycStatus} push={push} logout={logout} />}
           </>
         )}
       </section>
       {!activeStack && <BottomNav tab={tab} setTab={switchTab} />}
-      {orderSheet && currentMarket && <OrderSheet direction={orderSheet} setDirection={setOrderSheet} market={currentMarket} price={tickers[currentMarket.symbol]?.price || currentMarket.price} change={tickers[currentMarket.symbol]?.change || 0} availableBalance={assets?.summary.availableBalance ?? user.balance} stake={stake} setStake={setStake} duration={duration} durations={durationOptions} setDuration={setDuration} close={() => placingOrder ? undefined : setOrderSheet(null)} submit={() => orderSheet && placeOrder(orderSheet)} submitting={placingOrder} />}
+      {orderSheet && currentMarket && !sheetMinimized && (
+        <TradeSheet
+          mode={activeOrder ? (activeOrder.status === "open" ? "running" : "settled") : "place"}
+          direction={orderSheet}
+          setDirection={setOrderSheet}
+          market={currentMarket}
+          price={tickers[currentMarket.symbol]?.price || currentMarket.price}
+          change={tickers[currentMarket.symbol]?.change || 0}
+          availableBalance={assets?.summary.availableBalance ?? user.balance}
+          stake={stake}
+          setStake={setStake}
+          duration={duration}
+          durations={durationOptions}
+          setDuration={setDuration}
+          activeOrder={activeOrder}
+          now={now}
+          close={() => { if (placingOrder) return; setOrderSheet(null); setActiveOrderId(null); }}
+          minimize={() => setSheetMinimized(true)}
+          tradeAgain={() => { setActiveOrderId(null); }}
+          submit={() => orderSheet && placeOrder(orderSheet)}
+          submitting={placingOrder}
+        />
+      )}
     </main>
   );
 }
@@ -675,7 +728,7 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
   return (
     <main className="mobile-shell auth-only">
       <section className="auth-center">
-        <BrandLogo variant="auth" />
+        <BrandLogo variant="auth-full" />
         <div className="auth-headline">
           <h1>{title.h}</h1>
           <p>{title.p}</p>
@@ -808,44 +861,105 @@ function BootScreen() {
   return <main className="mobile-shell auth-only"><section className="auth-center boot-center"><BrandLogo variant="auth" /><p>Loading account</p></section></main>;
 }
 
-function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab }: { activeStack?: StackPage; pop: () => void; currentMarket?: Market; tickers: Tickers; support: { telegram: string; whatsapp: string }; activeTab: Tab }) {
-  if (activeStack) return <header className="mobile-header"><button onClick={pop}>{"<"}</button><h2>{activeStack.title}</h2><span /></header>;
+function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goTab, showToast }: { activeStack?: StackPage; pop: () => void; currentMarket?: Market; tickers: Tickers; support: { telegram: string; whatsapp: string }; activeTab: Tab; goTab?: (tab: Tab) => void; showToast?: (type: "ok" | "err" | "info", text: string) => void }) {
+  if (activeStack) {
+    if (activeStack.id === "support-chat") {
+      return (
+        <header className="mobile-header mobile-header-stack mobile-header-chat">
+          <button type="button" className="stack-back" onClick={pop} aria-label="Back">
+            <ChevronLeft size={22} strokeWidth={2} />
+          </button>
+          <div className="chat-header-title">
+            <h2>Online Support</h2>
+            <p><span className="chat-status-dot" aria-hidden="true" />We&rsquo;re online</p>
+          </div>
+          <button type="button" className="stack-action" aria-label="More">
+            <MoreHorizontal size={20} strokeWidth={2} />
+          </button>
+        </header>
+      );
+    }
+    return (
+      <header className="mobile-header mobile-header-stack">
+        <button type="button" className="stack-back" onClick={pop} aria-label="Back">
+          <ChevronLeft size={22} strokeWidth={2} />
+        </button>
+        <h2 className="stack-title">{activeStack.title}</h2>
+        <span className="stack-spacer" aria-hidden="true" />
+      </header>
+    );
+  }
   const titles: Record<Tab, { title: string; sub: string }> = {
+    home:    { title: "VORX", sub: "Dashboard" },
     markets: { title: "Markets", sub: "Live perpetual pairs" },
     trade:   { title: "Trade", sub: currentMarket ? `${symbolName(currentMarket.symbol)} Perpetual` : "Perpetual" },
-    assets:  { title: "Assets", sub: "Wallet & balances" },
-    profile: { title: "Profile", sub: "Account & security" }
+    orders:  { title: "Orders", sub: "Open positions & history" },
+    account: { title: "Account", sub: "Profile & security" }
   };
-  const h = titles[activeTab] || titles.markets;
+  const h = titles[activeTab] || titles.home;
   return (
     <header className="mobile-header mobile-topbar">
-      <div className="topbar-title">
-        <h1>{h.title}</h1>
-        <p>{h.sub}</p>
-      </div>
+      <button type="button" className="topbar-brand" onClick={() => goTab?.("home")} aria-label="VORX Home">
+        <img className="topbar-brand-logo" src="/brand/vorx-symbol.png" alt="" aria-hidden="true" />
+        <span className="topbar-brand-text">
+          <strong>{h.title}</strong>
+          <small>{h.sub}</small>
+        </span>
+      </button>
       <div className="top-actions">
-        <button className="top-icon" aria-label="search">
+        <button type="button" className="top-glass-btn" onClick={() => goTab?.("markets")} aria-label="Search markets">
           <Search size={18} strokeWidth={1.8} />
         </button>
-        <span className="top-pill top-pro">
-          <Gem size={14} strokeWidth={1.8} />
-          Pro
-        </span>
-        <button className="top-icon" aria-label="notifications">
+        <button type="button" className="top-glass-btn top-glass-btn-bell" onClick={() => showToast?.("info", "No new notifications")} aria-label="Notifications">
           <Bell size={18} strokeWidth={1.8} />
+          <span className="top-bell-dot" aria-hidden="true" />
+        </button>
+        <button type="button" className="top-glass-btn" onClick={() => goTab?.("account")} aria-label="Account">
+          <UserIcon size={18} strokeWidth={1.8} />
         </button>
       </div>
     </header>
   );
 }
 
-function BrandLogo({ variant = "header" }: { variant?: "header" | "auth" }) {
+function BrandLogo({ variant = "header" }: { variant?: "header" | "auth" | "auth-full" }) {
+  const isAuth = variant === "auth" || variant === "auth-full";
+  // Auth pages use the full main artwork (V + vortex + VORX + PROTOCOL + tagline baked into PNG).
+  // Header uses the smaller symbol PNG + Orbitron-rendered "VORX" text alongside.
+  if (isAuth) {
+    return (
+      <div className={`brand-lockup brand-lockup-vorx brand-lockup-auth${variant === "auth-full" ? " brand-lockup-full" : ""}`}>
+        <img
+          className="brand-main"
+          src="/brand/vorx-main.png"
+          alt="VORX Protocol"
+          onError={(e) => {
+            const el = e.currentTarget;
+            if (el.dataset.fallback) return;
+            el.dataset.fallback = "1";
+            el.src = "/brand/vorx-symbol.svg";
+          }}
+        />
+      </div>
+    );
+  }
   return (
-    <div className={`brand-lockup ${variant === "auth" ? "brand-lockup-auth" : ""}`}>
-      <span className="brand-mark" aria-hidden="true"><span /></span>
+    <div className="brand-lockup brand-lockup-vorx">
+      <img
+        className="brand-symbol"
+        src="/brand/vorx-symbol.png"
+        alt=""
+        aria-hidden="true"
+        onError={(e) => {
+          const el = e.currentTarget;
+          if (el.dataset.fallback) return;
+          el.dataset.fallback = "1";
+          el.src = "/brand/vorx-symbol.svg";
+        }}
+      />
       <span className="brand-copy">
-        <strong><span>FLUX</span><em>PERP</em></strong>
-        <small>Perpetual Exchange</small>
+        <strong className="brand-wordmark">VORX</strong>
+        <small className="brand-sub">PROTOCOL</small>
       </span>
     </div>
   );
@@ -853,10 +967,11 @@ function BrandLogo({ variant = "header" }: { variant?: "header" | "auth" }) {
 
 function BottomNav({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) {
   const items: { id: Tab; label: string; icon: string }[] = [
+    { id: "home", label: "Home", icon: "home" },
     { id: "markets", label: "Markets", icon: "grid" },
     { id: "trade", label: "Trade", icon: "pulse" },
-    { id: "assets", label: "Assets", icon: "wallet" },
-    { id: "profile", label: "Profile", icon: "user" }
+    { id: "orders", label: "Orders", icon: "list" },
+    { id: "account", label: "Account", icon: "user" }
   ];
   return (
     <nav className="mobile-bottom">
@@ -871,10 +986,12 @@ function BottomNav({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) {
 }
 
 const ICONS: Record<string, typeof LayoutGrid> = {
+  home: Home,
   grid: LayoutGrid,
   pulse: BarChart3,
   wallet: Wallet,
   user: UserIcon,
+  list: ClipboardList,
   "arrow-down": Download,
   "arrow-up": Upload,
   swap: ArrowLeftRight,
@@ -910,7 +1027,7 @@ function CryptoIcon({ asset }: { asset: string }) {
 }
 
 
-function MarketsTab({ rows, tickers, query, onSelect, push, kycStatus, totalEquity, availableBalance, pnl }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; sort: "hot" | "gainers" | "losers"; setSort: (v: "hot" | "gainers" | "losers") => void; onSelect: (symbol: string) => void; goTab: (t: Tab) => void; push: (p: StackPage) => void; kycStatus: string; totalEquity: number; availableBalance: number; pnl: number }) {
+function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity, pnl, favorites, toggleFavorite }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; sort: "hot" | "gainers" | "losers"; setSort: (v: "hot" | "gainers" | "losers") => void; onSelect: (symbol: string) => void; goTab: (t: Tab) => void; push: (p: StackPage) => void; kycStatus: string; totalEquity: number; availableBalance: number; pnl: number; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
   const quickActions: { icon: string; label: string; action: () => void }[] = [
     { icon: "arrow-down", label: "Deposit",  action: () => push({ id: "deposit-asset",  title: "Deposit" }) },
     { icon: "arrow-up",   label: "Withdraw", action: () => push({ id: "withdraw-asset", title: "Withdraw" }) },
@@ -919,31 +1036,48 @@ function MarketsTab({ rows, tickers, query, onSelect, push, kycStatus, totalEqui
   ];
   const kycNeedsAttention = kycStatus !== "approved";
   const pnlPos = pnl >= 0;
+  const [balanceHidden, setBalanceHidden] = useState(false);
+  const [period, setPeriod] = useState<"today" | "30d">("today");
+  const maskedValue = "$ ******";
+  const pnlPctRaw = totalEquity > 0 ? (pnl / Math.max(1, totalEquity)) * 100 : 0;
   return (
     <div className="tab-page">
       <div className="portfolio-card">
         <div className="pc-head">
-          <span className="pc-label">Total Portfolio Value <Eye size={14} strokeWidth={1.6} /></span>
-          <button className="pc-expand" aria-label="expand">
+          <span className="pc-label">
+            Total Portfolio Value
+            <button type="button" className="pc-eye" aria-label={balanceHidden ? "Show balance" : "Hide balance"} onClick={() => setBalanceHidden((v) => !v)}>
+              {balanceHidden ? <EyeOff size={14} strokeWidth={1.6} /> : <Eye size={14} strokeWidth={1.6} />}
+            </button>
+          </span>
+          <button type="button" className="pc-expand" aria-label="View assets" onClick={() => push({ id: "asset-overview", title: "Assets" })}>
             <ArrowUpRight size={14} strokeWidth={1.8} />
           </button>
         </div>
-        <div className="pc-value">{money(totalEquity)}</div>
+        <div className="pc-value">{balanceHidden ? maskedValue : money(totalEquity)}</div>
         <div className="pc-sub">
-          <span className={`pc-pnl ${pnlPos ? "up" : "down"}`}>{pnlPos ? "+" : ""}{money(pnl)}</span>
-          <span className="pc-badge">{pnlPos ? "+" : ""}{pnl >= 0 ? "0.00%" : "0.00%"}</span>
-          <span className="pc-period">Past 30D</span>
+          <span className={`pc-pnl ${pnlPos ? "up" : "down"}`}>{balanceHidden ? "******" : `${pnlPos ? "+" : ""}${money(pnl)}`}</span>
+          <span className={`pc-badge ${pnlPos ? "up" : "down"}`}>{balanceHidden ? "**" : `${pnlPos ? "+" : ""}${pnlPctRaw.toFixed(2)}%`}</span>
+          <span className="pc-period-toggle">
+            <button type="button" className={period === "today" ? "on" : ""} onClick={() => setPeriod("today")}>Today</button>
+            <button type="button" className={period === "30d" ? "on" : ""} onClick={() => setPeriod("30d")}>30D</button>
+          </span>
         </div>
         <svg className="pc-spark" viewBox="0 0 340 110" preserveAspectRatio="none">
           <defs>
             <linearGradient id="pcGrad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.18" />
-              <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
+              <stop offset="0%" stopColor="#5B8DFF" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#5B8DFF" stopOpacity="0" />
             </linearGradient>
+            <filter id="pcDotGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" />
+            </filter>
           </defs>
           <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8 L340,110 L0,110 Z" fill="url(#pcGrad)" stroke="none" />
-          <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8" stroke="#fff" strokeWidth="1.4" fill="none" strokeLinejoin="round" strokeLinecap="round" />
-          <circle cx="340" cy="8" r="3" fill="#fff" />
+          <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8" stroke="#5B8DFF" strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" />
+          <circle cx="338" cy="8" r="7" fill="#5B8DFF" opacity="0.45" filter="url(#pcDotGlow)" />
+          <circle cx="338" cy="8" r="4" fill="#5B8DFF" />
+          <circle cx="338" cy="8" r="2" fill="#FFFFFF" />
         </svg>
         <div className="pc-axis"><span>30D ago</span><span>Today</span></div>
       </div>
@@ -965,37 +1099,66 @@ function MarketsTab({ rows, tickers, query, onSelect, push, kycStatus, totalEqui
           </div>
         </button>
       )}
-      <div className="market-cols"><span>Market</span><span>Price / Change</span></div>
-      <div className="market-list">
-        {rows.slice(0, 3).map((market) => {
-          const ticker = tickers[market.symbol];
-          const change = ticker?.change || 0;
-          const price = ticker?.price || market.price;
-          const volume = (Math.abs(price * 1234) / 1_000_000).toFixed(1);
-          const changeTone = change > 0 ? "up" : change < 0 ? "down" : "flat";
-          return (
-            <button key={market.symbol} className="market-line hover:bg-slate-800/50 transition-colors" onClick={() => onSelect(market.symbol)}>
-              <CryptoIcon asset={baseAsset(market.symbol)} />
-              <span className="ml-name">
-                <span className="ml-title"><b>{symbolName(market.symbol)}</b><em className="ml-tag">Perp</em></span>
-                <small className="text-slate-400">Vol <span className="tabular-nums">{volume}</span>M</small>
-              </span>
-              <Sparkline symbol={market.symbol} change={change} />
-              <span className="ml-price">
-                <b className="tabular-nums">{money(price)}</b>
-                <small className={`change-badge ${changeTone} tabular-nums`}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</small>
-              </span>
-              <span className="ml-star" aria-hidden="true"><Star size={14} strokeWidth={1.6} /></span>
-            </button>
-          );
-        })}
+      <div className="market-cols home-favorites-head">
+        <span className="home-favorites-title">Favorites Market</span>
+        <button type="button" className="home-favorites-viewall" onClick={() => goTab("markets")}>
+          View All <ChevronRight size={14} aria-hidden="true" />
+        </button>
       </div>
-      {!rows.length && <div className="empty-state">No markets found for "{query}"</div>}
+      {(() => {
+        const favRows = rows.filter((m) => favorites.has(m.symbol)).slice(0, 5);
+        if (!favRows.length) {
+          return (
+            <div className="home-favorites-empty">
+              <Star size={20} strokeWidth={1.6} aria-hidden="true" />
+              <b>No favorites yet</b>
+              <em>Tap the star on any market to pin it here.</em>
+              <button type="button" className="home-favorites-empty-cta" onClick={() => goTab("markets")}>
+                Browse Markets <ChevronRight size={14} aria-hidden="true" />
+              </button>
+            </div>
+          );
+        }
+        return (
+          <div className="market-list">
+            {favRows.map((market) => {
+              const ticker = tickers[market.symbol];
+              const change = ticker?.change || 0;
+              const price = ticker?.price || market.price;
+              const volume = (Math.abs(price * 1234) / 1_000_000).toFixed(1);
+              const changeTone = change > 0 ? "up" : change < 0 ? "down" : "flat";
+              return (
+                <button key={market.symbol} className="market-line hover:bg-slate-800/50 transition-colors" onClick={() => onSelect(market.symbol)}>
+                  <CryptoIcon asset={baseAsset(market.symbol)} />
+                  <span className="ml-name">
+                    <span className="ml-title"><b>{symbolName(market.symbol)}</b><em className="ml-tag">Perp</em></span>
+                    <small className="text-slate-400">Vol <span className="tabular-nums">{volume}</span>M</small>
+                  </span>
+                  <Sparkline symbol={market.symbol} change={change} />
+                  <span className="ml-price">
+                    <b className="tabular-nums">{money(price)}</b>
+                    <small className={`change-badge ${changeTone} tabular-nums`}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</small>
+                  </span>
+                  <button
+                    type="button"
+                    className="ml-star ml-star-on"
+                    aria-label="Remove from favorites"
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(market.symbol); }}
+                  >
+                    <Star size={14} fill="currentColor" strokeWidth={1.6} />
+                  </button>
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
+      {!rows.length && <div className="empty-state">No markets available</div>}
       <button className="footer-card" onClick={() => push({ id: "about", title: "About" })}>
         <div className="footer-icon"><BookOpen size={22} strokeWidth={1.6} /></div>
         <div className="footer-body">
           <strong>Trading Guide</strong>
-          <small>Learn how FluxPerp works and start trading.</small>
+          <small>Learn how VORX Protocol works and start trading.</small>
         </div>
         <ChevronRight size={18} className="footer-arrow" />
       </button>
@@ -1003,25 +1166,12 @@ function MarketsTab({ rows, tickers, query, onSelect, push, kycStatus, totalEqui
   );
 }
 
-function TradeTab({ market, tickers, markets, setCurrentSymbol, openOrders, history, now, openSheet, stake, setStake, duration, durations, setDuration, availableBalance }: { market: Market; tickers: Tickers; markets: Market[]; setCurrentSymbol: (symbol: string) => void; openOrders: BinaryOrder[]; history: BinaryOrder[]; now: number; openSheet: (d: "call" | "put") => void; stake: number; setStake: (n: number) => void; duration: Duration; durations: Duration[]; setDuration: (d: Duration) => void; availableBalance: number }) {
+function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake, setStake, duration, durations, setDuration, availableBalance, favorites, toggleFavorite }: { market: Market; tickers: Tickers; markets: Market[]; setCurrentSymbol: (symbol: string) => void; openSheet: (d: "call" | "put") => void; stake: number; setStake: (n: number) => void; duration: Duration; durations: Duration[]; setDuration: (d: Duration) => void; availableBalance: number; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
   const price = tickers[market.symbol]?.price || market.price;
   const change = tickers[market.symbol]?.change || 0;
-  const [ordersView, setOrdersView] = useState<"open" | "closed">("open");
   const [pairMenuOpen, setPairMenuOpen] = useState(false);
   const [pairSearch, setPairSearch] = useState("");
   const [pairFilter, setPairFilter] = useState<"USDC" | "Favorites" | "Perp">("USDC");
-  const [favorites, setFavorites] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try { return new Set(JSON.parse(localStorage.getItem("flux:fav-markets") || "[]")); } catch { return new Set(); }
-  });
-  const toggleFavorite = (symbol: string) => {
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(symbol)) next.delete(symbol); else next.add(symbol);
-      if (typeof window !== "undefined") localStorage.setItem("flux:fav-markets", JSON.stringify([...next]));
-      return next;
-    });
-  };
   const filteredMarkets = useMemo(() => {
     const q = pairSearch.trim().toLowerCase();
     return markets.filter((m) => {
@@ -1032,8 +1182,6 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openOrders, hist
     });
   }, [markets, pairFilter, pairSearch, favorites]);
   const closePairMenu = () => { setPairMenuOpen(false); setPairSearch(""); };
-  const sourceOrders = ordersView === "open" ? openOrders : history;
-  const visibleOrders = sourceOrders.slice(0, 20);
   return (
     <div className="tab-page trade-screen">
       <section className={`chart-card${pairMenuOpen ? " selector-open" : ""}`}>
@@ -1107,105 +1255,437 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openOrders, hist
           <span className="trade-cta-label"><b>PUT</b><em>Sell lower</em></span>
         </button>
       </div>
-      <div className="order-tabs"><button className={ordersView === "open" ? "on" : ""} onClick={() => setOrdersView("open")}>Open ({openOrders.length})</button><button className={ordersView === "closed" ? "on" : ""} onClick={() => setOrdersView("closed")}>Closed ({history.length})</button></div>
-      <div className="order-list">{visibleOrders.map((order) => <OrderCard key={order.id} order={order} now={now} />)}{!visibleOrders.length && <div className="empty-state">{ordersView === "open" ? "No open positions" : "No closed orders"}</div>}{sourceOrders.length > visibleOrders.length && <div className="empty-state">Showing latest {visibleOrders.length} orders</div>}</div>
     </div>
   );
 }
 
-function OrderSheet({ direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, setDuration, close, submit, submitting }: { direction: "call" | "put"; setDirection: (d: "call" | "put") => void; market: Market; price: number; change: number; availableBalance: number; stake: number; setStake: (n: number) => void; duration: Duration; durations: Duration[]; setDuration: (d: Duration) => void; close: () => void; submit: () => void; submitting: boolean }) {
-  const winAmount = stake * duration.odds;
+type TradeSheetMode = "place" | "running" | "settled";
+
+function TradeSheet({ mode, direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, setDuration, activeOrder, now, close, minimize, tradeAgain, submit, submitting }: {
+  mode: TradeSheetMode;
+  direction: "call" | "put";
+  setDirection: (d: "call" | "put") => void;
+  market: Market;
+  price: number;
+  change: number;
+  availableBalance: number;
+  stake: number;
+  setStake: (n: number) => void;
+  duration: Duration;
+  durations: Duration[];
+  setDuration: (d: Duration) => void;
+  activeOrder: BinaryOrder | null;
+  now: number;
+  close: () => void;
+  minimize: () => void;
+  tradeAgain: () => void;
+  submit: () => void;
+  submitting: boolean;
+}) {
   return (
-    <div className="sheet-bg" onClick={close}>
-      <div className="bottom-sheet order-sheet" onClick={(e) => e.stopPropagation()}>
+    <div className="sheet-bg" onClick={mode === "place" ? close : undefined}>
+      <div className={`bottom-sheet order-sheet sheet-mode-${mode}`} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
-        <div className="order-header">
-          <div className="order-header-left">
-            <strong>{symbolName(market.symbol)}</strong>
-            <span className={`order-header-price ${change >= 0 ? "good" : "bad"}`}>
-              <span className="tabular-nums">{Number(price) >= 1000 ? Number(price).toFixed(2) : Number(price) >= 1 ? Number(price).toFixed(4) : Number(price).toFixed(5)} USDC</span>
-              <em className="tabular-nums">{change >= 0 ? "+" : ""}{change.toFixed(2)}%</em>
-            </span>
-          </div>
-          <Sparkline symbol={market.symbol} change={change} />
-        </div>
-
-        <div className="order-section">
-          <label className="order-section-label">Direction</label>
-          <div className="order-direction">
-            <button type="button" disabled={submitting} className={`order-dir-btn call${direction === "call" ? " on" : ""}`} onClick={() => setDirection("call")}>
-              <span>↗</span> CALL
-            </button>
-            <button type="button" disabled={submitting} className={`order-dir-btn put${direction === "put" ? " on" : ""}`} onClick={() => setDirection("put")}>
-              <span>↘</span> PUT
-            </button>
-          </div>
-        </div>
-
-        <div className="order-section">
-          <label className="order-section-label">Amount (USDC)</label>
-          <div className="order-amount">
-            <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(Math.max(10, stake - 10))}>−</button>
-            <input className="order-amount-input tabular-nums" type="number" min={10} max={5000} value={stake} disabled={submitting} onChange={(e) => setStake(Number(e.target.value || 0))} />
-            <span className="order-amount-unit">USDC</span>
-            <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(stake + 10)}>+</button>
-          </div>
-          <div className="order-amount-meta">
-            <span>Balance: <span className="tabular-nums">{availableBalance.toFixed(2)} USDC</span></span>
-            <span>·</span>
-            <span>Min 10 · Max 5000</span>
-          </div>
-        </div>
-
-        <div className="order-section">
-          <label className="order-section-label">Duration</label>
-          <div className="order-duration">
-            {durations.map((item) => (
-              <button
-                key={item.seconds}
-                type="button"
-                disabled={submitting}
-                className={`order-dur-chip${duration.seconds === item.seconds ? " on" : ""}`}
-                onClick={() => setDuration(item)}
-              >
-                <b>{item.label}</b>
-                <em>+{Math.round(item.odds * 100)}%</em>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="order-summary">
-          <label className="order-section-label">Summary</label>
-          <div className="order-summary-card">
-            <div className="order-summary-row"><span>Investment</span><b className="tabular-nums">{money(stake)}</b></div>
-            <div className="order-summary-row"><span className="good">Est. Profit</span><b className="good tabular-nums">+{money(winAmount)}</b></div>
-            <div className="order-summary-row"><span className="bad">Max Loss</span><b className="bad tabular-nums">-{money(stake)}</b></div>
-          </div>
-        </div>
-
-        <button type="button" className={`order-confirm ${direction}`} disabled={submitting} onClick={submit}>
-          {submitting ? "Placing..." : `Confirm ${direction.toUpperCase()} · ${money(stake)}`}
-        </button>
-        <div className="order-foot"><ShieldCheck size={14} /> Your funds are securely protected</div>
+        {mode !== "place" && (
+          <button type="button" className="sheet-close" aria-label="Minimize" onClick={mode === "running" ? minimize : close}>×</button>
+        )}
+        {mode === "place" && <PlaceModeBody direction={direction} setDirection={setDirection} market={market} price={price} change={change} availableBalance={availableBalance} stake={stake} setStake={setStake} duration={duration} durations={durations} setDuration={setDuration} submit={submit} submitting={submitting} />}
+        {mode === "running" && activeOrder && <RunningModeBody order={activeOrder} now={now} currentPrice={price} />}
+        {mode === "settled" && activeOrder && <SettledModeBody order={activeOrder} tradeAgain={tradeAgain} />}
       </div>
     </div>
   );
 }
 
-function OrderCard({ order, now }: { order: BinaryOrder; now: number }) {
+function PlaceModeBody({ direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, setDuration, submit, submitting }: {
+  direction: "call" | "put";
+  setDirection: (d: "call" | "put") => void;
+  market: Market;
+  price: number;
+  change: number;
+  availableBalance: number;
+  stake: number;
+  setStake: (n: number) => void;
+  duration: Duration;
+  durations: Duration[];
+  setDuration: (d: Duration) => void;
+  submit: () => void;
+  submitting: boolean;
+}) {
+  const winAmount = stake * duration.odds;
+  return (
+    <>
+      <div className="order-header">
+        <div className="order-header-left">
+          <strong>{symbolName(market.symbol)}</strong>
+          <span className={`order-header-price ${change >= 0 ? "good" : "bad"}`}>
+            <span className="tabular-nums">{Number(price) >= 1000 ? Number(price).toFixed(2) : Number(price) >= 1 ? Number(price).toFixed(4) : Number(price).toFixed(5)} USDC</span>
+            <em className="tabular-nums">{change >= 0 ? "+" : ""}{change.toFixed(2)}%</em>
+          </span>
+        </div>
+        <Sparkline symbol={market.symbol} change={change} />
+      </div>
+
+      <div className="order-section">
+        <label className="order-section-label">Direction</label>
+        <div className="order-direction">
+          <button type="button" disabled={submitting} className={`order-dir-btn call${direction === "call" ? " on" : ""}`} onClick={() => setDirection("call")}>
+            <span>↑</span> CALL
+          </button>
+          <button type="button" disabled={submitting} className={`order-dir-btn put${direction === "put" ? " on" : ""}`} onClick={() => setDirection("put")}>
+            <span>↓</span> PUT
+          </button>
+        </div>
+      </div>
+
+      <div className="order-section">
+        <label className="order-section-label">Amount (USDC)</label>
+        <div className="order-amount">
+          <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(Math.max(10, stake - 10))}>−</button>
+          <input className="order-amount-input tabular-nums" type="number" min={10} max={5000} value={stake} disabled={submitting} onChange={(e) => setStake(Number(e.target.value || 0))} />
+          <span className="order-amount-unit">USDC</span>
+          <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(stake + 10)}>+</button>
+        </div>
+        <div className="order-amount-meta">
+          <span>Balance: <span className="tabular-nums">{availableBalance.toFixed(2)} USDC</span></span>
+          <span>·</span>
+          <span>Min 10 · Max 5000</span>
+        </div>
+      </div>
+
+      <div className="order-section">
+        <label className="order-section-label">Duration</label>
+        <div className="order-duration">
+          {durations.map((item) => (
+            <button key={item.seconds} type="button" disabled={submitting} className={`order-dur-chip${duration.seconds === item.seconds ? " on" : ""}`} onClick={() => setDuration(item)}>
+              <b>{item.label}</b>
+              <em>+{Math.round(item.odds * 100)}%</em>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="order-summary">
+        <div className="order-summary-card">
+          <div className="order-summary-row"><span>Investment</span><b className="tabular-nums">{money(stake)}</b></div>
+          <div className="order-summary-row"><span className="good">Est. Profit</span><b className="good tabular-nums">+{money(winAmount)}</b></div>
+          <div className="order-summary-row"><span className="bad">Max Loss</span><b className="bad tabular-nums">-{money(stake)}</b></div>
+        </div>
+      </div>
+
+      <button type="button" className={`order-confirm ${direction}`} disabled={submitting} onClick={submit}>
+        {submitting ? "Placing..." : `Confirm ${direction.toUpperCase()} · ${money(stake)}`}
+      </button>
+      <div className="order-foot"><ShieldCheck size={14} /> Your funds are securely protected</div>
+    </>
+  );
+}
+
+function RunningModeBody({ order, now, currentPrice }: { order: BinaryOrder; now: number; currentPrice: number }) {
+  const totalSec = order.duration.seconds;
+  const elapsedMs = Math.max(0, now - (order.expiresAt - totalSec * 1000));
+  const remainingSec = Math.max(0, Math.ceil((order.expiresAt - now) / 1000));
+  const progress = Math.min(1, Math.max(0, elapsedMs / (totalSec * 1000)));
+  const winAmount = order.stake * order.duration.odds;
+  const payout = order.stake + winAmount;
+  const ringSize = 108;
+  const stroke = 7;
+  const r = (ringSize - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+  const dirColor = order.direction === "call" ? "#16e68d" : "#ff4c5f";
+  const priceDelta = currentPrice - order.entry;
+  const priceChangePct = order.entry ? (priceDelta / order.entry) * 100 : 0;
+  return (
+    <>
+      <div className="run-header">
+        <strong>{symbolName(order.symbol)}</strong>
+        <span className={`run-meta ${order.direction}`}>{order.direction.toUpperCase()} · {order.duration.label} · {money(order.stake)}</span>
+      </div>
+
+      <div className="run-ring-row">
+        <div className="run-side">
+          <small>Entry Price</small>
+          <b className="tabular-nums">{formatTradePrice(order.entry)}</b>
+          <em>USDC</em>
+        </div>
+        <div className="run-ring-wrap" style={{ width: ringSize, height: ringSize }}>
+          <svg width={ringSize} height={ringSize} className="run-ring">
+            <circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} fill="none" />
+            <circle
+              cx={ringSize / 2}
+              cy={ringSize / 2}
+              r={r}
+              stroke={dirColor}
+              strokeWidth={stroke}
+              fill="none"
+              strokeDasharray={circumference}
+              strokeDashoffset={circumference * progress}
+              strokeLinecap="round"
+              transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`}
+              style={{ filter: `drop-shadow(0 0 6px ${dirColor}88)`, transition: "stroke-dashoffset 0.9s linear" }}
+            />
+          </svg>
+          <div className="run-ring-center">
+            <b className="tabular-nums" style={{ color: dirColor }}>{remainingSec}s</b>
+            <em>remaining</em>
+          </div>
+        </div>
+        <div className="run-side run-side-right">
+          <small>Current Price</small>
+          <b className="tabular-nums">{formatTradePrice(currentPrice)}</b>
+          <em className={`tabular-nums ${priceChangePct >= 0 ? "good" : "bad"}`}>{priceChangePct >= 0 ? "+" : ""}{priceChangePct.toFixed(2)}%</em>
+        </div>
+      </div>
+
+      <Sparkline symbol={order.symbol} change={priceChangePct} className="run-sparkline" />
+
+      <div className="order-summary-card run-summary">
+        <div className="order-summary-row"><span>Investment</span><b className="tabular-nums">{money(order.stake)}</b></div>
+        <div className="order-summary-row"><span className="good">Est. Profit</span><b className="good tabular-nums">+{money(winAmount)}</b></div>
+        <div className="order-summary-row"><span>Payout</span><b className="tabular-nums">{money(payout)}</b></div>
+        <div className="order-summary-row"><span className="bad">Max Loss</span><b className="bad tabular-nums">-{money(order.stake)}</b></div>
+      </div>
+
+      <div className="order-foot"><Clock size={14} /> Waiting for settlement...</div>
+    </>
+  );
+}
+
+function SettledModeBody({ order, tradeAgain }: { order: BinaryOrder; tradeAgain: () => void }) {
+  const won = order.status === "win";
+  const profit = Number(order.profit || 0);
+  const winAmount = order.stake * order.duration.odds;
+  const closePrice = order.entry + (won ? (order.direction === "call" ? Math.abs(order.entry * 0.0005) : -Math.abs(order.entry * 0.0005)) : (order.direction === "call" ? -Math.abs(order.entry * 0.0005) : Math.abs(order.entry * 0.0005)));
+  const totalReturn = won ? order.stake + winAmount : 0;
+  return (
+    <>
+      <div className="settled-header">
+        <strong>{symbolName(order.symbol)}</strong>
+      </div>
+
+      <div className="settled-hero">
+        <div className={`settled-trophy ${won ? "win" : "loss"}`}>
+          {won ? "🏆" : "✕"}
+        </div>
+        <b className={`settled-title ${won ? "win" : "loss"}`}>{won ? "You Won!" : "You Lost"}</b>
+        <em className="settled-sub">{order.direction.toUpperCase()} · {order.duration.label}</em>
+      </div>
+
+      <div className="settled-prices">
+        <div className="settled-price-col">
+          <small>Entry Price</small>
+          <b className="tabular-nums">{formatTradePrice(order.entry)}</b>
+        </div>
+        <div className="settled-price-col right">
+          <small>Close Price</small>
+          <b className="tabular-nums">{formatTradePrice(closePrice)}</b>
+        </div>
+      </div>
+
+      <div className="order-summary-card">
+        <div className="order-summary-row"><span>Investment</span><b className="tabular-nums">{money(order.stake)}</b></div>
+        <div className="order-summary-row">
+          <span className={won ? "good" : "bad"}>{won ? "Profit" : "Loss"}</span>
+          <b className={`${won ? "good" : "bad"} tabular-nums`}>{won ? "+" : "-"}{money(won ? winAmount : order.stake)}</b>
+        </div>
+        <div className="order-summary-row"><span>Total Return</span><b className="tabular-nums">{money(totalReturn)}</b></div>
+      </div>
+
+      <button type="button" className="order-confirm call" onClick={tradeAgain}>Trade Again</button>
+    </>
+  );
+}
+
+function formatTradePrice(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  const abs = Math.abs(value);
+  if (abs >= 1000) return value.toFixed(2);
+  if (abs >= 1) return value.toFixed(4);
+  return value.toFixed(5);
+}
+
+function OrderCard({ order, now, onClick }: { order: BinaryOrder; now: number; onClick?: () => void }) {
   const remaining = Math.ceil((order.expiresAt - now) / 1000);
   const awaitingManualSettlement = order.status === "open" && remaining <= 0;
   const riskAmount = order.riskAmount ?? order.stake * order.duration.lossRate;
-  return <div className="order-card"><div><span className={`tag ${order.direction}`}>{order.direction.toUpperCase()}</span><b>{symbolName(order.symbol)}</b></div>{order.status === "open" ? <strong className="tabular-nums">{awaitingManualSettlement ? "Settling" : `${Math.max(0, remaining)}s`}</strong> : <strong className={`${order.status === "win" ? "good" : "bad"} tabular-nums`}>{order.status === "win" ? "Won" : "Lost"} {money(order.profit || 0)}</strong>}<small>Entry <span className="tabular-nums">{money(order.entry)}</span> - Stake <span className="tabular-nums">{money(order.stake)}</span> - Risk <span className="tabular-nums">{money(riskAmount)}</span></small></div>;
+  const inner = (
+    <>
+      <div><span className={`tag ${order.direction}`}>{order.direction.toUpperCase()}</span><b>{symbolName(order.symbol)}</b></div>
+      {order.status === "open" ? <strong className="tabular-nums">{awaitingManualSettlement ? "Settling" : `${Math.max(0, remaining)}s`}</strong> : <strong className={`${order.status === "win" ? "good" : "bad"} tabular-nums`}>{order.status === "win" ? "Won" : "Lost"} {money(order.profit || 0)}</strong>}
+      <small>Entry <span className="tabular-nums">{money(order.entry)}</span> - Stake <span className="tabular-nums">{money(order.stake)}</span> - Risk <span className="tabular-nums">{money(riskAmount)}</span></small>
+    </>
+  );
+  if (onClick) {
+    return <button type="button" className="order-card order-card-clickable" onClick={onClick}>{inner}</button>;
+  }
+  return <div className="order-card">{inner}</div>;
+}
+
+const MARKETS_FAVORITES_KEY = "vorx_market_favorites_v1";
+const LEGACY_FAVORITES_KEY = "flux:fav-markets";
+
+function readFavoritesStorage(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  const result = new Set<string>();
+  try {
+    const raw = window.localStorage.getItem(MARKETS_FAVORITES_KEY);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) for (const item of arr) if (typeof item === "string") result.add(item);
+    }
+  } catch { /* ignore parse errors */ }
+  try {
+    const legacy = window.localStorage.getItem(LEGACY_FAVORITES_KEY);
+    if (legacy !== null) {
+      try {
+        const arr = JSON.parse(legacy);
+        if (Array.isArray(arr)) for (const item of arr) if (typeof item === "string") result.add(item);
+      } catch { /* ignore parse errors */ }
+      window.localStorage.removeItem(LEGACY_FAVORITES_KEY);
+      try {
+        window.localStorage.setItem(MARKETS_FAVORITES_KEY, JSON.stringify([...result]));
+      } catch { /* ignore quota */ }
+    }
+  } catch { /* ignore storage errors */ }
+  return result;
+}
+
+function writeFavoritesStorage(set: Set<string>) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MARKETS_FAVORITES_KEY, JSON.stringify([...set]));
+  } catch { /* ignore quota */ }
+}
+
+type MarketFilter = "all" | "favorites" | "gainers" | "losers" | "volume" | "perpetual";
+
+function syntheticVolume(symbol: string, price: number) {
+  /* Deterministic per-symbol pseudo-volume for sorting + display until ticker volume is wired. */
+  let hash = 0;
+  for (let i = 0; i < symbol.length; i += 1) hash = (hash * 31 + symbol.charCodeAt(i)) | 0;
+  const factor = ((Math.abs(hash) % 90) + 10) / 100; /* 0.10 - 1.00 */
+  return Math.abs(price * (1234 + (Math.abs(hash) % 5000))) * factor;
+}
+
+function MarketsListTab({ rows, tickers, query, setQuery, onSelect, favorites, toggleFavorite }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; onSelect: (symbol: string) => void; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
+  const [filter, setFilter] = useState<MarketFilter>("all");
+
+  function onStarClick(symbol: string, evt: React.MouseEvent) {
+    evt.stopPropagation();
+    toggleFavorite(symbol);
+  }
+
+  const filters: { id: MarketFilter; label: string }[] = [
+    { id: "all", label: "All" },
+    { id: "favorites", label: "Favorites" },
+    { id: "gainers", label: "Gainers" },
+    { id: "losers", label: "Losers" },
+    { id: "volume", label: "Volume" },
+    { id: "perpetual", label: "Perpetual" }
+  ];
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let out = rows.filter((m) => !q || m.symbol.toLowerCase().includes(q) || symbolName(m.symbol).toLowerCase().includes(q));
+    if (filter === "favorites") out = out.filter((m) => favorites.has(m.symbol));
+    else if (filter === "gainers") out = out.filter((m) => (tickers[m.symbol]?.change || 0) > 0).sort((a, b) => (tickers[b.symbol]?.change || 0) - (tickers[a.symbol]?.change || 0));
+    else if (filter === "losers") out = out.filter((m) => (tickers[m.symbol]?.change || 0) < 0).sort((a, b) => (tickers[a.symbol]?.change || 0) - (tickers[b.symbol]?.change || 0));
+    else if (filter === "volume") out = [...out].sort((a, b) => syntheticVolume(b.symbol, tickers[b.symbol]?.price || b.price) - syntheticVolume(a.symbol, tickers[a.symbol]?.price || a.price));
+    else if (filter === "perpetual") out = out.filter((m) => m.symbol.endsWith("-PERP"));
+    return out;
+  }, [rows, tickers, query, filter, favorites]);
+
+  return (
+    <div className="tab-page markets-list-page">
+      <div className="markets-search-row">
+        <Search size={16} className="markets-search-icon" aria-hidden="true" />
+        <input
+          className="markets-search-input"
+          type="text"
+          inputMode="search"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          placeholder="Search BTC, ETH, SOL..."
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {query && <button type="button" className="markets-search-clear" onClick={() => setQuery("")} aria-label="Clear">×</button>}
+      </div>
+      <div className="markets-filter-row">
+        {filters.map((f) => (
+          <button key={f.id} type="button" className={`markets-filter${filter === f.id ? " on" : ""}`} onClick={() => setFilter(f.id)}>
+            {f.id === "favorites" && <Star size={11} fill={filter === "favorites" ? "currentColor" : "none"} strokeWidth={1.8} />}
+            {f.label}
+          </button>
+        ))}
+      </div>
+      <div className="markets-cols-row"><span>Pair</span><span>Last Price</span><span className="markets-cols-change">24h Change</span></div>
+      <div className="markets-list-body">
+        {visible.map((market) => {
+          const ticker = tickers[market.symbol];
+          const change = ticker?.change || 0;
+          const price = ticker?.price || market.price;
+          const volume = (syntheticVolume(market.symbol, price) / 1_000_000).toFixed(1);
+          const tone = change > 0 ? "up" : change < 0 ? "down" : "flat";
+          const fav = favorites.has(market.symbol);
+          return (
+            <button key={market.symbol} type="button" className="markets-row" onClick={() => onSelect(market.symbol)}>
+              <CryptoIcon asset={baseAsset(market.symbol)} />
+              <span className="markets-row-name">
+                <span className="markets-row-pair"><b>{symbolName(market.symbol)}</b><em className="markets-row-tag">Perp</em></span>
+                <small>Vol <span className="tabular-nums">{volume}</span>M</small>
+              </span>
+              <Sparkline symbol={market.symbol} change={change} />
+              <span className="markets-row-price">
+                <b className="tabular-nums">{money(price)}</b>
+                <small className={`tabular-nums change-${tone}`}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</small>
+              </span>
+              <button
+                type="button"
+                className={`markets-row-star${fav ? " on" : ""}`}
+                aria-label={fav ? "Remove from favorites" : "Add to favorites"}
+                onClick={(e) => onStarClick(market.symbol, e)}
+              >
+                <Star size={16} fill={fav ? "currentColor" : "none"} strokeWidth={1.8} />
+              </button>
+            </button>
+          );
+        })}
+        {!visible.length && (
+          <div className="empty-state">
+            {filter === "favorites" ? "No favorites yet — tap the star on any market to save it." : query ? `No markets match "${query}"` : "No markets available"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OrdersTab({ openOrders, history, now, onOpenRunningOrder }: { openOrders: BinaryOrder[]; history: BinaryOrder[]; now: number; onOpenRunningOrder: (order: BinaryOrder) => void }) {
+  const [view, setView] = useState<"open" | "closed">("open");
+  const orders = view === "open" ? openOrders : history;
+  return (
+    <div className="tab-page orders-page">
+      <div className="orders-tabs-row">
+        <button type="button" className={`orders-tab${view === "open" ? " on" : ""}`} onClick={() => setView("open")}>Open <em>({openOrders.length})</em></button>
+        <button type="button" className={`orders-tab${view === "closed" ? " on" : ""}`} onClick={() => setView("closed")}>History <em>({history.length})</em></button>
+      </div>
+      <div className="orders-list-body">
+        {orders.map((order) => (
+          <OrderCard key={order.id} order={order} now={now} onClick={order.status === "open" ? () => onOpenRunningOrder(order) : undefined} />
+        ))}
+        {!orders.length && <div className="empty-state">{view === "open" ? "No open positions" : "No order history"}</div>}
+      </div>
+    </div>
+  );
 }
 
 function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: StackPage) => void }) {
   const rows = mergedAssetRows(assets);
   const totalEquity = assets?.summary.totalEquity ?? rows.reduce((sum, item) => sum + Number(item.balance || 0), 0);
   const available = assets?.summary.availableBalance ?? rows.reduce((sum, item) => sum + Number(item.balance || 0), 0);
-  const frozen = rows.reduce((sum, item) => sum + Number(item.locked || 0), 0);
-  const pnl = assets?.summary.unrealizedPnl ?? 0;
 
   type Activity = { id: string; kind: "deposit" | "withdraw" | "funding"; title: string; time: string; status: string; amount: number; asset: string };
   const activities: Activity[] = [
@@ -1227,24 +1707,7 @@ function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: Stack
           <small>Total Equity</small>
         </div>
         <strong className="equity-value tabular-nums">{money(totalEquity)}</strong>
-        <span className="equity-sub tabular-nums">≈ {Number(totalEquity).toFixed(2)} USDC</span>
-        <div className="equity-stats">
-          <div className="equity-stat">
-            <small>Available</small>
-            <b className="tabular-nums">{money(available)}</b>
-            <span className="tabular-nums">≈ {Number(available).toFixed(2)} USDC</span>
-          </div>
-          <div className="equity-stat">
-            <small>Frozen</small>
-            <b className="tabular-nums">{money(frozen)}</b>
-            <span className="tabular-nums">≈ {Number(frozen).toFixed(2)} USDC</span>
-          </div>
-          <div className="equity-stat">
-            <small>Today PnL</small>
-            <b className={`${pnl >= 0 ? "good" : "bad"} tabular-nums`}>{pnl >= 0 ? "+" : ""}{money(pnl)}</b>
-            <span className={`${pnl >= 0 ? "good" : "bad"} tabular-nums`}>{pnl === 0 ? "0.00%" : `${pnl >= 0 ? "+" : ""}${(pnl / Math.max(1, totalEquity) * 100).toFixed(2)}%`}</span>
-          </div>
-        </div>
+        <span className="equity-sub tabular-nums">≈ {Number(totalEquity).toFixed(2)} USDC · Available <b className="tabular-nums">{Number(available).toFixed(2)}</b></span>
       </section>
 
       <div className="quick-actions">
@@ -1277,11 +1740,10 @@ function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: Stack
             <CryptoIcon asset={asset.asset} />
             <span className="asset-row-name">
               <b>{asset.asset}</b>
-              <em>Spot</em>
+              <em>Available</em>
             </span>
             <span className="asset-row-value">
               <b className="tabular-nums">{Number(asset.balance || 0).toFixed(assetDigits(asset.asset))}</b>
-              <em className="tabular-nums">Frozen {Number(asset.locked || 0).toFixed(assetDigits(asset.asset))}</em>
             </span>
             <ChevronRight className="asset-row-arrow" size={18} />
           </button>
@@ -1358,7 +1820,7 @@ function formatActivityTime(iso: string) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
-function Sparkline({ symbol, change }: { symbol: string; change: number }) {
+function Sparkline({ symbol, change, className }: { symbol: string; change: number; className?: string }) {
   const tone = change > 0 ? "up" : change < 0 ? "down" : "flat";
   const seed = baseAsset(symbol).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const points = Array.from({ length: 7 }, (_, index) => {
@@ -1367,7 +1829,7 @@ function Sparkline({ symbol, change }: { symbol: string; change: number }) {
     return `${index * 9},${Math.max(5, Math.min(31, trend + wave * 0.35)).toFixed(1)}`;
   }).join(" ");
   return (
-    <svg className={`sparkline ${tone}`} viewBox="0 0 54 36" aria-hidden="true">
+    <svg className={`sparkline ${tone}${className ? ` ${className}` : ""}`} viewBox="0 0 54 36" aria-hidden="true">
       <polyline points={points} />
     </svg>
   );
@@ -1382,6 +1844,24 @@ function hashSeed(seed: string) {
     hash = Math.imul(hash, 16777619);
   }
   return hash >>> 0;
+}
+
+function VorxAccountAvatar({ variant }: { variant: "verified" | "pending" | "unverified" }) {
+  return (
+    <div className={`vorx-avatar vorx-avatar-${variant}`} aria-hidden="true">
+      <img
+        className="vorx-avatar-symbol"
+        src="/brand/vorx-symbol.png"
+        alt=""
+        onError={(e) => {
+          const el = e.currentTarget;
+          if (el.dataset.fallback) return;
+          el.dataset.fallback = "1";
+          el.src = "/brand/vorx-symbol.svg";
+        }}
+      />
+    </div>
+  );
 }
 
 function UserIdenticon({ seed, label }: { seed: string; label: string }) {
@@ -1403,47 +1883,93 @@ function UserIdenticon({ seed, label }: { seed: string; label: string }) {
   );
 }
 
-function ProfileTab({ user, kycStatus, push, logout }: { user: User; kycStatus: string; push: (p: StackPage) => void; logout: () => void }) {
+function AccountTab({ user, kycStatus, push, logout }: { user: User; kycStatus: string; push: (p: StackPage) => void; logout: () => void }) {
   const uid = displayUid(user);
-  const email = user.email || "user@fluxperp.local";
+  const email = user.email || "user@vorx.local";
   const displayName = email.split("@")[0] || `UID ${uid}`;
   const avatarLabel = (displayName.match(/[a-z0-9]/i)?.[0] || "U").toUpperCase();
   const kycText = kycStatus === "approved" ? "Verified" : kycStatus === "pending" ? "Reviewing" : kycStatus === "rejected" ? "Rejected" : "Unverified";
-  const menu = [
-    { page: { id: "security", title: "Security" } as StackPage, Icon: LockKeyhole },
-    { page: { id: "kyc", title: "KYC Verification" } as StackPage, Icon: ShieldCheck },
-    { page: { id: "about", title: "About" } as StackPage, Icon: Info },
-    { page: { id: "terms", title: "Terms of Service" } as StackPage, Icon: FileText },
-    { page: { id: "privacy", title: "Privacy Policy" } as StackPage, Icon: FileText },
-    { page: { id: "support", title: "Support" } as StackPage, Icon: Headphones }
+
+  type MenuRow = { page: StackPage; Icon: typeof ShieldCheck; tone: "green" | "yellow" | "muted"; brand?: boolean; subtitle?: string };
+  const accountMenu: MenuRow[] = [
+    { page: { id: "security", title: "Security Settings" }, Icon: ShieldCheck, tone: "green" },
+    { page: { id: "kyc", title: "KYC Verification" }, Icon: BadgeCheck, tone: "yellow" }
+  ];
+  const legalMenu: MenuRow[] = [
+    { page: { id: "about", title: "About VORX" }, Icon: Info, tone: "muted", brand: true, subtitle: "Version, platform info and legal details" },
+    { page: { id: "terms", title: "Terms of Service" }, Icon: FileText, tone: "muted" },
+    { page: { id: "privacy", title: "Privacy Policy" }, Icon: ShieldCheck, tone: "muted" }
+  ];
+  const supportMenu: MenuRow[] = [
+    { page: { id: "support", title: "Support" }, Icon: Headphones, tone: "muted" }
   ];
 
+  const renderRow = ({ page, Icon, tone, brand, subtitle }: MenuRow) => (
+    <button key={page.id} type="button" className={`profile-menu-row${subtitle ? " has-subtitle" : ""}`} onClick={() => push(page)}>
+      {brand ? (
+        <span className="profile-menu-icon profile-menu-icon-brand" aria-hidden="true">
+          <img
+            src="/brand/vorx-symbol.png"
+            alt=""
+            onError={(e) => {
+              const el = e.currentTarget;
+              if (el.dataset.fallback) return;
+              el.dataset.fallback = "1";
+              el.src = "/brand/vorx-symbol.svg";
+            }}
+          />
+        </span>
+      ) : (
+        <Icon className={`profile-menu-icon tone-${tone}`} size={26} strokeWidth={1.8} aria-hidden="true" />
+      )}
+      <span className="profile-menu-text">
+        <span className="profile-menu-label">{page.title}</span>
+        {subtitle && <em className="profile-menu-sub">{subtitle}</em>}
+      </span>
+      <ChevronRight className="profile-menu-arrow" size={18} aria-hidden="true" />
+    </button>
+  );
+
+  const kycVariant = kycStatus === "approved" ? "verified" : kycStatus === "pending" ? "pending" : "unverified";
   return (
     <div className="tab-page profile-page">
-      <div className="profile-card profile-account">
-        <UserIdenticon seed={`${uid}:${email}`} label={avatarLabel} />
-        <div className="profile-main">
-          <div className="profile-title-row">
-            <h2>{displayName}</h2>
-            <span className={`kyc-chip ${kycStatus}`}><BadgeCheck size={13} aria-hidden="true" />{kycText}</span>
+      <div className="profile-hero">
+        <VorxAccountAvatar variant={kycVariant} />
+        <div className="profile-hero-info">
+          <div className="profile-hero-top">
+            <h2 className="profile-name">{displayName}</h2>
+            <span className={`kyc-chip kyc-chip-v2 ${kycVariant}`}>
+              {kycVariant === "verified" && <ShieldCheck size={11} strokeWidth={2.2} aria-hidden="true" />}
+              {kycVariant === "pending" && <Clock size={11} strokeWidth={2.2} aria-hidden="true" />}
+              {kycVariant === "unverified" && <span className="kyc-chip-dot" aria-hidden="true" />}
+              {kycText}
+            </span>
           </div>
-          <p>{email}</p>
-          <div className="profile-meta">
-            <span><small>UID</small><b>{uid}</b></span>
-            <span><small>Ref</small><b>FX789</b></span>
+          <p className="profile-email">{email}</p>
+          <div className="profile-meta-row">
+            <span className="profile-meta-item"><small>UID</small><b className="tabular-nums">{uid}</b></span>
+            <span className="profile-meta-divider" aria-hidden="true" />
+            <span className="profile-meta-item"><small>REF</small><b className="tabular-nums">FX789</b></span>
           </div>
         </div>
       </div>
-      <div className="menu-list profile-menu">
-        {menu.map(({ page, Icon }) => (
-          <button key={page.id} onClick={() => push(page)}>
-            <span className="menu-icon"><Icon size={18} aria-hidden="true" /></span>
-            <span className="menu-title">{page.title}</span>
-            <ChevronRight size={17} aria-hidden="true" />
-          </button>
-        ))}
+
+      <div className="profile-section-title">Account</div>
+      <div className="profile-menu-list">{accountMenu.map(renderRow)}</div>
+
+      <div className="profile-section-title">Support</div>
+      <div className="profile-menu-list">{supportMenu.map(renderRow)}</div>
+
+      <div className="profile-section-title">Legal</div>
+      <div className="profile-menu-list">{legalMenu.map(renderRow)}</div>
+
+      <div className="profile-menu-list">
+        <button type="button" className="profile-menu-row profile-menu-row-logout" onClick={logout}>
+          <LogOut className="profile-menu-icon tone-red" size={26} strokeWidth={1.8} aria-hidden="true" />
+          <span className="profile-menu-label">Log out</span>
+          <ChevronRight className="profile-menu-arrow" size={18} aria-hidden="true" />
+        </button>
       </div>
-      <button className="logout-outline profile-logout" onClick={logout}>Logout</button>
     </div>
   );
 }
@@ -1462,10 +1988,12 @@ function StackContent(props: { page: StackPage; user: User; assets: AssetData | 
   if (page.id === "deposit-history") return <RecordList kind="deposits" assets={props.assets} />;
   if (page.id === "withdraw-history") return <RecordList kind="withdrawals" assets={props.assets} push={push} />;
   if (page.id === "funding-records") return <RecordList kind="transactions" assets={props.assets} />;
-  if (page.id === "swap") return <SwapPage assets={props.assets} swap={props.swap} setSwap={props.setSwap} />;
+  if (page.id === "swap") return <SwapPage assets={props.assets} swap={props.swap} setSwap={props.setSwap} showToast={showToast} />;
+  if (page.id === "asset-overview") return <AssetsTab assets={props.assets} push={push} />;
   if (page.id === "security") return <SecurityPage expanded={props.expandedSecurity} setExpanded={props.setExpandedSecurity} showToast={showToast} />;
   if (page.id === "kyc") return <KycPage kycStatus={props.kycStatus} rejectedReason={props.user.kyc_rejected_reason} setKycStatus={props.setKycStatus} done={() => { showToast("ok", "KYC submitted"); clearStack(); }} />;
-  if (page.id === "support") return <SupportPage support={props.support} />;
+  if (page.id === "support") return <SupportPage support={props.support} push={push} />;
+  if (page.id === "support-chat") return <SupportChatPage />;
   return <StaticPage page={page} settings={props.settings} />;
 }
 
@@ -1864,25 +2392,400 @@ function WithdrawForm({ coin, network, assets, form, setForm, done }: { coin: st
   return <div className="stack-page"><p className="muted-line">Network: {network} - Available: <span className="tabular-nums">{assetAmount(available, coin)}</span></p><label className="mobile-field"><span>Withdrawal Address</span><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={`Enter ${coin} address`} /></label><label className="mobile-field"><span>Amount ({coin})</span><input type="number" min="0" step="any" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label className="mobile-field"><span>Withdrawal Password</span><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>{error && <div className="form-error">{error}</div>}<button className="mobile-primary call" disabled={submitting} onClick={submit}>{submitting ? "Submitting..." : "Withdraw"}</button></div>;
 }
 
-function SwapPage({ assets, swap, setSwap }: { assets: AssetData | null; swap: { from: string; to: string; amount: string }; setSwap: (v: { from: string; to: string; amount: string }) => void }) {
-  const amount = Number(swap.amount || 0);
-  const referenceUsd: Record<string, number> = { USDC: 1 };
-  const fromRate = referenceUsd[swap.from] || 1;
-  const toRate = referenceUsd[swap.to] || 1;
-  const estimated = Number.isFinite(amount) && amount > 0 ? (amount * fromRate * 0.9975) / toRate : 0;
-  const options = pickerCoins(assets, "swap");
-  return <div className="stack-page"><div className="swap-card"><small>From</small><div><select value={swap.from} onChange={(e) => setSwap({ ...swap, from: e.target.value })}>{options.map((c) => <option key={c}>{c}</option>)}</select><input type="number" min="0" step="any" value={swap.amount} onChange={(e) => setSwap({ ...swap, amount: e.target.value })} /></div><small className="muted-line tabular-nums">Available {assetAmount(availableForAsset(assets, swap.from), swap.from)}</small></div><button className="flip-button" aria-label="Flip swap assets" onClick={() => setSwap({ ...swap, from: swap.to, to: swap.from })}><ArrowUpDown size={18} aria-hidden="true" /></button><div className="swap-card"><small>To (Estimated)</small><div><select value={swap.to} onChange={(e) => setSwap({ ...swap, to: e.target.value })}>{options.map((c) => <option key={c}>{c}</option>)}</select><b className="tabular-nums">{assetAmount(estimated, swap.to)}</b></div></div><div className="rate-card">Preview only<br />Estimated fee: 0.25%</div><button className="mobile-primary call" disabled>Swap unavailable</button></div>;
+type SwapQuoteData = {
+  fromAsset: string;
+  toAsset: string;
+  fromAmount: number;
+  fromUsdPrice: number;
+  toUsdPrice: number;
+  fromUsdValue: number;
+  toAmountGross: number;
+  feeAmount: number;
+  feeUsdValue: number;
+  toAmount: number;
+  rate: number;
+  priceSource: { from: string; to: string };
+};
+
+type SwapReceiptData = SwapQuoteData & { swapId: number; txHash: string; completedAt: string };
+
+const SWAP_ASSETS = ["USDC", "BTC", "ETH", "SOL"];
+const SWAP_QUOTE_REFRESH_MS = 12_000;
+
+function shortTxHash(hash: string) {
+  if (!hash || hash.length < 12) return hash;
+  return `${hash.slice(0, 6)}…${hash.slice(-4)}`;
+}
+
+function formatTimestamp(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+}
+
+function SwapPage({ assets, swap, setSwap, showToast }: { assets: AssetData | null; swap: { from: string; to: string; amount: string }; setSwap: (v: { from: string; to: string; amount: string }) => void; showToast: (type: "ok" | "err" | "info", text: string) => void }) {
+  const [pickerOpen, setPickerOpen] = useState<"from" | "to" | null>(null);
+  const [quote, setQuote] = useState<SwapQuoteData | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [receipt, setReceipt] = useState<SwapReceiptData | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [secondsToRefresh, setSecondsToRefresh] = useState(Math.floor(SWAP_QUOTE_REFRESH_MS / 1000));
+  const [flipping, setFlipping] = useState(false);
+
+  const fromAvailable = availableForAsset(assets, swap.from);
+  const toAvailable = availableForAsset(assets, swap.to);
+  const amountNum = Number(swap.amount);
+  const validAmount = Number.isFinite(amountNum) && amountNum > 0;
+  const sameAsset = swap.from === swap.to;
+  const insufficient = validAmount && amountNum > fromAvailable + 1e-9;
+
+  useEffect(() => {
+    if (!validAmount || sameAsset) {
+      setQuote(null);
+      setQuoteError(null);
+      return;
+    }
+    let active = true;
+    setQuoteError(null);
+    const params = new URLSearchParams({ fromAsset: swap.from, toAsset: swap.to, amount: String(amountNum) });
+    fetch(`/api/assets/swap?${params.toString()}`, { cache: "no-store" })
+      .then(async (r) => {
+        const data = await r.json();
+        if (!active) return;
+        if (!r.ok) {
+          setQuote(null);
+          setQuoteError(data?.error || "Quote unavailable");
+        } else {
+          setQuote(data.quote as SwapQuoteData);
+        }
+      })
+      .catch(() => {
+        if (!active) return;
+        setQuote(null);
+        setQuoteError("Quote unavailable");
+      });
+    return () => { active = false; };
+  }, [swap.from, swap.to, amountNum, sameAsset, validAmount, refreshTick]);
+
+  useEffect(() => {
+    if (!validAmount || sameAsset) return;
+    setSecondsToRefresh(Math.floor(SWAP_QUOTE_REFRESH_MS / 1000));
+    const tickTimer = setInterval(() => {
+      setSecondsToRefresh((s) => (s <= 1 ? Math.floor(SWAP_QUOTE_REFRESH_MS / 1000) : s - 1));
+    }, 1000);
+    const refreshTimer = setInterval(() => setRefreshTick((t) => t + 1), SWAP_QUOTE_REFRESH_MS);
+    return () => { clearInterval(tickTimer); clearInterval(refreshTimer); };
+  }, [swap.from, swap.to, amountNum, sameAsset, validAmount]);
+
+  const fromUsdValue = quote?.fromUsdValue ?? (validAmount && quote == null ? amountNum : 0);
+  const toAmount = quote?.toAmount ?? 0;
+  const toUsdValue = quote ? quote.toAmount * quote.toUsdPrice : 0;
+  const priceImpactPct = quote && quote.fromUsdValue > 0 ? ((toUsdValue - quote.fromUsdValue) / quote.fromUsdValue) * 100 : 0;
+
+  function setQuickRatio(ratio: number) {
+    if (fromAvailable <= 0) return;
+    const next = roundToAssetDigits(fromAvailable * ratio, swap.from);
+    setSwap({ ...swap, amount: String(next) });
+  }
+
+  function flipAssets() {
+    setFlipping(true);
+    setTimeout(() => setFlipping(false), 350);
+    setSwap({ ...swap, from: swap.to, to: swap.from });
+  }
+
+  async function submitSwap() {
+    if (submitting || !quote) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/assets/swap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fromAsset: swap.from, toAsset: swap.to, amount: amountNum })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast("err", data?.error || "Swap failed");
+        return;
+      }
+      setReceipt(data.receipt as SwapReceiptData);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  let buttonLabel = "Swap (Preview)";
+  let buttonSub = "Review details before confirming";
+  let buttonDisabled = false;
+  let buttonTone: "primary" | "muted" = "primary";
+  if (sameAsset) {
+    buttonLabel = "Choose a different asset"; buttonSub = ""; buttonDisabled = true; buttonTone = "muted";
+  } else if (!validAmount) {
+    buttonLabel = "Enter amount"; buttonSub = ""; buttonDisabled = true; buttonTone = "muted";
+  } else if (insufficient) {
+    buttonLabel = "Insufficient balance"; buttonSub = ""; buttonDisabled = true; buttonTone = "muted";
+  } else if (quoteError && !quote) {
+    buttonLabel = "Quote unavailable"; buttonSub = quoteError; buttonDisabled = true; buttonTone = "muted";
+  } else if (!quote) {
+    buttonLabel = "Fetching rate…"; buttonSub = "One moment"; buttonDisabled = true; buttonTone = "muted";
+  } else {
+    buttonLabel = "Confirm Swap"; buttonSub = `Receive ${assetAmount(quote.toAmount, swap.to)}`; buttonDisabled = false; buttonTone = "primary";
+  }
+
+  return (
+    <div className="stack-page swap-stack">
+      <section className="swap-card-v2">
+        <header className="swap-head">
+          <div>
+            <h1>Swap</h1>
+            <p>Exchange tokens instantly</p>
+          </div>
+        </header>
+
+        <div className="swap-input-block">
+          <div className="swap-input-label">
+            <span>From</span>
+            <span className="swap-bal">Balance: <b className="tabular-nums">{assetAmount(fromAvailable, swap.from)}</b></span>
+          </div>
+          <div className="swap-input-card">
+            <button type="button" className="swap-asset-trigger" onClick={() => setPickerOpen("from")}>
+              <CryptoIcon asset={swap.from} />
+              <span className="swap-asset-code">{swap.from}</span>
+              <ChevronRight className="swap-asset-caret" size={16} />
+            </button>
+            <div className="swap-amount-wrap">
+              <input
+                className="swap-amount-input tabular-nums"
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                placeholder="0"
+                value={swap.amount}
+                onChange={(e) => setSwap({ ...swap, amount: e.target.value })}
+              />
+              <em className="swap-amount-usd tabular-nums">≈ ${fromUsdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</em>
+            </div>
+          </div>
+          <div className="swap-quick-row">
+            {[0.25, 0.5, 0.75].map((r) => (
+              <button key={r} type="button" className="swap-quick" onClick={() => setQuickRatio(r)}>{Math.round(r * 100)}%</button>
+            ))}
+            <button type="button" className="swap-quick swap-quick-max" onClick={() => setQuickRatio(1)}>Max</button>
+          </div>
+        </div>
+
+        <div className="swap-flip-wrap">
+          <button type="button" className={`swap-flip-btn${flipping ? " flipping" : ""}`} onClick={flipAssets} aria-label="Flip swap direction">
+            <ArrowUpDown size={20} />
+          </button>
+        </div>
+
+        <div className="swap-input-block">
+          <div className="swap-input-label">
+            <span>To (Estimated)</span>
+            <span className="swap-bal">Balance: <b className="tabular-nums">{assetAmount(toAvailable, swap.to)}</b></span>
+          </div>
+          <div className="swap-input-card swap-input-card-out">
+            <button type="button" className="swap-asset-trigger" onClick={() => setPickerOpen("to")}>
+              <CryptoIcon asset={swap.to} />
+              <span className="swap-asset-code">{swap.to}</span>
+              <ChevronRight className="swap-asset-caret" size={16} />
+            </button>
+            <div className="swap-amount-wrap">
+              <b className="swap-amount-output tabular-nums">{toAmount > 0 ? Number(toAmount).toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: assetDigits(swap.to) }) : "0"}</b>
+              <em className="swap-amount-usd tabular-nums">
+                ≈ ${toUsdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {quote && Math.abs(priceImpactPct) > 0.01 && (
+                  <span className={priceImpactPct >= 0 ? " good" : " bad"}> ({priceImpactPct >= 0 ? "+" : ""}{priceImpactPct.toFixed(2)}%)</span>
+                )}
+              </em>
+            </div>
+          </div>
+        </div>
+
+        <div className="swap-preview-card">
+          <div className="swap-preview-row"><span>Estimated fee</span><b className="tabular-nums">0.25%{quote ? ` · ${assetAmount(quote.feeAmount, swap.to)}` : ""}</b></div>
+          <div className="swap-preview-row"><span>Rate</span><b className="tabular-nums">{quote ? `1 ${swap.from} ≈ ${Number(quote.rate).toLocaleString("en-US", { maximumFractionDigits: 8 })} ${swap.to}` : "—"}</b></div>
+        </div>
+
+        <button type="button" className={`swap-primary-btn ${buttonTone}`} disabled={buttonDisabled || submitting} onClick={submitSwap}>
+          <span className="swap-primary-main">{submitting ? "Processing…" : buttonLabel}</span>
+          {buttonSub && <span className="swap-primary-sub">{buttonSub}</span>}
+        </button>
+
+        <div className="swap-rate-status">
+          <span className="swap-rate-status-dot" />
+          <span>Rate is updated in real-time</span>
+          <span className="swap-rate-status-spacer" />
+          <Clock size={13} /> <span className="tabular-nums">00:{secondsToRefresh.toString().padStart(2, "0")}</span>
+        </div>
+      </section>
+
+      {pickerOpen && (
+        <SwapAssetPicker
+          assets={assets}
+          current={pickerOpen === "from" ? swap.from : swap.to}
+          exclude={pickerOpen === "from" ? swap.to : swap.from}
+          onPick={(asset) => {
+            if (pickerOpen === "from") setSwap({ ...swap, from: asset, to: swap.to === asset ? swap.from : swap.to });
+            else setSwap({ ...swap, to: asset, from: swap.from === asset ? swap.to : swap.from });
+            setPickerOpen(null);
+          }}
+          onClose={() => setPickerOpen(null)}
+        />
+      )}
+
+      {receipt && (
+        <SwapSuccessModal receipt={receipt} onClose={() => { setReceipt(null); setSwap({ ...swap, amount: "" }); }} showToast={showToast} />
+      )}
+    </div>
+  );
+}
+
+function roundToAssetDigits(value: number, asset: string) {
+  const d = assetDigits(asset);
+  const f = 10 ** d;
+  return Math.floor(value * f) / f;
+}
+
+function SwapAssetPicker({ assets, current, exclude, onPick, onClose }: { assets: AssetData | null; current: string; exclude?: string; onPick: (asset: string) => void; onClose: () => void }) {
+  const [query, setQuery] = useState("");
+  const list = SWAP_ASSETS
+    .filter((asset) => !exclude || asset !== exclude)
+    .filter((asset) => !query || asset.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <div className="swap-picker-bg" onClick={onClose}>
+      <div className="swap-picker-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-handle" />
+        <div className="swap-picker-search">
+          <Search size={16} />
+          <input autoFocus placeholder="Search token" value={query} onChange={(e) => setQuery(e.target.value)} />
+        </div>
+        <div className="swap-picker-list">
+          {list.map((asset) => {
+            const bal = availableForAsset(assets, asset);
+            const fullName = asset === "USDC" ? "USD Coin" : asset === "BTC" ? "Bitcoin" : asset === "ETH" ? "Ethereum" : asset === "SOL" ? "Solana" : asset;
+            const selected = asset === current;
+            return (
+              <button key={asset} type="button" className={`swap-picker-row${selected ? " selected" : ""}`} onClick={() => onPick(asset)}>
+                <CryptoIcon asset={asset} />
+                <span className="swap-picker-name">
+                  <b>{asset}</b>
+                  <em>{fullName}</em>
+                </span>
+                <span className="swap-picker-bal tabular-nums">{Number(bal).toFixed(assetDigits(asset))}</span>
+                {selected && <BadgeCheck size={18} className="swap-picker-check" />}
+              </button>
+            );
+          })}
+          {!list.length && <div className="swap-picker-empty">No tokens match</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SwapSuccessModal({ receipt, onClose, showToast }: { receipt: SwapReceiptData; onClose: () => void; showToast: (type: "ok" | "err" | "info", text: string) => void }) {
+  function copyHash() {
+    navigator.clipboard?.writeText(receipt.txHash).then(
+      () => showToast("ok", "Copied"),
+      () => showToast("err", "Copy failed")
+    );
+  }
+  return (
+    <div className="swap-success-bg" onClick={onClose}>
+      <div className="swap-success-sheet" onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="swap-success-close" onClick={onClose} aria-label="Close">×</button>
+        <div className="swap-success-icon-wrap">
+          <div className="swap-success-icon">
+            <BadgeCheck size={44} strokeWidth={2.5} />
+          </div>
+        </div>
+        <h2 className="swap-success-title">Swap Successful</h2>
+        <p className="swap-success-sub">Your swap has been completed.</p>
+
+        <div className="swap-success-flow">
+          <div className="swap-success-card">
+            <small>From</small>
+            <div className="swap-success-card-body">
+              <CryptoIcon asset={receipt.fromAsset} />
+              <span className="swap-success-asset"><b>{receipt.fromAsset}</b></span>
+              <span className="swap-success-amount tabular-nums">{Number(receipt.fromAmount).toLocaleString("en-US", { maximumFractionDigits: assetDigits(receipt.fromAsset) })}</span>
+            </div>
+            <em className="tabular-nums">≈ ${Number(receipt.fromUsdValue).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</em>
+          </div>
+          <div className="swap-success-arrow"><ChevronRight size={14} style={{ transform: "rotate(90deg)" }} /></div>
+          <div className="swap-success-card">
+            <small>To</small>
+            <div className="swap-success-card-body">
+              <CryptoIcon asset={receipt.toAsset} />
+              <span className="swap-success-asset"><b>{receipt.toAsset}</b></span>
+              <span className="swap-success-amount tabular-nums">{Number(receipt.toAmount).toLocaleString("en-US", { maximumFractionDigits: assetDigits(receipt.toAsset) })}</span>
+            </div>
+            <em className="tabular-nums">≈ ${Number(receipt.toAmount * receipt.toUsdPrice).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</em>
+          </div>
+        </div>
+
+        <div className="swap-success-details">
+          <div className="swap-success-row"><span>Estimated Fee</span><b className="tabular-nums">0.25% · {assetAmount(receipt.feeAmount, receipt.toAsset)}</b></div>
+          <div className="swap-success-row"><span>Timestamp</span><b className="tabular-nums">{formatTimestamp(receipt.completedAt)}</b></div>
+          <div className="swap-success-row">
+            <span>Transaction ID</span>
+            <button type="button" className="swap-success-hash" onClick={copyHash}>
+              <span className="tabular-nums">{shortTxHash(receipt.txHash)}</span>
+              <FileText size={13} />
+            </button>
+          </div>
+        </div>
+
+        <button type="button" className="swap-success-close-btn" onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
 }
 
 function SecurityPage({ expanded, setExpanded, showToast }: { expanded: "login" | "withdraw" | null; setExpanded: (v: "login" | "withdraw" | null) => void; showToast: (type: "ok" | "err" | "info", text: string) => void }) {
-  return <div className="stack-page"><SecurityPanel id="login" title="Change Password" expanded={expanded} setExpanded={setExpanded} showToast={showToast} /><SecurityPanel id="withdraw" title="Withdrawal Password" expanded={expanded} setExpanded={setExpanded} showToast={showToast} /></div>;
+  const [success, setSuccess] = useState<"login" | "withdraw" | null>(null);
+  useEffect(() => {
+    if (expanded === null) setExpanded("login");
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, []);
+  return (
+    <div className="stack-page security-page">
+      <p className="security-page-sub">Manage your passwords to keep your account secure and protected.</p>
+      <SecurityPanel id="login" title="Change Login Password" subtitle="Use a strong password to keep your account safe." expanded={expanded} setExpanded={setExpanded} showToast={showToast} onSuccess={() => setSuccess("login")} />
+      <SecurityPanel id="withdraw" title="Withdrawal Password" subtitle="Used for withdrawals and sensitive account actions." expanded={expanded} setExpanded={setExpanded} showToast={showToast} onSuccess={() => setSuccess("withdraw")} />
+      {success && <SecurityChangeSuccessModal kind={success} onClose={() => setSuccess(null)} />}
+    </div>
+  );
 }
 
-function SecurityPanel({ id, title, expanded, setExpanded, showToast }: { id: "login" | "withdraw"; title: string; expanded: "login" | "withdraw" | null; setExpanded: (v: "login" | "withdraw" | null) => void; showToast: (type: "ok" | "err" | "info", text: string) => void }) {
+function passwordStrength(pw: string): { score: 0 | 1 | 2 | 3 | 4; label: "Weak" | "Fair" | "Good" | "Strong" } {
+  if (!pw) return { score: 0, label: "Weak" };
+  let score = 0;
+  if (pw.length >= 6) score += 1;
+  if (pw.length >= 10) score += 1;
+  if (/[A-Za-z]/.test(pw) && /[0-9]/.test(pw)) score += 1;
+  if (/[^A-Za-z0-9]/.test(pw)) score += 1;
+  const s = Math.max(0, Math.min(4, score)) as 0 | 1 | 2 | 3 | 4;
+  const label = s <= 1 ? "Weak" : s === 2 ? "Fair" : s === 3 ? "Good" : "Strong";
+  return { score: s, label };
+}
+
+function SecurityPanel({ id, title, subtitle, expanded, setExpanded, showToast, onSuccess }: { id: "login" | "withdraw"; title: string; subtitle: string; expanded: "login" | "withdraw" | null; setExpanded: (v: "login" | "withdraw" | null) => void; showToast: (type: "ok" | "err" | "info", text: string) => void; onSuccess: () => void }) {
   const open = expanded === id;
   const [form, setForm] = useState({ current: "", next: "", confirm: "" });
+  const [show, setShow] = useState({ current: false, next: false, confirm: false });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const strength = passwordStrength(form.next);
+  const ruleLength = form.next.length >= 6;
+  const ruleMix = /[A-Za-z]/.test(form.next) && /[0-9]/.test(form.next);
+  const ruleNotIdentity = form.next.length > 0;
+  const matches = form.next.length > 0 && form.next === form.confirm;
+
   async function save() {
     setError("");
     const current = form.current.trim();
@@ -1902,10 +2805,125 @@ function SecurityPanel({ id, title, expanded, setExpanded, showToast }: { id: "l
     setSubmitting(false);
     if (!res.ok) return setError((await res.json()).error || "Password update failed");
     setForm({ current: "", next: "", confirm: "" });
-    setExpanded(null);
     showToast("ok", id === "login" ? "Password updated" : "Withdrawal password updated");
+    onSuccess();
   }
-  return <div className="accordion"><button onClick={() => setExpanded(open ? null : id)}>{title}<span>{open ? "v" : ">"}</span></button>{open && <div className="accordion-body"><input placeholder={id === "login" ? "Current password" : "Current withdrawal password"} type="password" autoComplete="current-password" value={form.current} onChange={(e) => setForm({ ...form, current: e.target.value })} /><input placeholder={id === "login" ? "New password (6+ chars)" : "New withdrawal password"} type="password" autoComplete="new-password" value={form.next} onChange={(e) => setForm({ ...form, next: e.target.value })} /><input placeholder="Confirm password" type="password" autoComplete="new-password" value={form.confirm} onChange={(e) => setForm({ ...form, confirm: e.target.value })} />{error && <div className="form-error">{error}</div>}<button className="mobile-primary" disabled={submitting} onClick={save}>{submitting ? "Saving..." : "Save"}</button></div>}</div>;
+
+  return (
+    <div className={`sec-card${open ? " open" : ""}`}>
+      <button type="button" className="sec-card-head" onClick={() => setExpanded(open ? null : id)}>
+        <span className={`sec-card-icon sec-card-icon-${id}${open ? " sec-card-icon-on" : ""}`}>
+          <LockKeyhole size={22} strokeWidth={1.8} />
+        </span>
+        <span className="sec-card-meta">
+          <b>{title}</b>
+          <em>{subtitle}</em>
+        </span>
+        <ChevronRight className={`sec-card-chev${open ? " open" : ""}`} size={18} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="sec-card-body">
+          <SecField label="Current Password" placeholder={id === "login" ? "Enter current password" : "Enter current withdrawal password"} value={form.current} onChange={(v) => setForm({ ...form, current: v })} show={show.current} toggleShow={() => setShow({ ...show, current: !show.current })} autoComplete="current-password" />
+          <SecField label="New Password" placeholder="At least 6 characters" value={form.next} onChange={(v) => setForm({ ...form, next: v })} show={show.next} toggleShow={() => setShow({ ...show, next: !show.next })} autoComplete="new-password" />
+          <SecField label="Confirm Password" placeholder="Re-enter new password" value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} show={show.confirm} toggleShow={() => setShow({ ...show, confirm: !show.confirm })} autoComplete="new-password" error={form.confirm.length > 0 && !matches ? "Passwords do not match." : undefined} />
+
+          {form.next.length > 0 && (
+            <div className="sec-strength">
+              <div className="sec-strength-label">
+                <span>Password Strength:</span>
+                <b className={`sec-strength-tag tone-${strength.label.toLowerCase()}`}>{strength.label}</b>
+              </div>
+              <div className="sec-strength-bars">
+                {[0, 1, 2, 3].map((i) => (
+                  <span key={i} className={`sec-strength-bar${i < strength.score ? ` filled tone-${strength.label.toLowerCase()}` : ""}`} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <ul className="sec-rules">
+            <li className={ruleLength ? "ok" : ""}>
+              <span className="sec-rule-bullet"><BadgeCheck size={13} strokeWidth={2} /></span>
+              At least 6 characters
+            </li>
+            <li className={ruleMix ? "ok" : ""}>
+              <span className="sec-rule-bullet"><BadgeCheck size={13} strokeWidth={2} /></span>
+              Use a mix of letters and numbers
+            </li>
+            <li className={ruleNotIdentity ? "ok" : ""}>
+              <span className="sec-rule-bullet"><BadgeCheck size={13} strokeWidth={2} /></span>
+              Avoid using your email or name
+            </li>
+          </ul>
+
+          {error && <div className="sec-error" role="alert">{error}</div>}
+
+          <button
+            type="button"
+            className="sec-submit"
+            disabled={submitting || !form.current || !ruleLength || !matches}
+            onClick={save}
+          >
+            {submitting ? "Saving..." : "Save Changes"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SecField({ label, value, onChange, placeholder, show, toggleShow, autoComplete, error }: { label: string; value: string; onChange: (v: string) => void; placeholder: string; show: boolean; toggleShow: () => void; autoComplete?: string; error?: string }) {
+  return (
+    <div className="sec-field">
+      <label className="sec-field-label">{label}</label>
+      <div className={`sec-input-wrap${error ? " error" : ""}`}>
+        <input
+          type={show ? "text" : "password"}
+          className="sec-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+        />
+        <button type="button" className="sec-input-eye" onClick={toggleShow} aria-label={show ? "Hide password" : "Show password"}>
+          {show ? <Eye size={18} strokeWidth={1.8} /> : <EyeOff size={18} strokeWidth={1.8} />}
+        </button>
+      </div>
+      {error && <p className="sec-field-error">{error}</p>}
+    </div>
+  );
+}
+
+function SecurityChangeSuccessModal({ kind, onClose }: { kind: "login" | "withdraw"; onClose: () => void }) {
+  const title = kind === "login" ? "Password Changed Successfully!" : "Withdrawal Password Updated!";
+  const body = kind === "login"
+    ? "Your login password has been updated successfully."
+    : "Your withdrawal password has been updated successfully.";
+  return (
+    <div className="sec-success-bg" onClick={onClose}>
+      <div className="sec-success-card" onClick={(e) => e.stopPropagation()}>
+        <div className="sec-success-icon-wrap" aria-hidden="true">
+          <svg className="sec-success-sparkles" viewBox="0 0 200 200">
+            <text x="20" y="40" fontSize="16" fill="#26E878">+</text>
+            <text x="170" y="40" fontSize="16" fill="#26E878">+</text>
+            <text x="20" y="170" fontSize="16" fill="#26E878">+</text>
+            <text x="170" y="170" fontSize="16" fill="#26E878">+</text>
+            <text x="100" y="20" fontSize="12" fill="#26E878">+</text>
+            <text x="100" y="195" fontSize="12" fill="#26E878">+</text>
+          </svg>
+          <div className="sec-success-icon">
+            <BadgeCheck size={56} strokeWidth={2.2} />
+          </div>
+        </div>
+        <h2 className="sec-success-title">{title}</h2>
+        <p className="sec-success-body">{body}</p>
+        <button type="button" className="sec-success-ok" onClick={onClose}>OK</button>
+      </div>
+    </div>
+  );
 }
 
 function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus: string; rejectedReason?: string | null; setKycStatus: (v: "none" | "pending" | "approved" | "rejected") => void; done: () => void }) {
@@ -1938,32 +2956,380 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
   if (kycStatus === "rejected") {
     return <div className="stack-page"><div className="profile-card"><h2>KYC Rejected</h2><p>{rejectedReason || "Please contact support or submit updated documents."}</p><span className="kyc-chip rejected">rejected</span></div></div>;
   }
-  return <div className="stack-page"><label className="mobile-field"><span>Legal Name</span><input value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="As shown on your ID document" /></label><label className="mobile-field"><span>Document Type</span><select value={documentType} onChange={(e) => setDocumentType(e.target.value)}><option>Passport</option><option>National ID</option><option>Driving License</option></select></label><label className="upload-box"><input type="file" accept="image/*" onChange={(e) => setFront(e.target.files?.[0] || null)} />{front ? front.name : "Tap to upload front image"}</label><label className="upload-box"><input type="file" accept="image/*" onChange={(e) => setBack(e.target.files?.[0] || null)} />{back ? back.name : "Tap to upload back image"}</label>{error && <div className="form-error">{error}</div>}<button className="mobile-primary call" disabled={submitting} onClick={submit}>{submitting ? "Submitting..." : "Submit KYC"}</button></div>;
-}
-
-function SupportPage({ support }: { support: { telegram: string; whatsapp: string } }) {
+  const formValid = legalName.trim().length > 1 && !!front && !!back;
   return (
-    <div className="stack-page support-page">
-      <div className="support-icon">Support</div>
-      <h2>24/7 Support</h2>
-      <p>Average response under 15 minutes</p>
-      {support.telegram ? <a href={support.telegram} target="_blank" rel="noreferrer">Telegram <span>{">"}</span></a> : <span className="support-disabled">Telegram <span>{">"}</span></span>}
-      {support.whatsapp ? <a href={support.whatsapp} target="_blank" rel="noreferrer">WhatsApp <span>{">"}</span></a> : <span className="support-disabled">WhatsApp <span>{">"}</span></span>}
+    <div className="stack-page kyc-stack">
+      <div className="kyc-field">
+        <label className="kyc-label">Legal Name</label>
+        <div className="kyc-input-wrap">
+          <input
+            className="kyc-input"
+            value={legalName}
+            onChange={(e) => setLegalName(e.target.value)}
+            placeholder="As shown on your ID document"
+            autoComplete="name"
+          />
+          <BadgeCheck className="kyc-input-icon" size={18} strokeWidth={1.8} aria-hidden="true" />
+        </div>
+      </div>
+
+      <div className="kyc-field">
+        <label className="kyc-label">Document Type</label>
+        <div className="kyc-select-wrap">
+          <select className="kyc-select" value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
+            <option>Passport</option>
+            <option>ID Card</option>
+            <option>Driver License</option>
+            <option>Residence Permit</option>
+          </select>
+          <ChevronRight className="kyc-select-caret" size={16} aria-hidden="true" />
+        </div>
+      </div>
+
+      <div className="kyc-field">
+        <label className="kyc-label">Front Image</label>
+        <label className="kyc-upload">
+          <input type="file" accept="image/*" onChange={(e) => setFront(e.target.files?.[0] || null)} />
+          <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
+          <span className="kyc-upload-main">{front ? front.name : "Tap to upload front image"}</span>
+          <span className="kyc-upload-sub">JPG, PNG up to 10MB</span>
+        </label>
+      </div>
+
+      <div className="kyc-field">
+        <label className="kyc-label">Back Image</label>
+        <label className="kyc-upload">
+          <input type="file" accept="image/*" onChange={(e) => setBack(e.target.files?.[0] || null)} />
+          <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
+          <span className="kyc-upload-main">{back ? back.name : "Tap to upload back image"}</span>
+          <span className="kyc-upload-sub">JPG, PNG up to 10MB</span>
+        </label>
+      </div>
+
+      <div className="kyc-security">
+        <ShieldCheck size={20} strokeWidth={1.8} className="kyc-security-icon" aria-hidden="true" />
+        <div className="kyc-security-body">
+          <b>Your information is encrypted and secure</b>
+          <em>We only use it for identity verification.</em>
+        </div>
+      </div>
+
+      {error && <div className="form-error">{error}</div>}
+
+      <button type="button" className="kyc-submit" disabled={submitting || !formValid} onClick={submit}>
+        {submitting ? "Submitting..." : "Submit KYC"}
+      </button>
     </div>
   );
 }
 
-function StaticPage({ page, settings }: { page: StackPage; settings: Partial<PublicSettings> }) {
-  const content =
-    page.id === "about" ? settings.about_content :
-    page.id === "terms" ? settings.terms_content :
-    page.id === "privacy" ? settings.privacy_content :
-    "";
-  const body = (content || "Content will be updated soon.").trim();
+function SupportPage({ support, push }: { support: { telegram: string; whatsapp: string }; push: (p: StackPage) => void }) {
+  return (
+    <div className="stack-page support-stack">
+      <div className="support-hero">
+        <div className="support-hero-icon"><Headphones size={32} strokeWidth={1.8} /></div>
+        <h2 className="support-hero-title">24/7 Support</h2>
+        <p className="support-hero-sub">Average response under 15 minutes</p>
+      </div>
+
+      <div className="support-section-title">Contact Us</div>
+      <div className="support-methods">
+        <button type="button" className="support-method online" onClick={() => push({ id: "support-chat", title: "Online Support" })}>
+          <span className="support-method-icon"><MessageCircle size={22} strokeWidth={2} /></span>
+          <span className="support-method-body">
+            <b>Online Support</b>
+            <em>Chat with our support team</em>
+          </span>
+          <ChevronRight className="support-method-arrow" size={18} aria-hidden="true" />
+        </button>
+
+        {support.telegram ? (
+          <a className="support-method telegram" href={support.telegram} target="_blank" rel="noreferrer">
+            <span className="support-method-icon"><Send size={20} strokeWidth={2} /></span>
+            <span className="support-method-body">
+              <b>Telegram</b>
+              <em>Message us on Telegram</em>
+            </span>
+            <ChevronRight className="support-method-arrow" size={18} aria-hidden="true" />
+          </a>
+        ) : (
+          <span className="support-method telegram support-disabled">
+            <span className="support-method-icon"><Send size={20} strokeWidth={2} /></span>
+            <span className="support-method-body">
+              <b>Telegram</b>
+              <em>Not available</em>
+            </span>
+            <ChevronRight className="support-method-arrow" size={18} aria-hidden="true" />
+          </span>
+        )}
+
+        {support.whatsapp ? (
+          <a className="support-method whatsapp" href={support.whatsapp} target="_blank" rel="noreferrer">
+            <span className="support-method-icon"><MessageCircle size={20} strokeWidth={2} /></span>
+            <span className="support-method-body">
+              <b>WhatsApp</b>
+              <em>Message us on WhatsApp</em>
+            </span>
+            <ChevronRight className="support-method-arrow" size={18} aria-hidden="true" />
+          </a>
+        ) : (
+          <span className="support-method whatsapp support-disabled">
+            <span className="support-method-icon"><MessageCircle size={20} strokeWidth={2} /></span>
+            <span className="support-method-body">
+              <b>WhatsApp</b>
+              <em>Not available</em>
+            </span>
+            <ChevronRight className="support-method-arrow" size={18} aria-hidden="true" />
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type ChatMessage = { id: string; role: "agent" | "user"; text: string; time: string };
+type ChatProvider = {
+  initial(): ChatMessage[];
+  reply(userText: string): Promise<ChatMessage>;
+};
+
+function formatChatTime(date: Date = new Date()) {
+  return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+const mockChatProvider: ChatProvider = {
+  initial() {
+    return [{ id: `seed-${Date.now()}`, role: "agent", text: "Hello! 👋 How can we help you today?", time: formatChatTime() }];
+  },
+  async reply(userText: string) {
+    await new Promise((res) => setTimeout(res, 900 + Math.random() * 600));
+    const lower = userText.toLowerCase();
+    let text = "Thanks. Please share your UID, order ID, or transaction hash and our support team will look into it.";
+    if (lower.includes("order") || lower.includes("trade")) text = "Sure! Please provide your order ID and the symbol so we can check it for you.";
+    else if (lower.includes("deposit") || lower.includes("withdraw")) text = "Please share the network and transaction hash. We'll trace the on-chain status for you.";
+    else if (lower.includes("kyc")) text = "KYC reviews usually take under 30 minutes. If yours is taking longer, send us your UID and we'll follow up.";
+    else if (lower.includes("hi") || lower.includes("hello") || lower.includes("hey")) text = "Hi! 😊 What can we help you with today?";
+    return { id: `agent-${Date.now()}`, role: "agent", text, time: formatChatTime() };
+  }
+};
+
+function useVisualViewport() {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const root = document.documentElement;
+    function update() {
+      const vv = window.visualViewport;
+      if (!vv) {
+        root.style.setProperty("--app-height", `${window.innerHeight}px`);
+        return;
+      }
+      const keyboardHeight = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      root.style.setProperty("--app-height", `${vv.height}px`);
+      root.style.setProperty("--keyboard-height", `${keyboardHeight}px`);
+      if (keyboardHeight > 80) root.classList.add("keyboard-open");
+      else root.classList.remove("keyboard-open");
+    }
+    update();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", update);
+    vv?.addEventListener("scroll", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      vv?.removeEventListener("resize", update);
+      vv?.removeEventListener("scroll", update);
+      window.removeEventListener("orientationchange", update);
+      root.classList.remove("keyboard-open");
+      root.style.removeProperty("--app-height");
+      root.style.removeProperty("--keyboard-height");
+    };
+  }, []);
+}
+
+function SupportChatPage({ provider = mockChatProvider }: { provider?: ChatProvider }) {
+  useVisualViewport();
+  const [messages, setMessages] = useState<ChatMessage[]>(() => provider.initial());
+  const [draft, setDraft] = useState("");
+  const [typing, setTyping] = useState(false);
+  const [sending, setSending] = useState(false);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages, typing]);
+
+  async function send() {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    const userMsg: ChatMessage = { id: `user-${Date.now()}`, role: "user", text, time: formatChatTime() };
+    setMessages((prev) => [...prev, userMsg]);
+    setDraft("");
+    setTyping(true);
+    try {
+      const reply = await provider.reply(text);
+      setMessages((prev) => [...prev, reply]);
+    } finally {
+      setTyping(false);
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="stack-page chat-stack">
+      <div className="chat-scroller" ref={scrollerRef}>
+        <div className="chat-day-pill">Today</div>
+        {messages.map((msg) => (
+          <div key={msg.id} className={`chat-row chat-row-${msg.role}`}>
+            {msg.role === "agent" && <div className="chat-avatar"><Headphones size={16} strokeWidth={1.8} /></div>}
+            <div className="chat-bubble-wrap">
+              {msg.role === "agent" && <div className="chat-bubble-meta"><b>Support Agent</b><small>{msg.time}</small></div>}
+              {msg.role === "user" && <div className="chat-bubble-meta chat-bubble-meta-right"><small>{msg.time}</small></div>}
+              <div className={`chat-bubble chat-bubble-${msg.role}`}>{msg.text}</div>
+            </div>
+          </div>
+        ))}
+        {typing && (
+          <div className="chat-row chat-row-agent">
+            <div className="chat-avatar"><Headphones size={16} strokeWidth={1.8} /></div>
+            <div className="chat-bubble-wrap">
+              <div className="chat-bubble chat-bubble-typing"><span /><span /><span /></div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="chat-input-bar">
+        <button type="button" className="chat-attach" aria-label="Attach">
+          <Paperclip size={18} strokeWidth={1.8} />
+        </button>
+        <textarea
+          ref={textareaRef}
+          className="chat-input"
+          placeholder="Type your message..."
+          rows={1}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="sentences"
+          spellCheck={false}
+          enterKeyHint="send"
+        />
+        <button type="button" className="chat-send" onClick={send} disabled={!draft.trim() || sending} aria-label="Send">
+          <Send size={18} strokeWidth={2} />
+        </button>
+      </div>
+      <div className="chat-footer">Secure Support Chat</div>
+    </div>
+  );
+}
+
+const TERMS_SECTIONS = [
+  { title: "Use of Platform", body: "By accessing or using this platform, you agree to follow these Terms, our platform rules, and all applicable laws and regulations. You are responsible for all activities conducted through your account." },
+  { title: "Eligibility", body: "You must be at least 18 years old or the legal age of majority in your jurisdiction to use this platform. By using our services, you confirm that you meet these requirements." },
+  { title: "Trading Risk", body: "Digital asset trading involves risk. Prices may fluctuate significantly, and you are solely responsible for your trading decisions, orders, positions, gains, and losses." },
+  { title: "Account Security", body: "You are responsible for keeping your account, password, and authentication credentials secure. Please contact support immediately if you notice any unauthorized activity." },
+  { title: "Deposits and Withdrawals", body: "Deposits, withdrawals, and transfers may be subject to verification, network conditions, risk checks, and platform processing rules." },
+  { title: "Prohibited Activities", body: "You agree not to misuse the platform, attempt unauthorized access, engage in fraud, market manipulation, money laundering, or any illegal or harmful activity." },
+  { title: "KYC and Compliance", body: "We may require identity verification or additional information to comply with regulatory, security, and risk-control requirements." },
+  { title: "Service Changes", body: "We may update, suspend, or modify certain services, features, fees, or rules when necessary for security, compliance, maintenance, or product improvement." }
+];
+
+const PRIVACY_MODULES = [
+  { Icon: ShieldCheck, title: "Information We Collect", body: "We collect account information, identity verification details, transaction records, device data, and usage information." },
+  { Icon: LockKeyhole, title: "How We Use Information", body: "We use your data for authentication, KYC verification, funding records, account security, risk control, and customer support." },
+  { Icon: ShieldCheck, title: "Data Security", body: "We apply technical and organizational measures to protect your data against unauthorized access and disclosure." },
+  { Icon: UserIcon, title: "Your Rights", body: "You may request access, correction, or deletion of your personal information where applicable." }
+];
+
+function TermsPage({ onAgree }: { onAgree?: () => void }) {
+  return (
+    <div className="stack-page legal-page">
+      <h1 className="legal-title">Terms of Service</h1>
+      <p className="legal-updated">Last updated: May 20, 2024</p>
+      <ol className="legal-list">
+        {TERMS_SECTIONS.map((section, idx) => (
+          <li key={section.title} className="legal-item">
+            <span className="legal-num">{idx + 1}</span>
+            <div className="legal-item-body">
+              <b>{section.title}</b>
+              <em>{section.body}</em>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <div className="legal-disclaimer">
+        <Info size={15} strokeWidth={1.8} aria-hidden="true" />
+        <span>By continuing, you agree to our Terms of Service.</span>
+      </div>
+      {onAgree && <button type="button" className="legal-primary" onClick={onAgree}>I Understand</button>}
+    </div>
+  );
+}
+
+function PrivacyPage() {
+  return (
+    <div className="stack-page legal-page">
+      <h1 className="legal-title">Privacy Policy</h1>
+      <p className="legal-updated">Last updated: May 20, 2024</p>
+      <div className="privacy-modules">
+        {PRIVACY_MODULES.map(({ Icon, title, body }) => (
+          <div key={title} className="privacy-module">
+            <span className="privacy-module-icon"><Icon size={20} strokeWidth={1.8} /></span>
+            <div className="privacy-module-body">
+              <b>{title}</b>
+              <em>{body}</em>
+            </div>
+            <ChevronRight className="privacy-module-arrow" size={18} aria-hidden="true" />
+          </div>
+        ))}
+      </div>
+      <div className="legal-disclaimer">
+        <LockKeyhole size={15} strokeWidth={1.8} aria-hidden="true" />
+        <span>We are committed to protecting your privacy and handling your data transparently and securely.</span>
+      </div>
+    </div>
+  );
+}
+
+function AboutPage() {
+  return (
+    <div className="stack-page legal-page about-route-page">
+      <img className="about-logo" src="/brand/vorx-symbol.png" alt="VORX" />
+      <h1 className="about-title">VORX Protocol</h1>
+      <p className="about-tagline">Liquidity in motion.</p>
+      <p className="about-body">
+        VORX Protocol is a digital asset trading platform designed for secure account management,
+        efficient trading workflows, funding records, identity verification, and responsive support.
+      </p>
+      <div className="about-stats">
+        <div className="about-stat"><b>24/7</b><em>Trading</em></div>
+        <div className="about-stat"><b>Secure</b><em>Custody</em></div>
+        <div className="about-stat"><b>Global</b><em>Liquidity</em></div>
+      </div>
+      <div className="about-version">
+        <small>Version 1.0.0</small>
+        <small>© 2026 VORX Protocol</small>
+      </div>
+      <div className="legal-disclaimer about-disclaimer">
+        <span>For support or questions, please contact us through the in-app Support center.</span>
+      </div>
+    </div>
+  );
+}
+
+function StaticPage({ page }: { page: StackPage; settings: Partial<PublicSettings> }) {
+  if (page.id === "terms") return <TermsPage />;
+  if (page.id === "privacy") return <PrivacyPage />;
+  if (page.id === "about") return <AboutPage />;
   return (
     <div className="stack-page static-page">
       <h2>{page.title}</h2>
-      {body.split(/\n{2,}/).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+      <p>Content will be updated soon.</p>
     </div>
   );
 }

@@ -35,9 +35,9 @@ export function getSettings(): AppSettings {
   settings.default_signup_balance = "0";
   settings.signup_bonus = "0";
   settings.min_withdrawal_usdc ||= settings.min_withdrawal_amount;
-  settings.about_content ||= "FluxPerp is a simulated perpetual exchange experience for account, funding, and trading workflows.";
-  settings.terms_content ||= "Use this platform responsibly. Trading and balances in this environment are simulated unless explicitly stated otherwise.";
-  settings.privacy_content ||= "We use account information to provide authentication, funding records, KYC status, and support workflows.";
+  settings.about_content ||= "VORX Protocol is a digital asset trading platform designed for secure account management, efficient trading workflows, funding records, identity verification, and responsive support.";
+  settings.terms_content ||= "By accessing or using this platform, you agree to follow these Terms and all applicable laws and regulations.";
+  settings.privacy_content ||= "We use account information for authentication, KYC verification, funding records, account security, risk control, and customer support.";
   settings.binary_options_config ||= JSON.stringify([
     { seconds: 30, odds: 0.3 },
     { seconds: 60, odds: 0.35 },

@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CandleChart } from "./CandleChart";
 
 type Candle = { time: number; open: number; high: number; low: number; close: number };
 type ChartStatus = "loading" | "ready" | "empty" | "error";
 
-function chartSourceLabel(source: string, status: ChartStatus) {
-  if (status === "loading") return "";
-  if (status === "error") return "Market feed unavailable";
-  if (source === "okx") return "OKX market feed";
-  if (source === "binance") return "Live market feed";
-  if (source === "local-fallback") return "Local fallback data";
-  return "Market feed";
-}
+const INTERVALS: { id: string; label: string }[] = [
+  { id: "1m", label: "1m" },
+  { id: "5m", label: "5m" },
+  { id: "15m", label: "15m" },
+  { id: "1h", label: "1h" },
+  { id: "4h", label: "4h" },
+  { id: "1d", label: "1d" }
+];
 
 function emptyChartLabel(source: string, status: ChartStatus) {
   if (status === "loading") return "";
@@ -22,13 +22,27 @@ function emptyChartLabel(source: string, status: ChartStatus) {
   return "No chart data available";
 }
 
+function trailingMA(values: number[], period: number): number | null {
+  if (values.length < period) return null;
+  let sum = 0;
+  for (let i = values.length - period; i < values.length; i += 1) sum += values[i];
+  return sum / period;
+}
+
+function formatPrice(value: number) {
+  if (!Number.isFinite(value)) return "—";
+  const abs = Math.abs(value);
+  if (abs >= 1000) return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (abs >= 1) return value.toFixed(4);
+  return value.toFixed(5);
+}
+
 export function MarketChartPanel({ symbol }: { symbol: string }) {
   const [candles, setCandles] = useState<Candle[]>([]);
   const [source, setSource] = useState("");
   const [status, setStatus] = useState<ChartStatus>("loading");
   const [interval, setIntervalValue] = useState("1m");
   const emptyLabel = emptyChartLabel(source, status);
-  const sourceLabel = chartSourceLabel(source, status);
 
   useEffect(() => {
     let active = true;
@@ -62,25 +76,31 @@ export function MarketChartPanel({ symbol }: { symbol: string }) {
     };
   }, [symbol, interval]);
 
+  const { ma20, ma72 } = useMemo(() => {
+    const closes = candles.map((c) => c.close);
+    return { ma20: trailingMA(closes, 20), ma72: trailingMA(closes, 72) };
+  }, [candles]);
+
   return (
-    <div className="fx-panel trade-chart-card">
-      <div className="fx-panel-pad trade-chart-pad">
-        <div className="fx-choice-grid three chart-intervals">
-          {["1m", "5m", "15m", "1h", "4h", "1d"].map((item) => (
-            <button key={item} className={`fx-choice ${interval === item ? "on" : ""}`} onClick={() => setIntervalValue(item)}>{item}</button>
-          ))}
+    <div className="trade-chart-wrap">
+      <div className="chart-intervals-row">
+        {INTERVALS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`chart-interval-tab${interval === item.id ? " on" : ""}`}
+            onClick={() => setIntervalValue(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <div className="chart-canvas-host">
+        <div className="chart-ma-strip">
+          <span className="chart-ma chart-ma-20">MA(20): <b className="tabular-nums">{ma20 != null ? formatPrice(ma20) : "—"}</b></span>
+          <span className="chart-ma chart-ma-72">MA(72): <b className="tabular-nums">{ma72 != null ? formatPrice(ma72) : "—"}</b></span>
         </div>
         {candles.length ? <CandleChart candles={candles} /> : <div className="empty-chart">{emptyLabel}</div>}
-        <div className="indicator-strip">
-          <span>MA</span>
-          <span>EMA</span>
-          <span>BOLL</span>
-          <span>SAR</span>
-          <span>AVL</span>
-          <span>MACD</span>
-          <span>RSI</span>
-        </div>
-        {sourceLabel && <div className="chart-source">{sourceLabel}</div>}
       </div>
     </div>
   );

@@ -45,7 +45,7 @@ export default function AdminLoginPage() {
       <form className="login-card" onSubmit={submit}>
         <div className="brand">
           <span className="admin-notice">Admin Access</span>
-          <span className="logo">FLUXPERP</span>
+          <span className="logo">VORX</span>
           <span className="logo-sub">Management Console</span>
         </div>
         <h1 className="title">Admin Login</h1>

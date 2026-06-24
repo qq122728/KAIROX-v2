@@ -163,10 +163,10 @@ function seedSettings(database: DatabaseSync) {
     min_withdrawal_usdc: "10",
     min_withdrawal_amount: "10",
     min_withdrawal: "10",
-    withdrawal_notice: "Withdrawals are simulated. Contact support if you need help.",
-    about_content: "FluxPerp is a simulated perpetual exchange experience for account, funding, and trading workflows.",
-    terms_content: "Use this platform responsibly. Trading and balances in this environment are simulated unless explicitly stated otherwise.",
-    privacy_content: "We use account information to provide authentication, funding records, KYC status, and support workflows.",
+    withdrawal_notice: "Withdrawals are reviewed manually. Contact support if you need help.",
+    about_content: "VORX Protocol is a digital asset trading platform designed for secure account management, efficient trading workflows, funding records, identity verification, and responsive support.",
+    terms_content: "By accessing or using this platform, you agree to follow these Terms and all applicable laws and regulations.",
+    privacy_content: "We use account information for authentication, KYC verification, funding records, account security, risk control, and customer support.",
     binary_options_config: JSON.stringify([
       { seconds: 30, odds: 0.3 },
       { seconds: 60, odds: 0.35 },
@@ -437,6 +437,8 @@ function initialize(database: DatabaseSync) {
   addColumn(database, "users", "kyc_verified_at", "TEXT");
   addColumn(database, "users", "kyc_rejected_reason", "TEXT");
   addColumn(database, "users", "kyc_latest_submission_id", "INTEGER");
+  addColumn(database, "users", "nickname", "TEXT");
+  addColumn(database, "users", "invite_code_used", "TEXT");
   addColumn(database, "asset_transactions", "asset", "TEXT NOT NULL DEFAULT 'USDC'");
   addColumn(database, "withdrawals", "asset", "TEXT NOT NULL DEFAULT 'USDC'");
   addColumn(database, "withdrawals", "network", "TEXT");

@@ -451,7 +451,7 @@ export default function AdminPage() {
       <style>{adminCss}</style>
       <div className="admin-shell">
         <aside className="admin-side">
-          <div className="brand"><b>FLUXPERP</b><span>Admin Console</span></div>
+          <div className="brand"><b>VORX</b><span>Admin Console</span></div>
           <nav className="nav">
             {nav.map((item) => {
               const Icon = item.icon;

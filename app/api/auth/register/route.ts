@@ -16,6 +16,8 @@ export async function POST(request: Request) {
       confirmPassword: string;
       withdrawalPassword: string;
       confirmWithdrawalPassword: string;
+      nickname?: string;
+      inviteCode?: string;
     }>(request);
     const email = body.email?.trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return badRequest("Enter a valid email address");
@@ -27,13 +29,17 @@ export async function POST(request: Request) {
     if (password !== confirmPassword) return badRequest("Login passwords do not match");
     if (!withdrawalPassword || withdrawalPassword.length < 6) return badRequest("Withdrawal password must be at least 6 characters");
     if (withdrawalPassword !== confirmWithdrawalPassword) return badRequest("Withdrawal passwords do not match");
+    const nicknameRaw = String(body.nickname || "").trim();
+    const nickname = nicknameRaw ? nicknameRaw.slice(0, 64) : null;
+    const inviteRaw = String(body.inviteCode || "").trim();
+    const inviteCode = inviteRaw ? inviteRaw.slice(0, 64) : null;
 
     const database = getDb();
     const result = database
       .prepare(
-        "INSERT INTO users (public_uid, username, email, password_hash, withdrawal_password_hash, role, balance) VALUES (?, ?, ?, ?, ?, 'trader', ?)"
+        "INSERT INTO users (public_uid, username, email, password_hash, withdrawal_password_hash, role, balance, nickname, invite_code_used) VALUES (?, ?, ?, ?, ?, 'trader', ?, ?, ?)"
       )
-      .run(createPublicUid(database), email, email, hashPassword(password), hashPassword(withdrawalPassword), startingBalance);
+      .run(createPublicUid(database), email, email, hashPassword(password), hashPassword(withdrawalPassword), startingBalance, nickname, inviteCode);
     const userId = Number(result.lastInsertRowid);
     database
       .prepare("INSERT INTO user_assets (user_id, asset, balance) VALUES (?, 'USDC', ?) ON CONFLICT(user_id, asset) DO NOTHING")
