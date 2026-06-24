@@ -8103,15 +8103,43 @@ html.keyboard-open .chat-stack { grid-template-rows: minmax(0, 1fr) auto !import
    Many existing rules strip `outline: none` for visual reasons,
    so we re-introduce a scoped :focus-visible ring that only shows
    for keyboard traversal (not mouse clicks).
+   Form inputs are intentionally excluded: their wrap (.auth-input-wrap,
+   .sec-input-wrap, .kyc-input-wrap, .mobile-field, .swap-amount-wrap,
+   etc.) already paints a visible :focus-within border + glow, and on
+   iOS Safari `:focus-visible` fires on touch tap which would double-up
+   the indicator and look broken.
    ============================================================ */
 button:focus-visible,
 a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
 [role="button"]:focus-visible,
 [tabindex]:not([tabindex="-1"]):focus-visible {
   outline: 2px solid var(--brand-accent-blue, #5B8DFF) !important;
   outline-offset: 2px !important;
   border-radius: 4px;
+}
+
+/* ============================================================
+   Mobile login / register layout polish.
+   - Shrink the auth artwork ~20% so it doesn't crowd the top.
+   - Pull the brand block & headline up.
+   - Tighten vertical rhythm between logo/headline/card.
+   - Keep the form card off the browser bottom bar via safe-area.
+   Applies to both /login and /register (both use .mobile-shell.auth-only).
+   ============================================================ */
+.mobile-shell.auth-only .auth-center {
+  gap: 6px !important;
+  padding-top: calc(env(safe-area-inset-top) + 2px) !important;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 32px) !important;
+}
+.mobile-shell.auth-only .brand-lockup-vorx.brand-lockup-auth {
+  margin: 0 auto !important;
+}
+.mobile-shell.auth-only .brand-lockup-vorx .brand-main {
+  width: clamp(112px, 19dvh, 176px) !important;
+}
+.mobile-shell.auth-only .auth-headline {
+  margin: 0 !important;
+}
+.mobile-shell.auth-only .auth-card {
+  margin-bottom: 0 !important;
 }
