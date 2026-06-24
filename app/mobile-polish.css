@@ -691,6 +691,7 @@
 
 .sheet-bg {
   background: rgba(5, 4, 9, 0.72) !important;
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
 }
 
@@ -1023,6 +1024,8 @@
   border: 1px solid var(--ref-line) !important;
   border-radius: 18px !important;
   color: var(--ref-text) !important;
+  /* 16px prevents iOS Safari focus-zoom */
+  font-size: 16px !important;
 }
 
 .mobile-primary.call,
@@ -1667,7 +1670,8 @@ small.change-badge.flat { color: var(--muted) !important; }
   border: 1px solid var(--line) !important;
   border-radius: 12px !important;
   color: #fff !important;
-  font-size: 15px !important;
+  /* 16px prevents iOS Safari focus-zoom */
+  font-size: 16px !important;
   height: 48px !important;
 }
 .mobile-field input:focus { border-color: rgba(255,255,255,.5) !important; outline: none !important; box-shadow: none !important; }
@@ -2986,7 +2990,8 @@ section.trade-ticket.settings-card {
   color: #fff !important;
   text-align: center !important;
   font-weight: 700 !important;
-  font-size: 15px !important;
+  /* 16px prevents iOS Safari focus-zoom */
+  font-size: 16px !important;
   font-variant-numeric: tabular-nums !important;
   outline: none !important;
 }
@@ -3405,7 +3410,8 @@ section.trade-ticket.settings-card {
   border: 0 !important;
   outline: none !important;
   color: #fff !important;
-  font-size: 15px !important;
+  /* 16px prevents iOS Safari focus-zoom */
+  font-size: 16px !important;
   height: 100% !important;
   padding: 0 !important;
 }
@@ -4970,6 +4976,7 @@ section.trade-ticket.settings-card {
   position: fixed !important;
   inset: 0 !important;
   background: rgba(5, 4, 9, 0.72) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
   backdrop-filter: blur(8px) !important;
   z-index: 70 !important;
   display: flex !important;
@@ -5054,6 +5061,7 @@ section.trade-ticket.settings-card {
   position: fixed !important;
   inset: 0 !important;
   background: rgba(3, 4, 5, 0.78) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
   backdrop-filter: blur(10px) !important;
   z-index: 80 !important;
   display: flex !important;
@@ -5234,13 +5242,13 @@ html, body {
   color: var(--text-main) !important;
   overflow-x: hidden !important;
   overscroll-behavior-x: none !important;
-  max-width: 100vw !important;
+  max-width: 100% !important;
 }
 body:has(.mobile-shell) { background: var(--bg) !important; }
 .mobile-shell {
   background: var(--bg) !important;
   overflow-x: hidden !important;
-  max-width: 100vw !important;
+  max-width: 100% !important;
 }
 .mobile-scroll { background: transparent !important; overflow-x: hidden !important; }
 .tab-page { background: transparent !important; overflow-x: hidden !important; max-width: 100% !important; }
@@ -6187,7 +6195,8 @@ input, select, textarea { color-scheme: dark; }
   border: 0 !important;
   outline: none !important;
   color: #F4F7FB !important;
-  font-size: 15px !important;
+  /* 16px prevents iOS Safari focus-zoom */
+  font-size: 16px !important;
   font-family: inherit !important;
   min-width: 0 !important;
 }
@@ -6659,7 +6668,8 @@ input, select, textarea { color-scheme: dark; }
   border: 0 !important;
   outline: none !important;
   color: var(--text-main) !important;
-  font-size: 15px !important;
+  /* 16px prevents iOS Safari focus-zoom */
+  font-size: 16px !important;
   font-family: inherit !important;
   min-width: 0 !important;
 }
@@ -7638,7 +7648,8 @@ html.keyboard-open .chat-stack { grid-template-rows: minmax(0, 1fr) auto !import
   background: var(--panel) !important;
   border: 1px solid var(--line) !important;
   color: var(--text-main) !important;
-  font-size: 15px !important;
+  /* 16px prevents iOS Safari focus-zoom */
+  font-size: 16px !important;
   font-family: inherit !important;
   outline: none !important;
   box-sizing: border-box !important;
@@ -8052,3 +8063,24 @@ html.keyboard-open .chat-stack { grid-template-rows: minmax(0, 1fr) auto !import
 
 /* Hide old logout button if it lingers in any stack */
 .logout-outline { display: none !important; }
+
+/* ============================================================
+   Batch B — Touch-target hit-area expansion (visual size kept).
+   Uses a transparent ::after overlay so the icon button itself
+   is not resized, only its clickable region.
+   ============================================================ */
+.sheet-close,
+.ml-star,
+.auth-input-eye,
+.sec-input-eye {
+  position: relative !important;
+}
+.sheet-close::after,
+.ml-star::after,
+.auth-input-eye::after,
+.sec-input-eye::after {
+  content: "" !important;
+  position: absolute !important;
+  inset: -10px !important;
+  /* keep transparent — visual icon stays the same */
+}

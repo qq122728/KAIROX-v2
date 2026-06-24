@@ -37,6 +37,7 @@ select {
 
 .shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   grid-template-rows: auto 1fr;
 }
@@ -354,6 +355,7 @@ th {
 
 .auth-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -496,8 +498,8 @@ th {
 }
 
 /* VORX user UI (legacy base — overridden by mobile-polish.css) */
-.fx-page{min-height:100vh;background:radial-gradient(ellipse 80% 42% at 50% -6%,rgba(0,204,255,.08),transparent 64%),#04070e;color:#e0eaf5;font-family:"DM Sans",Arial,sans-serif;padding-bottom:76px}
-.fx-auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(ellipse 80% 42% at 50% -6%,rgba(0,204,255,.08),transparent 64%),#04070e;font-family:"DM Sans",Arial,sans-serif}
+.fx-page{min-height:100vh;min-height:100dvh;background:radial-gradient(ellipse 80% 42% at 50% -6%,rgba(0,204,255,.08),transparent 64%),#04070e;color:#e0eaf5;font-family:"DM Sans",Arial,sans-serif;padding-bottom:76px}
+.fx-auth{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(ellipse 80% 42% at 50% -6%,rgba(0,204,255,.08),transparent 64%),#04070e;font-family:"DM Sans",Arial,sans-serif}
 .fx-card{background:#090f1d;border:1px solid rgba(0,200,255,.09);border-radius:14px;box-shadow:0 28px 64px rgba(0,0,0,.48)}
 .fx-auth-card{width:100%;max-width:390px;padding:36px 30px}.fx-logo{display:block;color:#00ccff;font-family:Syne,sans-serif;font-weight:800;letter-spacing:.07em;text-align:center;font-size:21px}.fx-logo-sub{display:block;margin:2px 0 26px;color:#334d68;font-size:9px;letter-spacing:.22em;text-align:center;text-transform:uppercase}.fx-title{margin:0 0 18px;text-align:center;font-size:18px}
 .fx-field{display:grid;gap:5px;margin-bottom:13px}.fx-field span,.fx-label{color:#6e88a4;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase}.fx-input,.fx-select{width:100%;background:#0d1526;border:1px solid rgba(0,200,255,.09);border-radius:8px;color:#e0eaf5;font:13px "DM Mono",monospace;outline:none;padding:10px 12px}.fx-input:focus,.fx-select:focus{border-color:#00ccff;box-shadow:0 0 0 3px rgba(0,204,255,.12)}
