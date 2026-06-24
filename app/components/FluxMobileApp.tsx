@@ -589,7 +589,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
 
   return (
     <main className="mobile-shell">
-      {toast && <div className="mobile-toast-wrap"><div className={`mobile-toast ${toast.type}`}>{toast.text}</div></div>}
+      {toast && <div className="mobile-toast-wrap" role="status" aria-live={toast.type === "err" ? "assertive" : "polite"}><div className={`mobile-toast ${toast.type}`}>{toast.text}</div></div>}
       <MobileHeader activeStack={activeStack} pop={pop} currentMarket={currentMarket} tickers={tickers} support={support} activeTab={tab} goTab={switchTab} showToast={showToast} />
       <section className="mobile-scroll">
         {activeStack ? (
@@ -769,7 +769,7 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
           {(mode === "login" || (mode === "register" && registerStep === 1)) && (
             <div className={`auth-field${fieldErrors.password ? " has-error" : ""}`}>
               <div className="auth-field-label">
-                <span>Password</span>
+                <label htmlFor="auth-password">Password</label>
                 {mode === "login" && (support.whatsapp
                   ? <a className="forgot-link" href={support.whatsapp} target="_blank" rel="noreferrer">Forgot password? <span aria-hidden="true">→</span></a>
                   : <span className="forgot-link disabled">Forgot password? <span aria-hidden="true">→</span></span>)}
@@ -974,13 +974,23 @@ function BottomNav({ tab, setTab }: { tab: Tab; setTab: (tab: Tab) => void }) {
     { id: "account", label: "Account", icon: "user" }
   ];
   return (
-    <nav className="mobile-bottom">
-      {items.map((item) => (
-        <button key={item.id} className={tab === item.id ? "on" : ""} onClick={() => setTab(item.id)}>
-          <MobileIcon name={item.icon} />
-          <span>{item.label}</span>
-        </button>
-      ))}
+    <nav className="mobile-bottom" aria-label="Primary">
+      {items.map((item) => {
+        const active = tab === item.id;
+        return (
+          <button
+            key={item.id}
+            type="button"
+            className={active ? "on" : ""}
+            onClick={() => setTab(item.id)}
+            aria-current={active ? "page" : undefined}
+            aria-label={item.label}
+          >
+            <MobileIcon name={item.icon} />
+            <span>{item.label}</span>
+          </button>
+        );
+      })}
     </nav>
   );
 }
@@ -1083,14 +1093,14 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
       </div>
       <div className="quick-actions">
         {quickActions.map((a) => (
-          <button key={a.label} className="qa-item" onClick={a.action}>
+          <button key={a.label} type="button" className="qa-item" onClick={a.action}>
             <span className="qa-icon-wrap"><MobileIcon name={a.icon} /></span>
             <span className="qa-label">{a.label}</span>
           </button>
         ))}
       </div>
       {kycNeedsAttention && (
-        <button className="promo-banner" onClick={() => push({ id: "kyc", title: "KYC Verification" })}>
+        <button type="button" className="promo-banner" onClick={() => push({ id: "kyc", title: "KYC Verification" })}>
           <div className="promo-icon"><ShieldCheck size={26} strokeWidth={1.6} /></div>
           <div className="promo-body">
             <strong>Verify your identity</strong>
@@ -1128,7 +1138,20 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
               const volume = (Math.abs(price * 1234) / 1_000_000).toFixed(1);
               const changeTone = change > 0 ? "up" : change < 0 ? "down" : "flat";
               return (
-                <button key={market.symbol} className="market-line hover:bg-slate-800/50 transition-colors" onClick={() => onSelect(market.symbol)}>
+                <div
+                  key={market.symbol}
+                  role="button"
+                  tabIndex={0}
+                  className="market-line hover:bg-slate-800/50 transition-colors"
+                  onClick={() => onSelect(market.symbol)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelect(market.symbol);
+                    }
+                  }}
+                  aria-label={`Open ${symbolName(market.symbol)}`}
+                >
                   <CryptoIcon asset={baseAsset(market.symbol)} />
                   <span className="ml-name">
                     <span className="ml-title"><b>{symbolName(market.symbol)}</b><em className="ml-tag">Perp</em></span>
@@ -1147,14 +1170,14 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
                   >
                     <Star size={14} fill="currentColor" strokeWidth={1.6} />
                   </button>
-                </button>
+                </div>
               );
             })}
           </div>
         );
       })()}
       {!rows.length && <div className="empty-state">No markets available</div>}
-      <button className="footer-card" onClick={() => push({ id: "about", title: "About" })}>
+      <button type="button" className="footer-card" onClick={() => push({ id: "about", title: "About" })}>
         <div className="footer-icon"><BookOpen size={22} strokeWidth={1.6} /></div>
         <div className="footer-body">
           <strong>Trading Guide</strong>
@@ -1172,6 +1195,14 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
   const [pairMenuOpen, setPairMenuOpen] = useState(false);
   const [pairSearch, setPairSearch] = useState("");
   const [pairFilter, setPairFilter] = useState<"USDC" | "Favorites" | "Perp">("USDC");
+  useEffect(() => {
+    if (!pairMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setPairMenuOpen(false); setPairSearch(""); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [pairMenuOpen]);
   const filteredMarkets = useMemo(() => {
     const q = pairSearch.trim().toLowerCase();
     return markets.filter((m) => {
@@ -1187,7 +1218,7 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
       <section className={`chart-card${pairMenuOpen ? " selector-open" : ""}`}>
         <div className="chart-card-head">
           <div className="pair-menu-wrap">
-            <button className={`pair-menu-trigger${pairMenuOpen ? " active" : ""}`} onClick={() => setPairMenuOpen((open) => !open)}>
+            <button type="button" className={`pair-menu-trigger${pairMenuOpen ? " active" : ""}`} onClick={() => setPairMenuOpen((open) => !open)} aria-haspopup="dialog" aria-expanded={pairMenuOpen}>
               {symbolName(market.symbol)} <span className="pair-caret">⌄</span>
             </button>
           </div>
@@ -1200,10 +1231,10 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
         {pairMenuOpen && (
           <>
             <div className="market-selector-backdrop" onClick={closePairMenu} />
-            <div className="market-selector" role="dialog" aria-label="Select market">
+            <div className="market-selector" role="dialog" aria-modal="true" aria-label="Select market">
               <div className="ms-search">
                 <Search size={16} />
-                <input autoFocus placeholder="Search market" value={pairSearch} onChange={(e) => setPairSearch(e.target.value)} />
+                <input autoFocus placeholder="Search market" value={pairSearch} onChange={(e) => setPairSearch(e.target.value)} aria-label="Search market" />
               </div>
               <div className="ms-filters">
                 {(["USDC", "Favorites", "Perp"] as const).map((f) => (
@@ -1222,7 +1253,21 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
                   const selected = m.symbol === market.symbol;
                   const fav = favorites.has(m.symbol);
                   return (
-                    <button key={m.symbol} type="button" className={`ms-row${selected ? " on" : ""}`} onClick={() => { setCurrentSymbol(m.symbol); closePairMenu(); }}>
+                    <div
+                      key={m.symbol}
+                      role="button"
+                      tabIndex={0}
+                      className={`ms-row${selected ? " on" : ""}`}
+                      onClick={() => { setCurrentSymbol(m.symbol); closePairMenu(); }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setCurrentSymbol(m.symbol);
+                          closePairMenu();
+                        }
+                      }}
+                      aria-label={`Select ${symbolName(m.symbol)}`}
+                    >
                       <CryptoIcon asset={baseAsset(m.symbol)} />
                       <span className="ms-row-title">
                         <strong>{symbolName(m.symbol)}</strong>
@@ -1236,7 +1281,7 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
                         <Star size={14} fill={fav ? "currentColor" : "none"} />
                       </button>
                       {selected && <BadgeCheck size={18} className="ms-row-check" />}
-                    </button>
+                    </div>
                   );
                 })}
                 {!filteredMarkets.length && <div className="ms-empty">No markets match</div>}
@@ -1282,9 +1327,28 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
   submit: () => void;
   submitting: boolean;
 }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (mode === "running") minimize();
+      else close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mode, close, minimize]);
+  const titleId = `trade-sheet-title-${mode}`;
   return (
     <div className="sheet-bg" onClick={mode === "place" ? close : undefined}>
-      <div className={`bottom-sheet order-sheet sheet-mode-${mode}`} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`bottom-sheet order-sheet sheet-mode-${mode}`}
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+      >
+        <h2 id={titleId} className="sr-only">
+          {mode === "place" ? "Place order" : mode === "running" ? "Running order" : "Order result"}
+        </h2>
         <div className="sheet-handle" />
         {mode !== "place" && (
           <button type="button" className="sheet-close" aria-label="Minimize" onClick={mode === "running" ? minimize : close}>×</button>
@@ -1342,7 +1406,7 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
         <label className="order-section-label">Amount (USDC)</label>
         <div className="order-amount">
           <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(Math.max(10, stake - 10))}>−</button>
-          <input className="order-amount-input tabular-nums" type="number" min={10} max={5000} value={stake} disabled={submitting} onChange={(e) => setStake(Number(e.target.value || 0))} />
+          <input className="order-amount-input tabular-nums" type="number" min={10} max={5000} value={stake} disabled={submitting} onChange={(e) => setStake(Number(e.target.value || 0))} aria-label="Order amount in USDC" />
           <span className="order-amount-unit">USDC</span>
           <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(stake + 10)}>+</button>
         </div>
@@ -1610,6 +1674,7 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect, favorites, t
           placeholder="Search BTC, ETH, SOL..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          aria-label="Search markets"
         />
         {query && <button type="button" className="markets-search-clear" onClick={() => setQuery("")} aria-label="Clear">×</button>}
       </div>
@@ -1631,7 +1696,20 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect, favorites, t
           const tone = change > 0 ? "up" : change < 0 ? "down" : "flat";
           const fav = favorites.has(market.symbol);
           return (
-            <button key={market.symbol} type="button" className="markets-row" onClick={() => onSelect(market.symbol)}>
+            <div
+              key={market.symbol}
+              role="button"
+              tabIndex={0}
+              className="markets-row"
+              onClick={() => onSelect(market.symbol)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelect(market.symbol);
+                }
+              }}
+              aria-label={`Open ${symbolName(market.symbol)}`}
+            >
               <CryptoIcon asset={baseAsset(market.symbol)} />
               <span className="markets-row-name">
                 <span className="markets-row-pair"><b>{symbolName(market.symbol)}</b><em className="markets-row-tag">Perp</em></span>
@@ -1650,7 +1728,7 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect, favorites, t
               >
                 <Star size={16} fill={fav ? "currentColor" : "none"} strokeWidth={1.8} />
               </button>
-            </button>
+            </div>
           );
         })}
         {!visible.length && (
@@ -2075,7 +2153,7 @@ function RecordList({ kind, assets, push }: { kind: "deposits" | "withdrawals" |
   }
   if (kind === "withdrawals") {
     const rows = assets?.withdrawals || [];
-    return <div className="stack-page"><div className="record-list">{rows.map((row) => <button className="record-line record-button" key={row.id} onClick={() => push?.({ id: "withdraw-detail", title: "Withdrawal Details", record: row })}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network || "Network"} - {compactDateTime(row.created_at)}</small>{row.address && <small className="record-hash">{row.address}</small>}<span className="record-arrow">{">"}</span></button>)}{!rows.length && <div className="empty-state">No withdrawal records</div>}</div></div>;
+    return <div className="stack-page"><div className="record-list">{rows.map((row) => <button type="button" className="record-line record-button" key={row.id} onClick={() => push?.({ id: "withdraw-detail", title: "Withdrawal Details", record: row })}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network || "Network"} - {compactDateTime(row.created_at)}</small>{row.address && <small className="record-hash">{row.address}</small>}<span className="record-arrow">{">"}</span></button>)}{!rows.length && <div className="empty-state">No withdrawal records</div>}</div></div>;
   }
   const rows = assets?.transactions || [];
   return <div className="stack-page"><div className="record-list">{rows.map((row) => <div className="record-line" key={row.id}><div><b>{fundingRecordLabel(row.type)}</b><StatusChip status={row.status} /></div><small className={`tabular-nums ${row.amount >= 0 ? "good" : "bad"}`}>{assetAmount(row.amount, row.asset, true)}</small>{row.note && <small>{row.note}</small>}<small>{compactDateTime(row.created_at)}</small></div>)}{!rows.length && <div className="empty-state">No funding records</div>}</div></div>;
@@ -2389,7 +2467,7 @@ function WithdrawForm({ coin, network, assets, form, setForm, done }: { coin: st
     setForm({ address: "", amount: "10", password: "" });
     done(record);
   }
-  return <div className="stack-page"><p className="muted-line">Network: {network} - Available: <span className="tabular-nums">{assetAmount(available, coin)}</span></p><label className="mobile-field"><span>Withdrawal Address</span><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={`Enter ${coin} address`} /></label><label className="mobile-field"><span>Amount ({coin})</span><input type="number" min="0" step="any" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label className="mobile-field"><span>Withdrawal Password</span><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>{error && <div className="form-error">{error}</div>}<button className="mobile-primary call" disabled={submitting} onClick={submit}>{submitting ? "Submitting..." : "Withdraw"}</button></div>;
+  return <div className="stack-page"><p className="muted-line">Network: {network} - Available: <span className="tabular-nums">{assetAmount(available, coin)}</span></p><label className="mobile-field"><span>Withdrawal Address</span><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={`Enter ${coin} address`} /></label><label className="mobile-field"><span>Amount ({coin})</span><input type="number" min="0" step="any" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label className="mobile-field"><span>Withdrawal Password</span><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>{error && <div className="form-error">{error}</div>}<button type="button" className="mobile-primary call" disabled={submitting} onClick={submit}>{submitting ? "Submitting..." : "Withdraw"}</button></div>;
 }
 
 type SwapQuoteData = {
@@ -2564,6 +2642,7 @@ function SwapPage({ assets, swap, setSwap, showToast }: { assets: AssetData | nu
                 placeholder="0"
                 value={swap.amount}
                 onChange={(e) => setSwap({ ...swap, amount: e.target.value })}
+                aria-label={`Swap amount (${swap.from})`}
               />
               <em className="swap-amount-usd tabular-nums">≈ ${fromUsdValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</em>
             </div>
@@ -2652,16 +2731,22 @@ function roundToAssetDigits(value: number, asset: string) {
 
 function SwapAssetPicker({ assets, current, exclude, onPick, onClose }: { assets: AssetData | null; current: string; exclude?: string; onPick: (asset: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState("");
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const list = SWAP_ASSETS
     .filter((asset) => !exclude || asset !== exclude)
     .filter((asset) => !query || asset.toLowerCase().includes(query.toLowerCase()));
   return (
     <div className="swap-picker-bg" onClick={onClose}>
-      <div className="swap-picker-sheet" onClick={(e) => e.stopPropagation()}>
+      <div className="swap-picker-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="swap-picker-title">
+        <h2 id="swap-picker-title" className="sr-only">Select token</h2>
         <div className="sheet-handle" />
         <div className="swap-picker-search">
           <Search size={16} />
-          <input autoFocus placeholder="Search token" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input autoFocus placeholder="Search token" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search token" />
         </div>
         <div className="swap-picker-list">
           {list.map((asset) => {
@@ -2688,6 +2773,11 @@ function SwapAssetPicker({ assets, current, exclude, onPick, onClose }: { assets
 }
 
 function SwapSuccessModal({ receipt, onClose, showToast }: { receipt: SwapReceiptData; onClose: () => void; showToast: (type: "ok" | "err" | "info", text: string) => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   function copyHash() {
     navigator.clipboard?.writeText(receipt.txHash).then(
       () => showToast("ok", "Copied"),
@@ -2696,14 +2786,14 @@ function SwapSuccessModal({ receipt, onClose, showToast }: { receipt: SwapReceip
   }
   return (
     <div className="swap-success-bg" onClick={onClose}>
-      <div className="swap-success-sheet" onClick={(e) => e.stopPropagation()}>
+      <div className="swap-success-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="swap-success-title">
         <button type="button" className="swap-success-close" onClick={onClose} aria-label="Close">×</button>
         <div className="swap-success-icon-wrap">
           <div className="swap-success-icon">
             <BadgeCheck size={44} strokeWidth={2.5} />
           </div>
         </div>
-        <h2 className="swap-success-title">Swap Successful</h2>
+        <h2 id="swap-success-title" className="swap-success-title">Swap Successful</h2>
         <p className="swap-success-sub">Your swap has been completed.</p>
 
         <div className="swap-success-flow">
@@ -2873,11 +2963,13 @@ function SecurityPanel({ id, title, subtitle, expanded, setExpanded, showToast, 
 }
 
 function SecField({ label, value, onChange, placeholder, show, toggleShow, autoComplete, error }: { label: string; value: string; onChange: (v: string) => void; placeholder: string; show: boolean; toggleShow: () => void; autoComplete?: string; error?: string }) {
+  const fieldId = `sec-field-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")}`;
   return (
     <div className="sec-field">
-      <label className="sec-field-label">{label}</label>
+      <label className="sec-field-label" htmlFor={fieldId}>{label}</label>
       <div className={`sec-input-wrap${error ? " error" : ""}`}>
         <input
+          id={fieldId}
           type={show ? "text" : "password"}
           className="sec-input"
           value={value}
@@ -2898,13 +2990,18 @@ function SecField({ label, value, onChange, placeholder, show, toggleShow, autoC
 }
 
 function SecurityChangeSuccessModal({ kind, onClose }: { kind: "login" | "withdraw"; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
   const title = kind === "login" ? "Password Changed Successfully!" : "Withdrawal Password Updated!";
   const body = kind === "login"
     ? "Your login password has been updated successfully."
     : "Your withdrawal password has been updated successfully.";
   return (
     <div className="sec-success-bg" onClick={onClose}>
-      <div className="sec-success-card" onClick={(e) => e.stopPropagation()}>
+      <div className="sec-success-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sec-success-title">
         <div className="sec-success-icon-wrap" aria-hidden="true">
           <svg className="sec-success-sparkles" viewBox="0 0 200 200">
             <text x="20" y="40" fontSize="16" fill="#26E878">+</text>
@@ -2918,7 +3015,7 @@ function SecurityChangeSuccessModal({ kind, onClose }: { kind: "login" | "withdr
             <BadgeCheck size={56} strokeWidth={2.2} />
           </div>
         </div>
-        <h2 className="sec-success-title">{title}</h2>
+        <h2 id="sec-success-title" className="sec-success-title">{title}</h2>
         <p className="sec-success-body">{body}</p>
         <button type="button" className="sec-success-ok" onClick={onClose}>OK</button>
       </div>
@@ -2960,9 +3057,10 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
   return (
     <div className="stack-page kyc-stack">
       <div className="kyc-field">
-        <label className="kyc-label">Legal Name</label>
+        <label className="kyc-label" htmlFor="kyc-legal-name">Legal Name</label>
         <div className="kyc-input-wrap">
           <input
+            id="kyc-legal-name"
             className="kyc-input"
             value={legalName}
             onChange={(e) => setLegalName(e.target.value)}
@@ -2974,9 +3072,9 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
       </div>
 
       <div className="kyc-field">
-        <label className="kyc-label">Document Type</label>
+        <label className="kyc-label" htmlFor="kyc-document-type">Document Type</label>
         <div className="kyc-select-wrap">
-          <select className="kyc-select" value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
+          <select id="kyc-document-type" className="kyc-select" value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
             <option>Passport</option>
             <option>ID Card</option>
             <option>Driver License</option>
@@ -3218,6 +3316,7 @@ function SupportChatPage({ provider = mockChatProvider }: { provider?: ChatProvi
           autoCapitalize="sentences"
           spellCheck={false}
           enterKeyHint="send"
+          aria-label="Message"
         />
         <button type="button" className="chat-send" onClick={send} disabled={!draft.trim() || sending} aria-label="Send">
           <Send size={18} strokeWidth={2} />

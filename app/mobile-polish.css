@@ -8084,3 +8084,34 @@ html.keyboard-open .chat-stack { grid-template-rows: minmax(0, 1fr) auto !import
   inset: -10px !important;
   /* keep transparent — visual icon stays the same */
 }
+
+/* Batch C — visually-hidden helper for screen-reader-only labels. */
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* ============================================================
+   Batch C — Keyboard focus indicator.
+   Many existing rules strip `outline: none` for visual reasons,
+   so we re-introduce a scoped :focus-visible ring that only shows
+   for keyboard traversal (not mouse clicks).
+   ============================================================ */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--brand-accent-blue, #5B8DFF) !important;
+  outline-offset: 2px !important;
+  border-radius: 4px;
+}
