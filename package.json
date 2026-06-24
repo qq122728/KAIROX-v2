@@ -1,0 +1,37 @@
+{
+  "name": "perp-sim",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "socket": "node realtime/socket-server.mjs",
+    "settlement": "node realtime/settlement-worker.mjs",
+    "build": "next build",
+    "start": "next start",
+    "start:production": "node scripts/start-production.mjs",
+    "lint": "npm run lint:ts && npm run lint:mjs",
+    "lint:ts": "tsc --noEmit --pretty false --project tsconfig.lint.json",
+    "lint:mjs": "node scripts/check-mjs.mjs",
+    "test:regression": "node tests/regression.mjs",
+    "test:e2e": "node tests/e2e-mobile.mjs",
+    "test:acceptance": "npm run lint && npm run build && npm run test:regression && npm run test:e2e"
+  },
+  "dependencies": {
+    "lightweight-charts": "^5.2.0",
+    "lucide-react": "0.468.0",
+    "next": "^16.2.6",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.2.6",
+    "@types/react-dom": "19.2.3",
+    "playwright": "^1.60.0",
+    "typescript": "5.7.2"
+  },
+  "allowScripts": {
+    "sharp@0.34.5": true
+  }
+}
