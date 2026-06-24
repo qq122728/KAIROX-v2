@@ -29,13 +29,24 @@ export async function PATCH(request: Request) {
     if (!body.depositId) return badRequest("缺少充值记录");
     if (body.status !== "approved" && body.status !== "rejected") return badRequest("审核状态无效");
     const row = getDb().prepare("SELECT * FROM deposits WHERE id = ?").get(body.depositId) as
-      | { id: number; user_id: number; asset: string; amount: number; status: string }
+      | { id: number; user_id: number; asset: string; amount: number; status: string; tx_hash: string | null }
       | undefined;
     if (!row) return badRequest("充值记录不存在");
 
     let alreadyProcessed = false;
+    let duplicateTx = false;
     try {
       inTransaction(() => {
+        if (body.status === "approved" && row.tx_hash) {
+          const existingApproved = getDb()
+            .prepare("SELECT id FROM deposits WHERE tx_hash = ? AND id <> ? AND status = 'approved' LIMIT 1")
+            .get(row.tx_hash, row.id) as { id: number } | undefined;
+          if (existingApproved) {
+            duplicateTx = true;
+            throw new Error("Transaction hash has already been approved");
+          }
+        }
+
         const update = getDb()
           .prepare("UPDATE deposits SET status = ?, admin_note = ?, processed_by = ?, processed_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'")
           .run(body.status, body.adminNote?.trim() || null, admin.id, row.id);
@@ -60,6 +71,7 @@ export async function PATCH(request: Request) {
       });
     } catch (error) {
       if (alreadyProcessed) return json({ error: "Deposit record has already been processed" }, 409);
+      if (duplicateTx) return json({ error: "Transaction hash has already been approved" }, 409);
       throw error;
     }
 

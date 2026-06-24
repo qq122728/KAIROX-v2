@@ -34,26 +34,29 @@ function resolveUserId(input?: number | string) {
 
 export async function PATCH(request: Request) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const body = await readJson<UserPatch>(request);
     if (!body.userId) return badRequest("Missing user");
 
     const userId = resolveUserId(body.userId);
     if (!userId) return badRequest("User does not exist");
+    const targetUser = getDb().prepare("SELECT id, role, balance FROM users WHERE id = ?").get(userId) as
+      | { id: number; role: "admin" | "trader"; balance: number }
+      | undefined;
+    if (!targetUser) return badRequest("User does not exist");
     const asset = normalizeAsset(body.asset || "USDC");
     if (!/^[A-Z0-9]{2,12}$/.test(asset)) return badRequest("Invalid asset");
     if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
 
     if (typeof body.delta === "number" && Number.isFinite(body.delta) && body.delta !== 0) {
+      if (targetUser.id === admin.id) return badRequest("Admins cannot adjust their own funds");
       const amount = Math.abs(body.delta);
       const operation = body.operation || (body.delta >= 0 ? "credit" : "debit");
-      const user = getDb().prepare("SELECT id, balance FROM users WHERE id = ?").get(userId) as { id: number; balance: number } | undefined;
-      if (!user) return badRequest("User does not exist");
 
       let invalidBalance = false;
       try {
         inTransaction(() => {
-          ensureUserAssetRow(userId, asset, user.balance);
+          ensureUserAssetRow(userId, asset, targetUser.balance);
 
           if (operation === "credit") {
             getDb()
@@ -98,7 +101,7 @@ export async function PATCH(request: Request) {
           if (isStableAsset(asset)) syncUserStableBalance(userId);
           getDb()
             .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, note) VALUES (?, ?, 'admin_adjust', ?, ?)")
-            .run(userId, asset, operation === "debit" || operation === "freeze" ? -amount : amount, `admin ${operation}`);
+            .run(userId, asset, operation === "debit" || operation === "freeze" ? -amount : amount, `admin#${admin.id} ${operation}`);
         });
       } catch (error) {
         if (invalidBalance) return badRequest(operation === "unfreeze" ? "Insufficient locked balance" : "Insufficient user balance");
@@ -107,6 +110,8 @@ export async function PATCH(request: Request) {
     }
 
     if (body.role === "admin" || body.role === "trader") {
+      if (targetUser.id === admin.id) return badRequest("Admins cannot change their own role");
+      if (body.role === "admin" && targetUser.role !== "admin") return badRequest("Promoting users to admin is not allowed here");
       getDb().prepare("UPDATE users SET role = ? WHERE id = ?").run(body.role, userId);
     }
     if (typeof body.remark === "string") {

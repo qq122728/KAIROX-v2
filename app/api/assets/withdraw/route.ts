@@ -1,13 +1,16 @@
 import { requireUser } from "@/lib/auth";
-import { badRequest, handleError, json, readJson } from "@/lib/api";
+import { badRequest, handleError, json, readJson, tooManyRequests } from "@/lib/api";
 import { getDb, inTransaction } from "@/lib/db";
 import { verifyPassword } from "@/lib/password";
 import { getSettings, settingBool } from "@/lib/settings";
 import { emitRealtime, userRoom } from "@/lib/realtime";
 import { ensureUserAssetRow, freezeAvailableAssetBalance, isStableAsset, normalizeAsset, syncUserStableBalance } from "@/lib/balances";
 import { getAssetUsdPrice } from "@/lib/swap";
+import { consumeUserRate } from "@/lib/rate-limit";
 
 const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
+const withdrawalPasswordLimit = Number(process.env.PERP_SIM_WITHDRAW_PASSWORD_LIMIT || 5);
+const withdrawalPasswordWindowMs = Number(process.env.PERP_SIM_WITHDRAW_PASSWORD_WINDOW_MS || 10 * 60 * 1000);
 
 async function withdrawalUsdValue(asset: string, amount: number) {
   if (isStableAsset(asset)) return amount;
@@ -23,6 +26,9 @@ export async function POST(request: Request) {
     if (!settingBool(settings.withdrawal_enabled || settings.withdrawals_enabled, true)) return badRequest("Withdrawals are currently disabled");
 
     const body = await readJson<{ asset?: string; amount: number; address: string; network?: string; withdrawalPassword: string }>(request);
+    const passwordLimit = consumeUserRate(user.id, "withdrawal-password", withdrawalPasswordLimit, withdrawalPasswordWindowMs);
+    if (!passwordLimit.allowed) return tooManyRequests("Too many withdrawal password attempts. Please try again later.", passwordLimit.retryAfterMs);
+
     const asset = normalizeAsset(String(body.asset || "USDC"));
     const amount = Number(body.amount);
     const minUsd = Number(settings.min_withdrawal_usdc || settings.min_withdrawal_amount || 10);

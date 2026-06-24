@@ -7,6 +7,10 @@ import { sanitizePublicRecords, type PublicRecordRow } from "@/lib/public-record
 
 const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
 
+function isDuplicateTxHashError(error: unknown) {
+  return error instanceof Error && /deposits\.tx_hash|idx_deposits_tx_hash/i.test(error.message);
+}
+
 async function fileToData(file: File | null) {
   if (!file || file.size === 0) return { name: null, mime: null, data: null };
   if (file.size > 2_000_000) throw new Error("Proof image must be smaller than 2MB");
@@ -36,6 +40,10 @@ export async function POST(request: Request) {
     if (!asset || !network) return badRequest("Asset and network are required");
     if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
     if (!Number.isFinite(amount) || amount <= 0) return badRequest("Invalid deposit amount");
+    if (txHash) {
+      const existingTx = getDb().prepare("SELECT id FROM deposits WHERE tx_hash = ? LIMIT 1").get(txHash) as { id: number } | undefined;
+      if (existingTx) return badRequest("Transaction hash has already been submitted");
+    }
 
     const address = getDb()
       .prepare(
@@ -57,18 +65,23 @@ export async function POST(request: Request) {
 
     const proof = await fileToData(form.get("proof") instanceof File ? form.get("proof") as File : null);
     let depositId = 0;
-    inTransaction(() => {
-      const result = getDb()
-        .prepare(
-          `INSERT INTO deposits (user_id, asset, network, amount, tx_hash, proof_name, proof_data, proof_mime, deposit_address, address_source, status, note)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
-        )
-        .run(user.id, asset, network, amount, txHash, proof.name, proof.data, proof.mime, address.address, address.source, "User submitted deposit");
-      depositId = Number(result.lastInsertRowid);
-      getDb()
-        .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'deposit_request', ?, 'pending', ?)")
-        .run(user.id, asset, amount, `Deposit request #${depositId} pending system review`);
-    });
+    try {
+      inTransaction(() => {
+        const result = getDb()
+          .prepare(
+            `INSERT INTO deposits (user_id, asset, network, amount, tx_hash, proof_name, proof_data, proof_mime, deposit_address, address_source, status, note)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
+          )
+          .run(user.id, asset, network, amount, txHash, proof.name, proof.data, proof.mime, address.address, address.source, "User submitted deposit");
+        depositId = Number(result.lastInsertRowid);
+        getDb()
+          .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'deposit_request', ?, 'pending', ?)")
+          .run(user.id, asset, amount, `Deposit request #${depositId} pending system review`);
+      });
+    } catch (error) {
+      if (isDuplicateTxHashError(error)) return badRequest("Transaction hash has already been submitted");
+      throw error;
+    }
 
     emitRealtime("admin:update", { room: "admin", payload: { type: "deposit:created", depositId, userId: user.id } });
     emitRealtime("user:update", { room: userRoom(user.id), payload: { type: "deposit:created", depositId } });

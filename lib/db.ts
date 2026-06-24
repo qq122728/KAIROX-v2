@@ -451,7 +451,8 @@ function initialize(database: DatabaseSync) {
   database.exec("CREATE INDEX IF NOT EXISTS idx_login_attempts_locked_until ON login_attempts(locked_until);");
   database.exec("CREATE INDEX IF NOT EXISTS idx_deposits_user_created ON deposits(user_id, created_at);");
   database.exec("CREATE INDEX IF NOT EXISTS idx_deposits_status_created ON deposits(status, created_at);");
-  database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_deposits_tx_asset_network ON deposits(tx_hash, asset, network) WHERE tx_hash IS NOT NULL;");
+  database.exec("DROP INDEX IF EXISTS idx_deposits_tx_asset_network;");
+  database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_deposits_tx_hash ON deposits(tx_hash) WHERE tx_hash IS NOT NULL;");
   database.exec("CREATE INDEX IF NOT EXISTS idx_kyc_user_created ON kyc_submissions(user_id, created_at);");
   database.exec("CREATE INDEX IF NOT EXISTS idx_kyc_status_created ON kyc_submissions(status, created_at);");
 
