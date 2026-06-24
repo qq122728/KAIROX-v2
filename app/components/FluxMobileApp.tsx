@@ -3,7 +3,7 @@
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpDown, BadgeCheck, ChevronRight, FileText, Headphones, Info, LockKeyhole, ShieldCheck,
-  Search, Bell, Gem, Eye, ArrowUpRight,
+  Search, Bell, Gem, Eye, ArrowUpRight, Mail,
   Download, Upload, ArrowLeftRight, Clock,
   LayoutGrid, BarChart3, Wallet, User as UserIcon,
   Star, BookOpen
@@ -15,9 +15,9 @@ import { displayUid } from "@/lib/uid";
 
 type Tab = "markets" | "trade" | "assets" | "profile";
 type StackPage =
-  | { id: "deposit-asset"; title: "Deposit" }
-  | { id: "deposit-network"; title: "Select Network" }
-  | { id: "deposit-address"; title: "Deposit Address" }
+  | { id: "deposit-asset"; title: string }
+  | { id: "deposit-network"; title: string }
+  | { id: "deposit-address"; title: string }
   | { id: "withdraw-asset"; title: "Withdraw" }
   | { id: "withdraw-network"; title: "Select Network" }
   | { id: "withdraw-form"; title: string }
@@ -221,6 +221,9 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
   const [expandedSecurity, setExpandedSecurity] = useState<"login" | "withdraw" | null>("login");
   const [authForm, setAuthForm] = useState({ email: "", password: "", confirmPassword: "", name: "", withdrawPassword: "", confirmWithdrawPassword: "", invite: "" });
   const [authError, setAuthError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"email" | "password" | "confirmPassword" | "withdrawPassword" | "confirmWithdrawPassword", string>>>({});
+  const [pwVisible, setPwVisible] = useState<Record<string, boolean>>({});
+  const [registerStep, setRegisterStep] = useState<1 | 2>(1);
   const [authChecked, setAuthChecked] = useState(false);
   const loadingRef = useRef(false);
 
@@ -401,14 +404,57 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
     pushMobileUrl(tabPath(next, currentSymbol));
   }
 
+  function validateAuth(stage: "login" | "register-1" | "register-2") {
+    const errs: typeof fieldErrors = {};
+    if (stage === "login" || stage === "register-1") {
+      const email = authForm.email.trim();
+      if (!email) errs.email = "Email is required";
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = "Invalid email format";
+      if (!authForm.password) errs.password = "Password is required";
+      else if (authForm.password.length < 6) errs.password = "Password must be at least 6 characters";
+    }
+    if (stage === "register-1") {
+      if (!authForm.confirmPassword) errs.confirmPassword = "Please confirm your password";
+      else if (authForm.password !== authForm.confirmPassword) errs.confirmPassword = "Passwords do not match";
+    }
+    if (stage === "register-2") {
+      if (!authForm.withdrawPassword) errs.withdrawPassword = "Withdrawal password is required";
+      else if (authForm.withdrawPassword.length < 6) errs.withdrawPassword = "Must be at least 6 characters";
+      if (!authForm.confirmWithdrawPassword) errs.confirmWithdrawPassword = "Please confirm withdrawal password";
+      else if (authForm.withdrawPassword !== authForm.confirmWithdrawPassword) errs.confirmWithdrawPassword = "Passwords do not match";
+    }
+    return errs;
+  }
+
+  function goNextRegisterStep() {
+    setAuthError("");
+    const errs = validateAuth("register-1");
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return setAuthError("Please check the highlighted fields.");
+    setRegisterStep(2);
+  }
+
+  function goPrevRegisterStep() {
+    setAuthError("");
+    setFieldErrors({});
+    setRegisterStep(1);
+  }
+
   async function login() {
     setAuthError("");
+    const errs = validateAuth("login");
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return setAuthError("Please check the highlighted fields.");
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: authForm.email, password: authForm.password })
     });
-    if (!res.ok) return setAuthError((await res.json()).error || "Email or password is incorrect");
+    if (!res.ok) {
+      const message = (await res.json()).error || "Email or password is incorrect";
+      setFieldErrors({ email: " ", password: message });
+      return setAuthError(message);
+    }
     await load();
     router.push("/markets");
     setTab("markets");
@@ -416,8 +462,9 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
 
   async function register() {
     setAuthError("");
-    if (authForm.password.trim() !== authForm.confirmPassword.trim()) return setAuthError("Login passwords do not match");
-    if (authForm.withdrawPassword.trim() !== authForm.confirmWithdrawPassword.trim()) return setAuthError("Withdrawal passwords do not match");
+    const errs = validateAuth("register-2");
+    setFieldErrors(errs);
+    if (Object.keys(errs).length) return setAuthError("Please check the highlighted fields.");
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -429,7 +476,15 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
         confirmWithdrawalPassword: authForm.confirmWithdrawPassword
       })
     });
-    if (!res.ok) return setAuthError((await res.json()).error || "Registration failed");
+    if (!res.ok) {
+      const message = (await res.json()).error || "Registration failed";
+      const next: typeof fieldErrors = {};
+      if (/email/i.test(message)) { next.email = message; setRegisterStep(1); }
+      else if (/withdrawal/i.test(message)) next.withdrawPassword = message;
+      else if (/password/i.test(message)) { next.password = message; setRegisterStep(1); }
+      setFieldErrors(next);
+      return setAuthError(message);
+    }
     await load();
     setTab("markets");
     router.push("/markets");
@@ -500,7 +555,7 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
   }, [markets, marketQuery, marketSort, tickers]);
 
   if (!authChecked) return <BootScreen />;
-  if (!user) return <AuthScreen mode={authMode} setMode={setAuthMode} form={authForm} setForm={setAuthForm} error={authError} login={login} register={register} support={support} />;
+  if (!user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} />;
 
   return (
     <main className="mobile-shell">
@@ -542,28 +597,208 @@ export function FluxMobileApp({ initialTab = "markets", initialAuthMode = "login
         )}
       </section>
       {!activeStack && <BottomNav tab={tab} setTab={switchTab} />}
-      {orderSheet && currentMarket && <OrderSheet direction={orderSheet} market={currentMarket} price={tickers[currentMarket.symbol]?.price || currentMarket.price} stake={stake} setStake={setStake} duration={duration} durations={durationOptions} setDuration={setDuration} close={() => placingOrder ? undefined : setOrderSheet(null)} submit={() => placeOrder(orderSheet)} submitting={placingOrder} />}
+      {orderSheet && currentMarket && <OrderSheet direction={orderSheet} setDirection={setOrderSheet} market={currentMarket} price={tickers[currentMarket.symbol]?.price || currentMarket.price} change={tickers[currentMarket.symbol]?.change || 0} availableBalance={assets?.summary.availableBalance ?? user.balance} stake={stake} setStake={setStake} duration={duration} durations={durationOptions} setDuration={setDuration} close={() => placingOrder ? undefined : setOrderSheet(null)} submit={() => orderSheet && placeOrder(orderSheet)} submitting={placingOrder} />}
     </main>
   );
 }
 
-function AuthScreen({ mode, setMode, form, setForm, error, login, register, support }: { mode: "login" | "register"; setMode: (mode: "login" | "register") => void; form: { email: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string }; setForm: (form: { email: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string }) => void; error: string; login: () => void; register: () => void; support: { telegram: string; whatsapp: string } }) {
+type AuthFieldKey = "email" | "password" | "confirmPassword" | "withdrawPassword" | "confirmWithdrawPassword";
+
+function AuthField({ id, label, type, value, onChange, icon, error, optional, placeholder, autoComplete, canToggle, visible, onToggleVisible }: {
+  id: string;
+  label: string;
+  type: "text" | "email" | "password";
+  value: string;
+  onChange: (v: string) => void;
+  icon: React.ReactNode;
+  error?: string;
+  optional?: boolean;
+  placeholder?: string;
+  autoComplete?: string;
+  canToggle?: boolean;
+  visible?: boolean;
+  onToggleVisible?: () => void;
+  right?: React.ReactNode;
+}) {
+  const effectiveType = canToggle ? (visible ? "text" : "password") : type;
+  const hasError = !!error && error.trim().length > 0;
+  return (
+    <div className={`auth-field${hasError ? " has-error" : ""}`}>
+      <div className="auth-field-label"><span>{label}</span>{optional && <em>(Optional)</em>}</div>
+      <div className={`auth-input-wrap${hasError ? " error" : ""}`}>
+        <span className="auth-input-icon" aria-hidden="true">{icon}</span>
+        <input id={id} name={id} type={effectiveType} autoComplete={autoComplete} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
+        {canToggle && (
+          <button type="button" className="auth-input-eye" aria-label={visible ? "Hide password" : "Show password"} onClick={onToggleVisible}>
+            <Eye size={18} style={{ opacity: visible ? 1 : 0.55 }} />
+          </button>
+        )}
+        {hasError && !canToggle && <span className="auth-input-error-icon" aria-hidden="true">✕</span>}
+      </div>
+      {hasError && <p className="auth-field-error">{error}</p>}
+    </div>
+  );
+}
+
+function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError, pwVisible, togglePw, error, login, register, registerStep, goNextStep, goPrevStep, support }: {
+  mode: "login" | "register";
+  setMode: (mode: "login" | "register") => void;
+  form: { email: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string };
+  setForm: (form: { email: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string }) => void;
+  fieldErrors: Partial<Record<AuthFieldKey, string>>;
+  clearFieldError: (k: AuthFieldKey) => void;
+  pwVisible: Record<string, boolean>;
+  togglePw: (k: string) => void;
+  error: string;
+  login: () => void;
+  register: () => void;
+  registerStep: 1 | 2;
+  goNextStep: () => void;
+  goPrevStep: () => void;
+  support: { telegram: string; whatsapp: string };
+}) {
+  const updateField = <K extends keyof typeof form>(key: K, value: typeof form[K], errKey?: AuthFieldKey) => {
+    setForm({ ...form, [key]: value });
+    if (errKey) clearFieldError(errKey);
+  };
+  const onSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mode === "login") return login();
+    if (registerStep === 1) return goNextStep();
+    return register();
+  };
+  const title = mode === "login"
+    ? { h: "Welcome back", p: "Sign in to continue trading" }
+    : registerStep === 1
+      ? { h: "Create Account", p: "Set up your account to start trading" }
+      : { h: "Security Setup", p: "Protect your future withdrawals" };
   return (
     <main className="mobile-shell auth-only">
       <section className="auth-center">
         <BrandLogo variant="auth" />
-        <p>{mode === "login" ? "Welcome back" : "Create Account"}</p>
-        <label className="mobile-field"><span>Email</span><input id="auth-email" name="email" type="email" autoComplete="email" placeholder="trader@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></label>
-        {mode === "register" && <label className="mobile-field"><span>Nickname</span><input placeholder="Optional" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>}
-        <label className="mobile-field"><span>Password</span><input id="auth-password" name="password" type="password" autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Min 6 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>
-        {mode === "register" && <label className="mobile-field"><span>Confirm Password</span><input id="auth-confirm-password" name="confirmPassword" type="password" autoComplete="new-password" placeholder="Repeat login password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} /></label>}
-        {mode === "register" && <label className="mobile-field"><span>Withdrawal Password</span><input id="auth-withdraw-password" name="withdrawalPassword" type="password" autoComplete="new-password" placeholder="6+ characters" value={form.withdrawPassword} onChange={(e) => setForm({ ...form, withdrawPassword: e.target.value })} /></label>}
-        {mode === "register" && <label className="mobile-field"><span>Confirm Withdrawal Password</span><input id="auth-confirm-withdraw-password" name="confirmWithdrawalPassword" type="password" autoComplete="new-password" placeholder="Repeat withdrawal password" value={form.confirmWithdrawPassword} onChange={(e) => setForm({ ...form, confirmWithdrawPassword: e.target.value })} /></label>}
-        {mode === "register" && <label className="mobile-field"><span>Invite Code</span><input placeholder="Optional" value={form.invite} onChange={(e) => setForm({ ...form, invite: e.target.value })} /></label>}
-        <button className="mobile-primary" onClick={mode === "login" ? login : register}>{mode === "login" ? "Login" : "Create Account"}</button>
-        {mode === "login" && (support.whatsapp ? <a className="forgot-link" href={support.whatsapp} target="_blank" rel="noreferrer">Forgot password? Contact WhatsApp support</a> : <span className="forgot-link disabled">Forgot password? Contact support unavailable</span>)}
-        <button className="link-button" onClick={() => setMode(mode === "login" ? "register" : "login")}>{mode === "login" ? "No account? Create one" : "Have an account? Sign in"}</button>
-        {error && <div className="form-error">{error}</div>}
+        <div className="auth-headline">
+          <h1>{title.h}</h1>
+          <p>{title.p}</p>
+          {mode === "register" && (
+            <div className="auth-steps" aria-hidden="true">
+              <span className={registerStep === 1 ? "on" : ""} />
+              <span className={registerStep === 2 ? "on" : ""} />
+            </div>
+          )}
+        </div>
+        <form className="auth-card" onSubmit={onSubmit}>
+          {error && <div className="auth-alert" role="alert"><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
+          {(mode === "login" || (mode === "register" && registerStep === 1)) && (
+            <AuthField
+              id="auth-email"
+              label="Email"
+              type="email"
+              value={form.email}
+              onChange={(v) => updateField("email", v, "email")}
+              icon={<Mail size={18} />}
+              error={fieldErrors.email}
+              placeholder="Enter your email"
+              autoComplete="email"
+            />
+          )}
+          {mode === "register" && registerStep === 1 && (
+            <AuthField
+              id="auth-nickname"
+              label="Nickname"
+              type="text"
+              optional
+              value={form.name}
+              onChange={(v) => updateField("name", v)}
+              icon={<UserIcon size={18} />}
+              placeholder="Enter your nickname"
+            />
+          )}
+          {(mode === "login" || (mode === "register" && registerStep === 1)) && (
+            <div className={`auth-field${fieldErrors.password ? " has-error" : ""}`}>
+              <div className="auth-field-label">
+                <span>Password</span>
+                {mode === "login" && (support.whatsapp
+                  ? <a className="forgot-link" href={support.whatsapp} target="_blank" rel="noreferrer">Forgot password? <span aria-hidden="true">→</span></a>
+                  : <span className="forgot-link disabled">Forgot password? <span aria-hidden="true">→</span></span>)}
+              </div>
+              <div className={`auth-input-wrap${fieldErrors.password ? " error" : ""}`}>
+                <span className="auth-input-icon" aria-hidden="true"><LockKeyhole size={18} /></span>
+                <input id="auth-password" name="password" type={pwVisible.password ? "text" : "password"} autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="Enter your password" value={form.password} onChange={(e) => updateField("password", e.target.value, "password")} />
+                <button type="button" className="auth-input-eye" aria-label={pwVisible.password ? "Hide password" : "Show password"} onClick={() => togglePw("password")}><Eye size={18} style={{ opacity: pwVisible.password ? 1 : 0.55 }} /></button>
+              </div>
+              {fieldErrors.password && <p className="auth-field-error">{fieldErrors.password}</p>}
+            </div>
+          )}
+          {mode === "register" && registerStep === 1 && (
+            <AuthField
+              id="auth-confirm-password"
+              label="Confirm Password"
+              type="password"
+              value={form.confirmPassword}
+              onChange={(v) => updateField("confirmPassword", v, "confirmPassword")}
+              icon={<LockKeyhole size={18} />}
+              error={fieldErrors.confirmPassword}
+              placeholder="Confirm your password"
+              autoComplete="new-password"
+              canToggle
+              visible={pwVisible.confirmPassword}
+              onToggleVisible={() => togglePw("confirmPassword")}
+            />
+          )}
+          {mode === "register" && registerStep === 2 && (
+            <AuthField
+              id="auth-withdraw-password"
+              label="Withdrawal Password"
+              type="password"
+              value={form.withdrawPassword}
+              onChange={(v) => updateField("withdrawPassword", v, "withdrawPassword")}
+              icon={<ShieldCheck size={18} />}
+              error={fieldErrors.withdrawPassword}
+              placeholder="Enter withdrawal password"
+              autoComplete="new-password"
+              canToggle
+              visible={pwVisible.withdrawPassword}
+              onToggleVisible={() => togglePw("withdrawPassword")}
+            />
+          )}
+          {mode === "register" && registerStep === 2 && (
+            <AuthField
+              id="auth-confirm-withdraw-password"
+              label="Confirm Withdrawal Password"
+              type="password"
+              value={form.confirmWithdrawPassword}
+              onChange={(v) => updateField("confirmWithdrawPassword", v, "confirmWithdrawPassword")}
+              icon={<ShieldCheck size={18} />}
+              error={fieldErrors.confirmWithdrawPassword}
+              placeholder="Confirm withdrawal password"
+              autoComplete="new-password"
+              canToggle
+              visible={pwVisible.confirmWithdrawPassword}
+              onToggleVisible={() => togglePw("confirmWithdrawPassword")}
+            />
+          )}
+          {mode === "register" && registerStep === 2 && (
+            <AuthField
+              id="auth-invite"
+              label="Invite Code"
+              type="text"
+              optional
+              value={form.invite}
+              onChange={(v) => updateField("invite", v)}
+              icon={<Gem size={18} />}
+              placeholder="Enter invite code"
+            />
+          )}
+          <button type="submit" className="mobile-primary auth-submit">
+            {mode === "login" ? "Login" : registerStep === 1 ? "Continue" : "Create Account"}
+          </button>
+          {mode === "register" && registerStep === 2 && (
+            <button type="button" className="link-button auth-back" onClick={goPrevStep}>← Back to Account Info</button>
+          )}
+          {!(mode === "register" && registerStep === 2) && (
+            <button type="button" className="link-button auth-switch" onClick={() => setMode(mode === "login" ? "register" : "login")}>{mode === "login" ? <>No account? <em>Create one</em></> : <>Have an account? <em>Sign in</em></>}</button>
+          )}
+        </form>
       </section>
     </main>
   );
@@ -773,17 +1008,40 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openOrders, hist
   const change = tickers[market.symbol]?.change || 0;
   const [ordersView, setOrdersView] = useState<"open" | "closed">("open");
   const [pairMenuOpen, setPairMenuOpen] = useState(false);
+  const [pairSearch, setPairSearch] = useState("");
+  const [pairFilter, setPairFilter] = useState<"USDC" | "Favorites" | "Perp">("USDC");
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem("flux:fav-markets") || "[]")); } catch { return new Set(); }
+  });
+  const toggleFavorite = (symbol: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      if (next.has(symbol)) next.delete(symbol); else next.add(symbol);
+      if (typeof window !== "undefined") localStorage.setItem("flux:fav-markets", JSON.stringify([...next]));
+      return next;
+    });
+  };
+  const filteredMarkets = useMemo(() => {
+    const q = pairSearch.trim().toLowerCase();
+    return markets.filter((m) => {
+      if (pairFilter === "Favorites" && !favorites.has(m.symbol)) return false;
+      if (pairFilter === "USDC" && !m.symbol.includes("-PERP")) return false;
+      if (q && !m.symbol.toLowerCase().includes(q) && !symbolName(m.symbol).toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [markets, pairFilter, pairSearch, favorites]);
+  const closePairMenu = () => { setPairMenuOpen(false); setPairSearch(""); };
   const sourceOrders = ordersView === "open" ? openOrders : history;
   const visibleOrders = sourceOrders.slice(0, 20);
   return (
     <div className="tab-page trade-screen">
-      <section className="chart-card">
+      <section className={`chart-card${pairMenuOpen ? " selector-open" : ""}`}>
         <div className="chart-card-head">
           <div className="pair-menu-wrap">
-            <button className="pair-menu-trigger" onClick={() => setPairMenuOpen((open) => !open)}>
+            <button className={`pair-menu-trigger${pairMenuOpen ? " active" : ""}`} onClick={() => setPairMenuOpen((open) => !open)}>
               {symbolName(market.symbol)} <span className="pair-caret">⌄</span>
             </button>
-            {pairMenuOpen && <div className="pair-menu">{markets.map((m) => <button key={m.symbol} className={m.symbol === market.symbol ? "on" : ""} onClick={() => { setCurrentSymbol(m.symbol); setPairMenuOpen(false); }}>{symbolName(m.symbol)}</button>)}</div>}
           </div>
           <div className="chart-card-price">
             <b className="tabular-nums">{money(price)}</b>
@@ -791,39 +1049,148 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openOrders, hist
           </div>
         </div>
         <MarketChartPanel symbol={market.symbol} />
+        {pairMenuOpen && (
+          <>
+            <div className="market-selector-backdrop" onClick={closePairMenu} />
+            <div className="market-selector" role="dialog" aria-label="Select market">
+              <div className="ms-search">
+                <Search size={16} />
+                <input autoFocus placeholder="Search market" value={pairSearch} onChange={(e) => setPairSearch(e.target.value)} />
+              </div>
+              <div className="ms-filters">
+                {(["USDC", "Favorites", "Perp"] as const).map((f) => (
+                  <button key={f} type="button" className={`ms-filter${pairFilter === f ? " on" : ""}`} onClick={() => setPairFilter(f)}>
+                    {f === "Favorites" && <Star size={13} fill={pairFilter === "Favorites" ? "currentColor" : "none"} />}
+                    {f === "Perp" && <span className="ms-filter-perp">∞</span>}
+                    {f}
+                  </button>
+                ))}
+              </div>
+              <div className="ms-list">
+                {filteredMarkets.map((m) => {
+                  const t = tickers[m.symbol];
+                  const p = t?.price || m.price;
+                  const c = t?.change || 0;
+                  const selected = m.symbol === market.symbol;
+                  const fav = favorites.has(m.symbol);
+                  return (
+                    <button key={m.symbol} type="button" className={`ms-row${selected ? " on" : ""}`} onClick={() => { setCurrentSymbol(m.symbol); closePairMenu(); }}>
+                      <CryptoIcon asset={baseAsset(m.symbol)} />
+                      <span className="ms-row-title">
+                        <strong>{symbolName(m.symbol)}</strong>
+                        <em className="ms-row-tag">Perp</em>
+                      </span>
+                      <span className="ms-row-price">
+                        <b className="tabular-nums">{money(p)}</b>
+                        <small className={`${c >= 0 ? "good" : "bad"} tabular-nums`}>{c >= 0 ? "+" : ""}{c.toFixed(2)}%</small>
+                      </span>
+                      <button type="button" className={`ms-row-fav${fav ? " on" : ""}`} aria-label={fav ? "Unfavorite" : "Favorite"} onClick={(e) => { e.stopPropagation(); toggleFavorite(m.symbol); }}>
+                        <Star size={14} fill={fav ? "currentColor" : "none"} />
+                      </button>
+                      {selected && <BadgeCheck size={18} className="ms-row-check" />}
+                    </button>
+                  );
+                })}
+                {!filteredMarkets.length && <div className="ms-empty">No markets match</div>}
+              </div>
+            </div>
+          </>
+        )}
       </section>
-      <section className="trade-ticket settings-card">
-        <h3 className="settings-title">Trade Settings</h3>
-        <div className="ticket-row">
-          <span>Time Unit</span>
-          <div className="ticket-control">
-            <select value={duration.seconds} onChange={(e) => setDuration(durations.find((item) => item.seconds === Number(e.target.value)) || durations[0])}>
-              {durations.map((item) => <option key={item.seconds} value={item.seconds}>{item.label}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="ticket-row">
-          <span>Amount (USDC)</span>
-          <div className="amount-stepper"><button onClick={() => setStake(Math.max(10, stake - 10))}>-</button><input className="tabular-nums" type="number" min={10} max={5000} value={stake} onChange={(e) => setStake(Number(e.target.value || 0))} /><button onClick={() => setStake(stake + 10)}>+</button></div>
-        </div>
-        <div className="stats-row">
-          <div className="stat"><small>Available</small><b className="tabular-nums">{availableBalance.toFixed(2)} USDC</b></div>
-          <div className="stat"><small>Profit</small><b className="good">{Math.round(duration.odds * 100)}%</b></div>
-          <div className="stat"><small>Win</small><b className="good tabular-nums">+{(stake * duration.odds).toFixed(2)} USDC</b></div>
-          <div className="stat"><small>Loss</small><b className="bad tabular-nums">-{(stake * duration.lossRate).toFixed(2)} USDC</b></div>
-        </div>
-        <div className="call-put-row trade-actions"><button className="call" onClick={() => openSheet("call")}>↗ Up</button><button className="put" onClick={() => openSheet("put")}>↘ Down</button></div>
-      </section>
+      <div className="trade-cta">
+        <button type="button" className="trade-cta-btn call" onClick={() => openSheet("call")}>
+          <span className="trade-cta-arrow">↗</span>
+          <span className="trade-cta-label"><b>CALL</b><em>Buy higher</em></span>
+        </button>
+        <button type="button" className="trade-cta-btn put" onClick={() => openSheet("put")}>
+          <span className="trade-cta-arrow">↘</span>
+          <span className="trade-cta-label"><b>PUT</b><em>Sell lower</em></span>
+        </button>
+      </div>
       <div className="order-tabs"><button className={ordersView === "open" ? "on" : ""} onClick={() => setOrdersView("open")}>Open ({openOrders.length})</button><button className={ordersView === "closed" ? "on" : ""} onClick={() => setOrdersView("closed")}>Closed ({history.length})</button></div>
       <div className="order-list">{visibleOrders.map((order) => <OrderCard key={order.id} order={order} now={now} />)}{!visibleOrders.length && <div className="empty-state">{ordersView === "open" ? "No open positions" : "No closed orders"}</div>}{sourceOrders.length > visibleOrders.length && <div className="empty-state">Showing latest {visibleOrders.length} orders</div>}</div>
     </div>
   );
 }
 
-function OrderSheet({ direction, market, price, stake, setStake, duration, durations, setDuration, close, submit, submitting }: { direction: "call" | "put"; market: Market; price: number; stake: number; setStake: (n: number) => void; duration: Duration; durations: Duration[]; setDuration: (d: Duration) => void; close: () => void; submit: () => void; submitting: boolean }) {
+function OrderSheet({ direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, setDuration, close, submit, submitting }: { direction: "call" | "put"; setDirection: (d: "call" | "put") => void; market: Market; price: number; change: number; availableBalance: number; stake: number; setStake: (n: number) => void; duration: Duration; durations: Duration[]; setDuration: (d: Duration) => void; close: () => void; submit: () => void; submitting: boolean }) {
   const winAmount = stake * duration.odds;
-  const lossAmount = stake * duration.lossRate;
-  return <div className="sheet-bg" onClick={close}><div className="bottom-sheet" onClick={(e) => e.stopPropagation()}><div className="sheet-handle" /><h3>{symbolName(market.symbol)} - <span className="tabular-nums">{money(price)}</span></h3><div className={`direction-lock ${direction}`}>{direction.toUpperCase()}</div><div className="stake-stepper"><button disabled={submitting} onClick={() => setStake(Math.max(10, stake - 10))}>-</button><input className="tabular-nums" type="number" min={10} max={5000} value={stake} disabled={submitting} onChange={(e) => setStake(Number(e.target.value || 0))} /><button disabled={submitting} onClick={() => setStake(stake + 10)}>+</button></div><small className="muted-line">Min 10 - Max 5000</small><div className="duration-grid">{durations.map((item) => <button key={item.seconds} disabled={submitting} className={duration.seconds === item.seconds ? "on" : ""} onClick={() => setDuration(item)}>{item.label}<br />+{Math.round(item.odds * 100)}%</button>)}</div><div className="estimate-row"><span>Win Profit</span><b className="tabular-nums good">+{money(winAmount)}</b></div><div className="estimate-row"><span>Max Loss</span><b className="tabular-nums bad">-{money(lossAmount)}</b></div><button className={`mobile-primary ${direction}`} disabled={submitting} onClick={submit}>{submitting ? "Placing..." : `Place ${direction.toUpperCase()} - ${money(stake)}`}</button></div></div>;
+  return (
+    <div className="sheet-bg" onClick={close}>
+      <div className="bottom-sheet order-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-handle" />
+        <div className="order-header">
+          <div className="order-header-left">
+            <strong>{symbolName(market.symbol)}</strong>
+            <span className={`order-header-price ${change >= 0 ? "good" : "bad"}`}>
+              <span className="tabular-nums">{Number(price) >= 1000 ? Number(price).toFixed(2) : Number(price) >= 1 ? Number(price).toFixed(4) : Number(price).toFixed(5)} USDC</span>
+              <em className="tabular-nums">{change >= 0 ? "+" : ""}{change.toFixed(2)}%</em>
+            </span>
+          </div>
+          <Sparkline symbol={market.symbol} change={change} />
+        </div>
+
+        <div className="order-section">
+          <label className="order-section-label">Direction</label>
+          <div className="order-direction">
+            <button type="button" disabled={submitting} className={`order-dir-btn call${direction === "call" ? " on" : ""}`} onClick={() => setDirection("call")}>
+              <span>↗</span> CALL
+            </button>
+            <button type="button" disabled={submitting} className={`order-dir-btn put${direction === "put" ? " on" : ""}`} onClick={() => setDirection("put")}>
+              <span>↘</span> PUT
+            </button>
+          </div>
+        </div>
+
+        <div className="order-section">
+          <label className="order-section-label">Amount (USDC)</label>
+          <div className="order-amount">
+            <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(Math.max(10, stake - 10))}>−</button>
+            <input className="order-amount-input tabular-nums" type="number" min={10} max={5000} value={stake} disabled={submitting} onChange={(e) => setStake(Number(e.target.value || 0))} />
+            <span className="order-amount-unit">USDC</span>
+            <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(stake + 10)}>+</button>
+          </div>
+          <div className="order-amount-meta">
+            <span>Balance: <span className="tabular-nums">{availableBalance.toFixed(2)} USDC</span></span>
+            <span>·</span>
+            <span>Min 10 · Max 5000</span>
+          </div>
+        </div>
+
+        <div className="order-section">
+          <label className="order-section-label">Duration</label>
+          <div className="order-duration">
+            {durations.map((item) => (
+              <button
+                key={item.seconds}
+                type="button"
+                disabled={submitting}
+                className={`order-dur-chip${duration.seconds === item.seconds ? " on" : ""}`}
+                onClick={() => setDuration(item)}
+              >
+                <b>{item.label}</b>
+                <em>+{Math.round(item.odds * 100)}%</em>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="order-summary">
+          <label className="order-section-label">Summary</label>
+          <div className="order-summary-card">
+            <div className="order-summary-row"><span>Investment</span><b className="tabular-nums">{money(stake)}</b></div>
+            <div className="order-summary-row"><span className="good">Est. Profit</span><b className="good tabular-nums">+{money(winAmount)}</b></div>
+            <div className="order-summary-row"><span className="bad">Max Loss</span><b className="bad tabular-nums">-{money(stake)}</b></div>
+          </div>
+        </div>
+
+        <button type="button" className={`order-confirm ${direction}`} disabled={submitting} onClick={submit}>
+          {submitting ? "Placing..." : `Confirm ${direction.toUpperCase()} · ${money(stake)}`}
+        </button>
+        <div className="order-foot"><ShieldCheck size={14} /> Your funds are securely protected</div>
+      </div>
+    </div>
+  );
 }
 
 function OrderCard({ order, now }: { order: BinaryOrder; now: number }) {
@@ -839,30 +1206,156 @@ function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: Stack
   const available = assets?.summary.availableBalance ?? rows.reduce((sum, item) => sum + Number(item.balance || 0), 0);
   const frozen = rows.reduce((sum, item) => sum + Number(item.locked || 0), 0);
   const pnl = assets?.summary.unrealizedPnl ?? 0;
+
+  type Activity = { id: string; kind: "deposit" | "withdraw" | "funding"; title: string; time: string; status: string; amount: number; asset: string };
+  const activities: Activity[] = [
+    ...(assets?.deposits || []).map<Activity>((r) => ({ id: `d-${r.id}`, kind: "deposit", title: `Deposit ${r.asset}`, time: r.created_at, status: r.status, amount: Math.abs(Number(r.amount || 0)), asset: r.asset })),
+    ...(assets?.withdrawals || []).map<Activity>((r) => ({ id: `w-${r.id}`, kind: "withdraw", title: `Withdraw ${r.asset}`, time: r.created_at, status: r.status, amount: -Math.abs(Number(r.amount || 0)), asset: r.asset })),
+    ...(assets?.transactions || []).map<Activity>((r) => ({ id: `t-${r.id}`, kind: "funding", title: txTitle(r.type, r.asset), time: r.created_at, status: r.status || "settled", amount: Number(r.amount || 0), asset: r.asset }))
+  ].sort((a, b) => (b.time || "").localeCompare(a.time || "")).slice(0, 3);
+
+  const openActivity = (act: Activity) => {
+    if (act.kind === "deposit") push({ id: "deposit-history", title: "Deposit History" });
+    else if (act.kind === "withdraw") push({ id: "withdraw-history", title: "Withdraw History" });
+    else push({ id: "funding-records", title: "Funding Records" });
+  };
+
   return (
-    <div className="tab-page">
-      <section className="asset-hero">
-        <small>Total Equity</small>
-        <strong className="tabular-nums">{money(totalEquity)}</strong>
-        <div className="asset-metrics">
-          <span><small>Available</small><b className="tabular-nums">{money(available)}</b></span>
-          <span><small>Frozen</small><b className="tabular-nums">{money(frozen)}</b></span>
-          <span><small>Today PnL</small><b className={`${pnl >= 0 ? "good" : "bad"} tabular-nums`}>{pnl >= 0 ? "+" : ""}{money(pnl)}</b></span>
+    <div className="tab-page assets-screen">
+      <section className="equity-card">
+        <div className="equity-head">
+          <small>Total Equity</small>
+        </div>
+        <strong className="equity-value tabular-nums">{money(totalEquity)}</strong>
+        <span className="equity-sub tabular-nums">≈ {Number(totalEquity).toFixed(2)} USDC</span>
+        <div className="equity-stats">
+          <div className="equity-stat">
+            <small>Available</small>
+            <b className="tabular-nums">{money(available)}</b>
+            <span className="tabular-nums">≈ {Number(available).toFixed(2)} USDC</span>
+          </div>
+          <div className="equity-stat">
+            <small>Frozen</small>
+            <b className="tabular-nums">{money(frozen)}</b>
+            <span className="tabular-nums">≈ {Number(frozen).toFixed(2)} USDC</span>
+          </div>
+          <div className="equity-stat">
+            <small>Today PnL</small>
+            <b className={`${pnl >= 0 ? "good" : "bad"} tabular-nums`}>{pnl >= 0 ? "+" : ""}{money(pnl)}</b>
+            <span className={`${pnl >= 0 ? "good" : "bad"} tabular-nums`}>{pnl === 0 ? "0.00%" : `${pnl >= 0 ? "+" : ""}${(pnl / Math.max(1, totalEquity) * 100).toFixed(2)}%`}</span>
+          </div>
         </div>
       </section>
-      <div className="asset-actions">
-        <button onClick={() => push({ id: "deposit-asset", title: "Deposit" })}>Deposit</button>
-        <button onClick={() => push({ id: "withdraw-asset", title: "Withdraw" })}>Withdraw</button>
-        <button onClick={() => push({ id: "swap", title: "Swap" })}>Swap</button>
+
+      <div className="quick-actions">
+        <button type="button" className="action-card" onClick={() => push({ id: "deposit-asset", title: "Select Asset" })}>
+          <Download className="action-icon" size={22} />
+          <span className="action-text">
+            <b>Deposit</b>
+            <em>Deposit crypto</em>
+          </span>
+        </button>
+        <button type="button" className="action-card" onClick={() => push({ id: "withdraw-asset", title: "Withdraw" })}>
+          <Upload className="action-icon" size={22} />
+          <span className="action-text">
+            <b>Withdraw</b>
+            <em>Withdraw crypto</em>
+          </span>
+        </button>
+        <button type="button" className="action-card" onClick={() => push({ id: "swap", title: "Swap" })}>
+          <ArrowLeftRight className="action-icon" size={22} />
+          <span className="action-text">
+            <b>Swap</b>
+            <em>Swap assets</em>
+          </span>
+        </button>
       </div>
-      <div className="wallet-list">{rows.map((asset) => <div className="wallet-line" key={asset.asset}><CryptoIcon asset={asset.asset} /><span><b>{asset.asset}</b><small>Spot</small></span><span><b className="tabular-nums">{Number(asset.balance || 0).toFixed(assetDigits(asset.asset))}</b><small className="tabular-nums">Frozen {Number(asset.locked || 0).toFixed(assetDigits(asset.asset))}</small></span></div>)}</div>
-      <div className="funding-list">
-        <button onClick={() => push({ id: "deposit-history", title: "Deposit History" })}>Deposit History<span>{">"}</span></button>
-        <button onClick={() => push({ id: "withdraw-history", title: "Withdraw History" })}>Withdraw History<span>{">"}</span></button>
-        <button onClick={() => push({ id: "funding-records", title: "Funding Records" })}>Funding Records<span>{">"}</span></button>
-      </div>
+
+      <section className="asset-list-card">
+        {rows.map((asset) => (
+          <button type="button" className="asset-row" key={asset.asset}>
+            <CryptoIcon asset={asset.asset} />
+            <span className="asset-row-name">
+              <b>{asset.asset}</b>
+              <em>Spot</em>
+            </span>
+            <span className="asset-row-value">
+              <b className="tabular-nums">{Number(asset.balance || 0).toFixed(assetDigits(asset.asset))}</b>
+              <em className="tabular-nums">Frozen {Number(asset.locked || 0).toFixed(assetDigits(asset.asset))}</em>
+            </span>
+            <ChevronRight className="asset-row-arrow" size={18} />
+          </button>
+        ))}
+      </section>
+
+      <section className="activity-card">
+        <div className="activity-head">
+          <h3>Recent Activity</h3>
+          <button type="button" className="activity-view-all" onClick={() => push({ id: "funding-records", title: "Funding Records" })}>View All <ChevronRight size={14} /></button>
+        </div>
+        {activities.length ? (
+          <div className="activity-list">
+            {activities.map((act) => (
+              <button type="button" key={act.id} className="activity-row" onClick={() => openActivity(act)}>
+                <span className={`activity-icon activity-icon-${act.kind}`}>
+                  {act.kind === "deposit" && <Download size={16} />}
+                  {act.kind === "withdraw" && <Upload size={16} />}
+                  {act.kind === "funding" && <ArrowLeftRight size={16} />}
+                </span>
+                <span className="activity-meta">
+                  <b>{act.title}</b>
+                  <em>{formatActivityTime(act.time)}</em>
+                </span>
+                <span className={`activity-status status-${statusTone(act.status)}`}>{statusLabel(act.status)}</span>
+                <span className={`activity-amount ${act.amount >= 0 ? "good" : "bad"} tabular-nums`}>{act.amount >= 0 ? "+" : ""}{Number(act.amount).toFixed(assetDigits(act.asset))} {act.asset}</span>
+                <ChevronRight className="activity-arrow" size={16} />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="activity-empty">No recent activity yet</div>
+        )}
+      </section>
     </div>
   );
+}
+
+function txTitle(type: string, asset: string) {
+  const map: Record<string, string> = {
+    funding_fee: "Funding Fee",
+    funding: "Funding Fee",
+    swap: "Swap",
+    trade: "Trade Settlement",
+    settlement: "Trade Settlement",
+    signup_bonus: "Signup Bonus",
+    deposit: `Deposit ${asset}`,
+    withdrawal: `Withdraw ${asset}`,
+    refund: "Refund",
+    adjustment: "Adjustment"
+  };
+  return map[type?.toLowerCase()] || (type ? type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "Transaction");
+}
+function statusTone(status: string): "completed" | "pending" | "settled" | "failed" {
+  const s = (status || "").toLowerCase();
+  if (["completed", "approved", "success", "done"].includes(s)) return "completed";
+  if (["pending", "review", "processing", "awaiting"].includes(s)) return "pending";
+  if (["failed", "rejected", "canceled", "cancelled"].includes(s)) return "failed";
+  return "settled";
+}
+function statusLabel(status: string) {
+  const tone = statusTone(status);
+  return tone === "completed" ? "Completed" : tone === "pending" ? "Pending" : tone === "failed" ? "Failed" : "Settled";
+}
+function formatActivityTime(iso: string) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
 function Sparkline({ symbol, change }: { symbol: string; change: number }) {
@@ -959,9 +1452,9 @@ function StackContent(props: { page: StackPage; user: User; assets: AssetData | 
   const { page, selectedCoin, setSelectedCoin, selectedNetwork, setSelectedNetwork, push, replaceStack, clearStack, showToast } = props;
   if (page.id === "deposit-asset" || page.id === "withdraw-asset") {
     const mode = page.id.startsWith("deposit") ? "deposit" : "withdraw";
-    return <AssetPicker title={mode === "deposit" ? "Select Asset" : "Withdraw"} mode={mode} assets={props.assets} onPick={(coin) => { setSelectedCoin(coin); push({ id: mode === "deposit" ? "deposit-network" : "withdraw-network", title: "Select Network" }); }} />;
+    return <AssetPicker title={mode === "deposit" ? "Select Asset" : "Withdraw"} mode={mode} assets={props.assets} onPick={(coin) => { setSelectedCoin(coin); push(mode === "deposit" ? { id: "deposit-network", title: `Select Network · ${coin}` } : { id: "withdraw-network", title: "Select Network" }); }} />;
   }
-  if (page.id === "deposit-network") return <NetworkPicker coin={selectedCoin} mode="deposit" assets={props.assets} onPick={(network) => { setSelectedNetwork(network); push({ id: "deposit-address", title: "Deposit Address" }); }} />;
+  if (page.id === "deposit-network") return <NetworkPicker coin={selectedCoin} mode="deposit" assets={props.assets} onPick={(network) => { setSelectedNetwork(network); push({ id: "deposit-address", title: `${selectedCoin} (${network}) Deposit` }); }} />;
   if (page.id === "withdraw-network") return <NetworkPicker coin={selectedCoin} mode="withdraw" assets={props.assets} onPick={(network) => { setSelectedNetwork(network); push({ id: "withdraw-form", title: `Withdraw ${selectedCoin}` }); }} />;
   if (page.id === "deposit-address") return <DepositAddress coin={selectedCoin} network={selectedNetwork} assets={props.assets} showToast={showToast} done={() => { showToast("info", "Deposit submitted for system review"); clearStack(); }} />;
   if (page.id === "withdraw-form") return <WithdrawForm coin={selectedCoin} network={selectedNetwork} assets={props.assets} form={props.withdrawForm} setForm={props.setWithdrawForm} done={(record) => { showToast("ok", "Withdrawal request submitted"); replaceStack({ id: "withdraw-detail", title: "Withdrawal Details", record }); }} />;
@@ -976,16 +1469,57 @@ function StackContent(props: { page: StackPage; user: User; assets: AssetData | 
   return <StaticPage page={page} settings={props.settings} />;
 }
 
-function AssetPicker({ title, mode, assets, onPick }: { title: string; mode: "deposit" | "withdraw"; assets: AssetData | null; onPick: (coin: string) => void }) {
-  return <div className="stack-page"><small className="muted-line">{title}</small>{pickerCoins(assets, mode).map((coin) => {
-    const available = availableForAsset(assets, coin);
-    return <button className="picker-line" key={coin} onClick={() => onPick(coin)}><CryptoIcon asset={coin} /><span><b>{coin}</b><small className="tabular-nums">Available {assetAmount(available, coin)}</small></span><span>{">"}</span></button>;
-  })}</div>;
+function AssetPicker({ mode, assets, onPick }: { title: string; mode: "deposit" | "withdraw"; assets: AssetData | null; onPick: (coin: string) => void }) {
+  return (
+    <div className="stack-page deposit-flow">
+      {pickerCoins(assets, mode).map((coin, idx) => {
+        const available = availableForAsset(assets, coin);
+        return (
+          <button type="button" className={`deposit-asset-card${idx === 0 ? " is-focused" : ""}`} key={coin} onClick={() => onPick(coin)}>
+            <CryptoIcon asset={coin} />
+            <span className="deposit-asset-meta">
+              <b>{coin}</b>
+              <em className="tabular-nums">Available {assetAmount(available, coin)}</em>
+            </span>
+            <ChevronRight size={18} className="deposit-asset-arrow" />
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function NetworkPicker({ coin, mode, assets, onPick }: { coin: string; mode: "deposit" | "withdraw"; assets: AssetData | null; onPick: (network: string) => void }) {
   const rows = mode === "deposit" ? depositNetworksForCoin(assets, coin) : networksForCoin(coin);
-  return <div className="stack-page"><small className="muted-line">Select Network - {coin}</small>{rows.map((network) => <button className="picker-line" key={network} onClick={() => onPick(network)}><span className="green-dot" /><span><b>{network}</b><small>{mode === "deposit" ? "Active deposit network" : `Fee: 1 ${coin}`}</small></span><span>{">"}</span></button>)}</div>;
+  return (
+    <div className="stack-page deposit-flow">
+      {rows.map((network) => (
+        <button type="button" className="deposit-network-card" key={network} onClick={() => onPick(network)}>
+          <span className="deposit-network-dot" aria-hidden="true" />
+          <CryptoIcon asset={coin} />
+          <span className="deposit-network-meta">
+            <b>{networkDisplayName(network, coin)}</b>
+            <em>{mode === "deposit" ? "Active deposit network" : `Fee: 1 ${coin}`}</em>
+          </span>
+          <ChevronRight size={18} className="deposit-network-arrow" />
+        </button>
+      ))}
+      {mode === "deposit" && (
+        <p className="deposit-flow-hint">Only send <b>{coin}</b> through the {networkDisplayName(rows[0] || "", coin)} network. Deposits via other networks may be lost.</p>
+      )}
+    </div>
+  );
+}
+
+function networkDisplayName(network: string, coin: string) {
+  if (!network) return coin === "BTC" ? "Bitcoin" : coin === "ETH" ? "Ethereum" : coin === "SOL" ? "Solana" : coin;
+  const upper = network.toUpperCase();
+  if (upper === "BITCOIN" || (coin === "BTC" && upper === "BTC")) return "Bitcoin";
+  if (upper === "ETHEREUM" || upper === "ERC20") return "Ethereum (ERC20)";
+  if (upper === "SOLANA") return "Solana";
+  if (upper === "TRC20") return "Tron (TRC20)";
+  if (upper === "BSC" || upper === "BEP20") return "BNB Chain (BEP20)";
+  return network;
 }
 
 function StatusChip({ status }: { status: string }) {
@@ -1237,7 +1771,54 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
     if (!res.ok) return setError((await res.json()).error || "Deposit submission failed");
     done();
   }
-  return <div className="stack-page"><div className="address-card"><b>{coin} ({network}) Deposit Address</b><p>{address || "No active address"}</p><small className="muted-line">{selected?.source === "custom" ? "Assigned address" : selected ? "Platform default address" : "Choose an active deposit network"}</small></div><LocalQrCode value={address || `${coin}:${network}`} /><button className="mobile-primary" onClick={copyAddress}>Copy Address</button><label className="mobile-field"><span>Amount ({coin})</span><input type="number" min="0" step="any" placeholder="0.00" value={amount} onChange={(e) => setAmount(e.target.value)} /></label><label className="mobile-field"><span>TX Hash</span><input value={txHash} onChange={(e) => setTxHash(e.target.value)} placeholder="Optional transaction hash" /></label><label className="upload-box"><input type="file" accept="image/*" onChange={(e) => pickProof(e.target.files?.[0])} />{proof ? proof.name : "Tap to upload proof"}</label>{error && <div className="form-error">{error}</div>}<button className="mobile-primary call" disabled={submitting} onClick={submit}>{submitting ? "Submitting..." : "Submit Deposit"}</button></div>;
+  return (
+    <div className="stack-page deposit-flow deposit-address-flow">
+      <section className="deposit-address-card">
+        <div className="deposit-address-head">
+          <small>Deposit Address</small>
+        </div>
+        <div className="deposit-address-row">
+          <p className="deposit-address-text">{address || "No active address"}</p>
+          <button type="button" className="deposit-address-copy-mini" onClick={copyAddress} aria-label="Copy address">
+            <FileText size={16} />
+          </button>
+        </div>
+        <div className="deposit-qr-box">
+          <LocalQrCode value={address || `${coin}:${network}`} />
+        </div>
+        <button type="button" className="deposit-copy-btn" onClick={copyAddress}>
+          <FileText size={16} /> Copy Address
+        </button>
+      </section>
+
+      <label className="deposit-field">
+        <span>Amount ({coin})</span>
+        <div className="deposit-input-wrap">
+          <input type="number" min="0" step="any" placeholder={`Min 0.0001 ${coin}`} value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </div>
+      </label>
+
+      <label className="deposit-field">
+        <span>TX Hash <em className="deposit-field-optional">(Optional)</em></span>
+        <div className="deposit-input-wrap">
+          <input value={txHash} onChange={(e) => setTxHash(e.target.value)} placeholder="Enter transaction hash (optional)" />
+        </div>
+      </label>
+
+      <label className="deposit-upload">
+        <input type="file" accept="image/*" onChange={(e) => pickProof(e.target.files?.[0])} hidden />
+        <Upload size={24} className="deposit-upload-icon" />
+        <b>{proof ? proof.name : "Tap to upload proof of payment"}</b>
+        <em>JPG, PNG or PDF (Max 5MB)</em>
+      </label>
+
+      {error && <div className="form-error">{error}</div>}
+
+      <button type="button" className="deposit-submit-btn" disabled={submitting} onClick={submit}>
+        {submitting ? "Submitting..." : "Submit Deposit"}
+      </button>
+    </div>
+  );
 }
 
 function WithdrawForm({ coin, network, assets, form, setForm, done }: { coin: string; network: string; assets: AssetData | null; form: { address: string; amount: string; password: string }; setForm: (v: { address: string; amount: string; password: string }) => void; done: (record: WithdrawalRecord) => void }) {
