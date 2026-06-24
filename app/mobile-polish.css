@@ -1079,64 +1079,6 @@
   text-align: left !important;
 }
 
-.profile-identicon {
-  --avatar-accent: #35e6a1;
-  --avatar-accent-2: #1b8dff;
-  align-items: center;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--avatar-accent-2) 22%, #111017), #0b0a10 72%);
-  border: 1px solid color-mix(in srgb, var(--avatar-accent) 42%, transparent);
-  border-radius: 14px;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.035), 0 12px 26px rgba(0, 0, 0, 0.28);
-  color: var(--ref-text);
-  display: flex;
-  height: 64px;
-  justify-content: center;
-  overflow: hidden;
-  position: relative;
-  width: 64px;
-}
-
-.pixel-identicon {
-  image-rendering: pixelated;
-}
-
-.identicon-grid {
-  display: grid;
-  gap: 2px;
-  grid-template-columns: repeat(7, 1fr);
-  inset: 8px;
-  opacity: 0.88;
-  position: absolute;
-}
-
-.identicon-grid span {
-  background: rgba(255, 255, 255, 0.035);
-  border-radius: 1px;
-}
-
-.identicon-grid span.active {
-  background: var(--avatar-accent);
-  box-shadow: none;
-}
-
-.pixel-initial {
-  align-items: center;
-  background: color-mix(in srgb, var(--avatar-accent-2) 38%, #09080d);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 4px;
-  bottom: 6px;
-  color: var(--ref-text);
-  display: flex;
-  font: 760 12px "DM Mono", Consolas, monospace;
-  height: 18px;
-  justify-content: center;
-  position: absolute;
-  right: 6px;
-  width: 18px;
-  z-index: 1;
-}
-
 .profile-main {
   min-width: 0;
 }
@@ -1652,16 +1594,6 @@ small.change-badge.flat { color: var(--muted) !important; }
   color: #fff !important;
   border-radius: 10px !important;
 }
-.logout-outline, .profile-logout {
-  height: 54px !important;
-  border: 1px solid var(--line) !important;
-  border-radius: var(--r-card) !important;
-  background: linear-gradient(180deg, rgba(255,255,255,.045), rgba(255,255,255,.01)) !important;
-  color: #fff !important;
-  font-weight: 750 !important;
-  margin-top: 14px !important;
-}
-
 .auth-center h1 { color: #fff !important; font-weight: 800 !important; font-size: 24px !important; letter-spacing: -.02em !important; }
 .auth-center p { color: var(--muted) !important; font-size: 13px !important; }
 .mobile-field span { color: var(--muted) !important; font-size: 12px !important; font-weight: 500 !important; letter-spacing: 0 !important; text-transform: none !important; }
@@ -6930,9 +6862,6 @@ input, select, textarea { color-scheme: dark; }
 
 /* Unverified keeps default gray-blue ring */
 
-/* Override old .profile-identicon size in this hero context (legacy) */
-.profile-hero .profile-identicon { display: none !important; }
-
 /* ============================================================
    KYC chip v2 (refined badge styles)
    ============================================================ */
@@ -7867,15 +7796,6 @@ html.keyboard-open .chat-stack { grid-template-rows: minmax(0, 1fr) auto !import
     radial-gradient(circle at 12% 0%, rgba(22,199,132,0.05), transparent 50%),
     transparent !important;
 }
-.profile-hero .profile-identicon {
-  width: 76px !important;
-  height: 76px !important;
-  border-radius: 50% !important;
-  margin: 0 !important;
-  flex: 0 0 76px !important;
-  border: 1px solid rgba(22,199,132,0.45) !important;
-  box-shadow: 0 0 0 3px rgba(22,199,132,0.06) !important;
-}
 .profile-hero-info {
   flex: 1 1 auto !important;
   display: flex !important;
@@ -8060,9 +7980,6 @@ html.keyboard-open .chat-stack { grid-template-rows: minmax(0, 1fr) auto !import
 .profile-page .profile-card,
 .profile-page .profile-account,
 .profile-page .menu-list { background: transparent !important; border: 0 !important; box-shadow: none !important; border-radius: 0 !important; padding: 0 !important; }
-
-/* Hide old logout button if it lingers in any stack */
-.logout-outline { display: none !important; }
 
 /* ============================================================
    Batch B — Touch-target hit-area expansion (visual size kept).

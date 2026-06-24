@@ -1,11 +1,11 @@
 ﻿"use client";
 
-import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpDown, BadgeCheck, ChevronLeft, ChevronRight, FileText, Headphones, Info, LockKeyhole, ShieldCheck,
   Search, Bell, Gem, Eye, EyeOff, ArrowUpRight, Mail,
   Download, Upload, ArrowLeftRight, Clock,
-  LayoutGrid, BarChart3, Wallet, User as UserIcon,
+  LayoutGrid, BarChart3, User as UserIcon,
   Star, BookOpen, LogOut,
   MessageCircle, Send, Paperclip, MoreHorizontal,
   Home, ClipboardList
@@ -246,6 +246,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [registerStep, setRegisterStep] = useState<1 | 2>(1);
   const [authChecked, setAuthChecked] = useState(false);
   const loadingRef = useRef(false);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function applyPublicSettings(settings: Partial<PublicSettings> = {}) {
     setSupport({ telegram: settings.telegram_url?.trim() || "", whatsapp: (settings.whatsapp_support_url || settings.whatsapp_url || "").trim() });
@@ -256,10 +257,10 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   }
 
   const activeStack = stack[stack.length - 1];
-  const currentMarket = markets.find((m) => m.symbol === currentSymbol) || markets[0];
-  const openOrders = orders.filter((order) => order.status === "open");
-  const history = orders.filter((order) => order.status !== "open");
-  const activeOrder = activeOrderId != null ? orders.find((o) => o.id === activeOrderId) || null : null;
+  const currentMarket = useMemo(() => markets.find((m) => m.symbol === currentSymbol) || markets[0], [markets, currentSymbol]);
+  const openOrders = useMemo(() => orders.filter((order) => order.status === "open"), [orders]);
+  const history = useMemo(() => orders.filter((order) => order.status !== "open"), [orders]);
+  const activeOrder = useMemo(() => (activeOrderId != null ? orders.find((o) => o.id === activeOrderId) || null : null), [activeOrderId, orders]);
 
   useEffect(() => {
     if (!activeOrder) return;
@@ -405,8 +406,16 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
 
   function showToast(type: "ok" | "err" | "info", text: string) {
     setToast({ type, text });
-    setTimeout(() => setToast(null), 2400);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      toastTimerRef.current = null;
+      setToast(null);
+    }, 2400);
   }
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   function push(page: StackPage) {
     setStack((items) => [...items, page]);
@@ -999,7 +1008,6 @@ const ICONS: Record<string, typeof LayoutGrid> = {
   home: Home,
   grid: LayoutGrid,
   pulse: BarChart3,
-  wallet: Wallet,
   user: UserIcon,
   list: ClipboardList,
   "arrow-down": Download,
@@ -1913,17 +1921,6 @@ function Sparkline({ symbol, change, className }: { symbol: string; change: numb
   );
 }
 
-const identiconPalette = ["#26e0a4", "#1b8dff", "#8b5cf6", "#f59e0b", "#ff4770", "#14b8a6"];
-
-function hashSeed(seed: string) {
-  let hash = 2166136261;
-  for (let i = 0; i < seed.length; i += 1) {
-    hash ^= seed.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
 function VorxAccountAvatar({ variant }: { variant: "verified" | "pending" | "unverified" }) {
   return (
     <div className={`vorx-avatar vorx-avatar-${variant}`} aria-hidden="true">
@@ -1938,25 +1935,6 @@ function VorxAccountAvatar({ variant }: { variant: "verified" | "pending" | "unv
           el.src = "/brand/vorx-symbol.svg";
         }}
       />
-    </div>
-  );
-}
-
-function UserIdenticon({ seed, label }: { seed: string; label: string }) {
-  const hash = hashSeed(seed || "flux-user");
-  const primary = identiconPalette[hash % identiconPalette.length];
-  const secondary = identiconPalette[(hash >>> 7) % identiconPalette.length];
-  const cells = Array.from({ length: 49 }, (_, index) => {
-    const row = Math.floor(index / 7);
-    const col = index % 7;
-    const mirroredCol = col > 3 ? 6 - col : col;
-    const bit = (hash >>> ((row * 4 + mirroredCol) % 28)) & 1;
-    return bit === 1 || (row === 3 && mirroredCol <= 2);
-  });
-  return (
-    <div className="profile-identicon pixel-identicon" style={{ "--avatar-accent": primary, "--avatar-accent-2": secondary } as CSSProperties} aria-hidden="true">
-      <div className="identicon-grid">{cells.map((active, index) => <span key={index} className={active ? "active" : ""} />)}</div>
-      <span className="pixel-initial">{label}</span>
     </div>
   );
 }
@@ -3350,7 +3328,7 @@ const PRIVACY_MODULES = [
   { Icon: UserIcon, title: "Your Rights", body: "You may request access, correction, or deletion of your personal information where applicable." }
 ];
 
-function TermsPage({ onAgree }: { onAgree?: () => void }) {
+function TermsPage() {
   return (
     <div className="stack-page legal-page">
       <h1 className="legal-title">Terms of Service</h1>
@@ -3370,7 +3348,6 @@ function TermsPage({ onAgree }: { onAgree?: () => void }) {
         <Info size={15} strokeWidth={1.8} aria-hidden="true" />
         <span>By continuing, you agree to our Terms of Service.</span>
       </div>
-      {onAgree && <button type="button" className="legal-primary" onClick={onAgree}>I Understand</button>}
     </div>
   );
 }
