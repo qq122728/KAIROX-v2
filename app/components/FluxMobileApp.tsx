@@ -2866,8 +2866,8 @@ function passwordStrength(pw: string): { score: 0 | 1 | 2 | 3 | 4; label: "Weak"
 
 function SecurityPanel({ id, title, subtitle, expanded, setExpanded, showToast, onSuccess }: { id: "login" | "withdraw"; title: string; subtitle: string; expanded: "login" | "withdraw" | null; setExpanded: (v: "login" | "withdraw" | null) => void; showToast: (type: "ok" | "err" | "info", text: string) => void; onSuccess: () => void }) {
   const open = expanded === id;
-  const [form, setForm] = useState({ current: "", next: "", confirm: "" });
-  const [show, setShow] = useState({ current: false, next: false, confirm: false });
+  const [form, setForm] = useState({ current: "", next: "", confirm: "", login: "" });
+  const [show, setShow] = useState({ current: false, next: false, confirm: false, login: false });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const strength = passwordStrength(form.next);
@@ -2881,7 +2881,9 @@ function SecurityPanel({ id, title, subtitle, expanded, setExpanded, showToast, 
     const current = form.current.trim();
     const next = form.next.trim();
     const confirm = form.confirm.trim();
+    const login = form.login.trim();
     if (!current) return setError(id === "login" ? "Current password is required" : "Current withdrawal password is required");
+    if (id === "withdraw" && !login) return setError("Login password is required");
     if (next.length < 6) return setError(id === "login" ? "Login password must be at least 6 characters" : "Withdrawal password must be at least 6 characters");
     if (next !== confirm) return setError(id === "login" ? "Login passwords do not match" : "Withdrawal passwords do not match");
     setSubmitting(true);
@@ -2890,11 +2892,11 @@ function SecurityPanel({ id, title, subtitle, expanded, setExpanded, showToast, 
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(id === "login"
         ? { currentPassword: current, newPassword: next, confirmPassword: confirm }
-        : { currentWithdrawalPassword: current, newWithdrawalPassword: next, confirmWithdrawalPassword: confirm })
+        : { loginPassword: login, currentWithdrawalPassword: current, newWithdrawalPassword: next, confirmWithdrawalPassword: confirm })
     });
     setSubmitting(false);
     if (!res.ok) return setError((await res.json()).error || "Password update failed");
-    setForm({ current: "", next: "", confirm: "" });
+    setForm({ current: "", next: "", confirm: "", login: "" });
     showToast("ok", id === "login" ? "Password updated" : "Withdrawal password updated");
     onSuccess();
   }
@@ -2914,6 +2916,9 @@ function SecurityPanel({ id, title, subtitle, expanded, setExpanded, showToast, 
       {open && (
         <div className="sec-card-body">
           <SecField label="Current Password" placeholder={id === "login" ? "Enter current password" : "Enter current withdrawal password"} value={form.current} onChange={(v) => setForm({ ...form, current: v })} show={show.current} toggleShow={() => setShow({ ...show, current: !show.current })} autoComplete="current-password" />
+          {id === "withdraw" && (
+            <SecField label="Login Password" placeholder="Enter your login password to confirm" value={form.login} onChange={(v) => setForm({ ...form, login: v })} show={show.login} toggleShow={() => setShow({ ...show, login: !show.login })} autoComplete="current-password" />
+          )}
           <SecField label="New Password" placeholder="At least 6 characters" value={form.next} onChange={(v) => setForm({ ...form, next: v })} show={show.next} toggleShow={() => setShow({ ...show, next: !show.next })} autoComplete="new-password" />
           <SecField label="Confirm Password" placeholder="Re-enter new password" value={form.confirm} onChange={(v) => setForm({ ...form, confirm: v })} show={show.confirm} toggleShow={() => setShow({ ...show, confirm: !show.confirm })} autoComplete="new-password" error={form.confirm.length > 0 && !matches ? "Passwords do not match." : undefined} />
 
@@ -2951,7 +2956,7 @@ function SecurityPanel({ id, title, subtitle, expanded, setExpanded, showToast, 
           <button
             type="button"
             className="sec-submit"
-            disabled={submitting || !form.current || !ruleLength || !matches}
+            disabled={submitting || !form.current || !ruleLength || !matches || (id === "withdraw" && !form.login)}
             onClick={save}
           >
             {submitting ? "Saving..." : "Save Changes"}

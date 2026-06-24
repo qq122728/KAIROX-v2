@@ -1,9 +1,15 @@
 import { requireUser } from "@/lib/auth";
-import { badRequest, handleError, json, readJson } from "@/lib/api";
+import { badRequest, handleError, json, readJson, tooManyRequests } from "@/lib/api";
 import { emitRealtime, userRoom } from "@/lib/realtime";
 import { buildSwapQuote, executeSwapTransaction, isSwapAsset, SWAP_SUPPORTED_ASSETS } from "@/lib/swap";
+import { consumeUserRate } from "@/lib/rate-limit";
+import { getDb } from "@/lib/db";
+import { getSettings, settingBool } from "@/lib/settings";
 
 type SwapBody = { fromAsset?: string; toAsset?: string; amount?: number | string };
+
+const swapLimit = Math.max(1, Number(process.env.PERP_SIM_SWAP_LIMIT || 30));
+const swapWindowMs = Math.max(1000, Number(process.env.PERP_SIM_SWAP_WINDOW_MS || 60_000));
 
 export async function GET(request: Request) {
   try {
@@ -27,6 +33,18 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await requireUser();
+
+    const settings = getSettings();
+    if (!settingBool(settings.trading_enabled, true)) return badRequest("Trading is currently disabled");
+
+    const access = getDb()
+      .prepare("SELECT COALESCE(trading_enabled, 1) AS trading_enabled FROM users WHERE id = ?")
+      .get(user.id) as { trading_enabled: number } | undefined;
+    if (access?.trading_enabled === 0) return badRequest("Account trading is disabled");
+
+    const limit = consumeUserRate(user.id, "swap", swapLimit, swapWindowMs);
+    if (!limit.allowed) return tooManyRequests("Too many swap requests. Please slow down.", limit.retryAfterMs);
+
     const body = await readJson<SwapBody>(request);
     const fromAsset = String(body.fromAsset || "");
     const toAsset = String(body.toAsset || "");

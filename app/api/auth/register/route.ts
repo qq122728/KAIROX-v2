@@ -1,15 +1,21 @@
 import { createSession } from "@/lib/auth";
-import { badRequest, handleError, json, readJson } from "@/lib/api";
+import { badRequest, handleError, json, readJson, tooManyRequests } from "@/lib/api";
 import { createPublicUid, getDb } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
 import { getSettings, settingBool } from "@/lib/settings";
+import { consumeIpRate } from "@/lib/rate-limit";
 
 const startingBalance = 0;
+
+const registerLimit = Math.max(1, Number(process.env.PERP_SIM_REGISTER_LIMIT || 5));
+const registerWindowMs = Math.max(1000, Number(process.env.PERP_SIM_REGISTER_WINDOW_MS || 60_000));
 
 export async function POST(request: Request) {
   try {
     const settings = getSettings();
     if (!settingBool(settings.registration_enabled, true)) return badRequest("Registration is currently disabled");
+    const limit = consumeIpRate(request, "register", registerLimit, registerWindowMs);
+    if (!limit.allowed) return tooManyRequests("Too many registration attempts. Please try again later.", limit.retryAfterMs);
     const body = await readJson<{
       email: string;
       password: string;

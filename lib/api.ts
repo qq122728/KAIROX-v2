@@ -69,6 +69,14 @@ export function badRequest(message: string) {
   return json({ error: message }, 400);
 }
 
+export function tooManyRequests(message: string, retryAfterMs?: number) {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (retryAfterMs && retryAfterMs > 0) {
+    headers.set("Retry-After", String(Math.max(1, Math.ceil(retryAfterMs / 1000))));
+  }
+  return new NextResponse(JSON.stringify({ error: message }), { status: 429, headers });
+}
+
 export function handleError(error: unknown) {
   if (error instanceof Response) {
     return json({ error: error.statusText || "Request failed" }, error.status);
