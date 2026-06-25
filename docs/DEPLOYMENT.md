@@ -2,6 +2,8 @@
 
 This checklist is for preparing a Beta deployment from the current repository.
 
+For day-to-day production troubleshooting, see `docs/OPERATIONS.md`.
+
 ## Required Processes
 
 VORX Beta needs three long-running processes sharing the same environment and SQLite database:
