@@ -2472,8 +2472,15 @@ function MarketsTab({ markets, newMarket, setNewMarket, mutate }: { markets: Mar
 }
 
 function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSettings }: { settings: Partial<Settings>; setSettings: (value: Partial<Settings>) => void; markDirty: () => void; saveSettings: (settings: Partial<Settings>) => Promise<void> }) {
-  const setSwitch = (key: keyof Settings, enabled: boolean) => setSettings({ ...settings, [key]: String(enabled) });
-  const setValue = (key: keyof Settings, value: string) => setSettings({ ...settings, [key]: value });
+  const [dirty, setDirty] = useState(false);
+  const setSwitch = (key: keyof Settings, enabled: boolean) => {
+    setDirty(true);
+    setSettings({ ...settings, [key]: String(enabled) });
+  };
+  const setValue = (key: keyof Settings, value: string) => {
+    setDirty(true);
+    setSettings({ ...settings, [key]: value });
+  };
   const [binaryText, setBinaryText] = useState(formatBinaryOptionsConfig(settings.binary_options_config));
   const [binaryError, setBinaryError] = useState("");
 
@@ -2488,53 +2495,69 @@ function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSe
         ...settings,
         binary_options_config: binaryOptionsTextToConfig(binaryText)
       });
+      setDirty(false);
     } catch (error) {
       setBinaryError(error instanceof Error ? error.message : "Invalid binary option settings");
     }
   }
 
   return (
-    <div className="grid-2">
-      <div className="panel">
-        <div className="panel-head"><h2><Settings2 />系统开关</h2></div>
-        <div className="panel-body">
-          <SettingSwitch label="注册开关" value={settings.registration_enabled} onToggle={(value) => setSwitch("registration_enabled", value)} />
-          <SettingSwitch label="提现开关" value={settings.withdrawals_enabled} onToggle={(value) => setSwitch("withdrawals_enabled", value)} />
-          <SettingSwitch label="交易开关" value={settings.trading_enabled} onToggle={(value) => setSwitch("trading_enabled", value)} />
+    <div className="admin-settings-page">
+      <div className="admin-settings-savebar">
+        <div>
+          <StatusChip label={dirty ? "未保存修改" : "已同步"} tone={dirty ? "warning" : "success"} />
+          <span>所有配置仍通过原保存接口统一提交。</span>
         </div>
+        <button className="admin-button admin-button-primary" onClick={submitSettings} type="button"><Save size={15} />保存设置</button>
       </div>
-      <div className="panel">
-        <div className="panel-head"><h2><Save />平台设置</h2></div>
-        <div className="panel-body form-grid" style={{ gridTemplateColumns: "1fr" }}>
-          <label className="field"><span>WhatsApp 客服链接</span><input className="input" value={settings.whatsapp_support_url || ""} onChange={(e) => setValue("whatsapp_support_url", e.target.value)} /></label>
-          <label className="field"><span>Telegram 客服链接</span><input className="input" value={settings.telegram_url || ""} onChange={(e) => setValue("telegram_url", e.target.value)} /></label>
-          <label className="field"><span>注册赠金 USDC（已关闭）</span><input className="input" value="0" readOnly disabled /></label>
-          <label className="field"><span>最小提现金额</span><input className="input" value={settings.min_withdrawal_amount || ""} onChange={(e) => setValue("min_withdrawal_amount", e.target.value)} /></label>
-          <label className="field"><span>提现说明</span><textarea className="textarea" value={settings.withdrawal_notice || ""} onChange={(e) => setValue("withdrawal_notice", e.target.value)} /></label>
-        </div>
+
+      <div className="admin-settings-grid">
+        <SectionCard title="系统开关" description="影响注册、提现和交易入口。">
+          <div className="admin-setting-switch-list">
+            <div>
+              <div><strong>注册开关</strong><span>{settings.registration_enabled !== "false" ? "当前开启" : "当前关闭"}</span></div>
+              <Toggle enabled={settings.registration_enabled !== "false"} onChange={(value) => setSwitch("registration_enabled", value)} />
+            </div>
+            <div>
+              <div><strong>提现开关</strong><span>{settings.withdrawals_enabled !== "false" ? "当前开启" : "当前关闭"}</span></div>
+              <Toggle enabled={settings.withdrawals_enabled !== "false"} onChange={(value) => setSwitch("withdrawals_enabled", value)} />
+            </div>
+            <div>
+              <div><strong>交易开关</strong><span>{settings.trading_enabled !== "false" ? "当前开启" : "当前关闭"}</span></div>
+              <Toggle enabled={settings.trading_enabled !== "false"} onChange={(value) => setSwitch("trading_enabled", value)} />
+            </div>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="平台配置" description="客服链接、注册赠金和提现说明。">
+          <div className="admin-settings-form">
+            <label><span>WhatsApp 客服链接</span><input value={settings.whatsapp_support_url || ""} onChange={(event) => setValue("whatsapp_support_url", event.target.value)} /></label>
+            <label><span>Telegram 客服链接</span><input value={settings.telegram_url || ""} onChange={(event) => setValue("telegram_url", event.target.value)} /></label>
+            <label><span>注册赠金 USDC（已关闭）</span><input disabled readOnly value={settings.default_signup_balance || "0"} /></label>
+            <label><span>最小提现金额</span><input value={settings.min_withdrawal_amount || ""} onChange={(event) => setValue("min_withdrawal_amount", event.target.value)} /></label>
+            <label className="is-wide"><span>提现说明</span><textarea value={settings.withdrawal_notice || ""} onChange={(event) => setValue("withdrawal_notice", event.target.value)} /></label>
+          </div>
+        </SectionCard>
       </div>
-      <div className="panel" style={{ gridColumn: "1 / -1" }}>
-        <div className="panel-head"><h2><SlidersHorizontal />二元期权设置</h2></div>
-        <div className="panel-body form-grid" style={{ gridTemplateColumns: "1fr" }}>
-          <label className="field">
+
+      <SectionCard title="二元期权配置" description="每行一个档位，格式保持 seconds,profitPercent。">
+        <div className="admin-settings-form">
+          <label className="is-wide">
             <span>时间和收益率</span>
-            <textarea className="textarea mono" style={{ minHeight: 118 }} value={binaryText} onChange={(e) => { markDirty(); setBinaryText(e.target.value); }} placeholder={"30,30\n60,35"} />
+            <textarea className="is-mono" value={binaryText} onChange={(event) => { markDirty(); setDirty(true); setBinaryText(event.target.value); }} placeholder={"30,30\n60,35"} />
           </label>
-          <span className="muted">每行一个档位：秒数,盈利百分比。亏损百分比自动为盈利 + 1%。</span>
-          {binaryError && <div className="error">{binaryError}</div>}
         </div>
-      </div>
-      <div className="panel" style={{ gridColumn: "1 / -1" }}>
-        <div className="panel-head"><h2><FileText />前端页面内容</h2></div>
-        <div className="panel-body form-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}>
-          <label className="field"><span>About</span><textarea className="textarea" value={settings.about_content || ""} onChange={(e) => setValue("about_content", e.target.value)} /></label>
-          <label className="field"><span>Terms of Service</span><textarea className="textarea" value={settings.terms_content || ""} onChange={(e) => setValue("terms_content", e.target.value)} /></label>
-          <label className="field"><span>Privacy Policy</span><textarea className="textarea" value={settings.privacy_content || ""} onChange={(e) => setValue("privacy_content", e.target.value)} /></label>
+        <p className="admin-settings-help">示例：30,30。保存前仍走现有 binaryOptionsTextToConfig 解析。</p>
+        {binaryError && <div className="error">{binaryError}</div>}
+      </SectionCard>
+
+      <SectionCard title="前端页面内容" description="这些文案会显示在前台静态页面。">
+        <div className="admin-settings-content-grid">
+          <label><span>About</span><textarea value={settings.about_content || ""} onChange={(event) => setValue("about_content", event.target.value)} /></label>
+          <label><span>Terms of Service</span><textarea value={settings.terms_content || ""} onChange={(event) => setValue("terms_content", event.target.value)} /></label>
+          <label><span>Privacy Policy</span><textarea value={settings.privacy_content || ""} onChange={(event) => setValue("privacy_content", event.target.value)} /></label>
         </div>
-      </div>
-      <div className="actions" style={{ gridColumn: "1 / -1", justifyContent: "flex-end" }}>
-        <button className="btn primary" onClick={submitSettings}><Save />保存设置</button>
-      </div>
+      </SectionCard>
     </div>
   );
 }
