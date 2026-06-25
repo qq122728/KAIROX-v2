@@ -2289,9 +2289,39 @@ function OrdersTab({ orders, allOrders, query, setQuery, status, setStatus, muta
   return <div className="panel"><div className="panel-head"><h2><WalletCards />二元期权订单管理</h2><div className="tools"><input className="input" style={{ width: 220 }} placeholder="按用户 ID / 邮箱 / 交易对搜索" value={query} onChange={(e) => setQuery(e.target.value)} /></div></div><div className="panel-body"><div className="tabs">{tabs.map(([id, label]) => <button key={id} className={status === id ? "on" : ""} onClick={() => setStatus(id)}>{label} {id === "all" ? allOrders.length : allOrders.filter((o) => o.status === id).length}</button>)}</div></div><div className="table-wrap"><table className="table"><thead><tr><th>ID</th><th>用户 ID</th><th>用户</th><th>交易对</th><th>方向</th><th>金额</th><th>周期</th><th>入场价</th><th>状态</th><th>到期</th><th>盈亏</th><th>手动结算</th></tr></thead><tbody>{orders.length === 0 && <tr><td colSpan={12} className="empty">没有订单</td></tr>}{orders.map((o) => <tr key={o.id}><td className="mono">{o.id}</td><td className="mono">{displayUid(o)}</td><td>{o.email || o.username}</td><td className="mono">{o.symbol}</td><td><span className={`pill ${o.direction === "call" ? "ok" : "sys"}`}>{o.direction.toUpperCase()}</span></td><td className="mono">{money(o.stake)}</td><td>{o.duration_seconds}s / +{Math.round(o.odds * 100)}%</td><td className="mono">{money(o.entry_price)}</td><td><Status status={o.status} /></td><td className="muted">{cnTime(o.expires_at)}</td><td className="mono">{o.profit == null ? "-" : money(o.profit)}</td><td><div className="actions"><input className="input" style={{ width: 110 }} placeholder="结算价" value={settlePrice[o.id] || ""} onChange={(e) => setSettlePrice({ ...settlePrice, [o.id]: e.target.value })} disabled={o.status !== "open"} /><button className={`btn good ${o.status !== "open" ? "disabled" : ""}`} onClick={() => mutate("/api/admin/orders", "PATCH", { orderId: o.id, result: "won", settlePrice: Number(settlePrice[o.id] || o.entry_price), note: "后台手动判赢" })}>判赢</button><button className={`btn danger ${o.status !== "open" ? "disabled" : ""}`} onClick={() => mutate("/api/admin/orders", "PATCH", { orderId: o.id, result: "lost", settlePrice: Number(settlePrice[o.id] || o.entry_price), note: "后台手动判输" })}>判输</button></div></td></tr>)}</tbody></table></div></div>;
 }
 
+type MarketStatusFilter = "all" | "active" | "inactive";
+
+const marketStatusIds: MarketStatusFilter[] = ["all", "active", "inactive"];
+
+function marketStatusLabel(enabled: number) {
+  return enabled ? "已启用" : "已暂停";
+}
+
+function marketStatusTone(enabled: number): StatusChipTone {
+  return enabled ? "success" : "muted";
+}
+
 function MarketsTab({ markets, newMarket, setNewMarket, mutate }: { markets: Market[]; newMarket: { symbol: string; price: number; maxLeverage: number; feeRate: number; mmr: number }; setNewMarket: (value: { symbol: string; price: number; maxLeverage: number; feeRate: number; mmr: number }) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
   const [marketErrors, setMarketErrors] = useState<Record<number, string>>({});
   const [createError, setCreateError] = useState("");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<MarketStatusFilter>("all");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selectedMarketId, setSelectedMarketId] = useState<number | null>(null);
+  const selectedMarket = selectedMarketId == null ? null : markets.find((market) => market.id === selectedMarketId) ?? null;
+  const visibleMarkets = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return markets.filter((market) => {
+      const statusMatch = statusFilter === "all" || (statusFilter === "active" ? !!market.is_active : !market.is_active);
+      const queryMatch = !q || `${market.id} ${market.symbol} ${market.price} ${market.max_leverage} ${market.fee_rate} ${market.maintenance_margin_rate}`.toLowerCase().includes(q);
+      return statusMatch && queryMatch;
+    });
+  }, [markets, query, statusFilter]);
+  const filters: AdminToolbarFilter[] = [
+    { id: "all", label: "全部", count: markets.length, tone: "info" },
+    { id: "active", label: "已启用", count: markets.filter((market) => market.is_active).length, tone: "success" },
+    { id: "inactive", label: "已暂停", count: markets.filter((market) => !market.is_active).length, tone: "muted" },
+  ];
 
   function saveMarketPrice(market: Market, rawValue: string) {
     const price = Number(rawValue);
@@ -2308,10 +2338,137 @@ function MarketsTab({ markets, newMarket, setNewMarket, mutate }: { markets: Mar
     if (!Number.isFinite(newMarket.price) || newMarket.price <= 0) return setCreateError("请输入有效价格");
     if (!Number.isFinite(newMarket.maxLeverage) || newMarket.maxLeverage < 1) return setCreateError("请输入有效杠杆");
     setCreateError("");
+    setCreateOpen(false);
     mutate("/api/admin/markets", "POST", newMarket);
   }
 
-  return <div className="grid-2"><div className="panel"><div className="panel-head"><h2><Landmark />创建交易对</h2></div><div className="panel-body form-grid" style={{ gridTemplateColumns: "1fr" }}><label className="field"><span>交易对</span><input className="input" value={newMarket.symbol} onChange={(e) => setNewMarket({ ...newMarket, symbol: e.target.value })} /></label><label className="field"><span>价格</span><input className="input" type="number" min="0" step="any" value={newMarket.price} onChange={(e) => setNewMarket({ ...newMarket, price: Number(e.target.value) })} /></label><label className="field"><span>杠杆上限</span><input className="input" type="number" min="1" value={newMarket.maxLeverage} onChange={(e) => setNewMarket({ ...newMarket, maxLeverage: Number(e.target.value) })} /></label>{createError && <div className="form-error">{createError}</div>}<button className="btn primary" onClick={createMarket}>创建</button></div></div><div className="panel"><div className="panel-head"><h2><Activity />市场参数</h2></div><div className="table-wrap"><table className="table"><thead><tr><th>市场</th><th>价格</th><th>杠杆</th><th>手续费</th><th>MMR</th><th>状态</th><th>操作</th></tr></thead><tbody>{markets.map((m) => <tr key={m.id}><td className="mono">{m.symbol}</td><td><input className="input" style={{ width: 110 }} type="number" min="0" step="any" defaultValue={m.price} onBlur={(e) => saveMarketPrice(m, e.target.value)} />{marketErrors[m.id] && <small className="form-error">{marketErrors[m.id]}</small>}</td><td>{m.max_leverage}x</td><td>{m.fee_rate}</td><td>{m.maintenance_margin_rate}</td><td><Status status={m.is_active ? "approved" : "rejected"} /></td><td><button className="btn" onClick={() => mutate("/api/admin/markets", "PATCH", { marketId: m.id, isActive: !m.is_active })}>{m.is_active ? "暂停" : "开启"}</button></td></tr>)}</tbody></table></div></div></div>;
+  function toggleMarket(market: Market) {
+    return mutate("/api/admin/markets", "PATCH", { marketId: market.id, isActive: !market.is_active });
+  }
+
+  const columns: Array<AdminTableColumn<Market>> = [
+    { id: "symbol", header: "交易对", cell: (market) => <span className="admin-review-mono">{market.symbol}</span> },
+    {
+      id: "price",
+      header: "价格",
+      numeric: true,
+      cell: (market) => (
+        <div className="admin-market-price-cell" onClick={(event) => event.stopPropagation()}>
+          <input defaultValue={market.price} min="0" onBlur={(event) => saveMarketPrice(market, event.target.value)} step="any" type="number" />
+          {marketErrors[market.id] && <small>{marketErrors[market.id]}</small>}
+        </div>
+      ),
+    },
+    { id: "leverage", header: "杠杆", numeric: true, cell: (market) => <span className="admin-review-money">{market.max_leverage}x</span> },
+    { id: "fee", header: "手续费", numeric: true, cell: (market) => <span className="admin-review-money">{market.fee_rate}</span> },
+    { id: "mmr", header: "MMR", numeric: true, cell: (market) => <span className="admin-review-money">{market.maintenance_margin_rate}</span> },
+    { id: "status", header: "状态", align: "center", cell: (market) => <StatusChip label={marketStatusLabel(market.is_active)} tone={marketStatusTone(market.is_active)} /> },
+    {
+      id: "actions",
+      header: "操作",
+      align: "center",
+      cell: (market) => (
+        <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
+          <ActionMenu
+            items={[
+              { id: "toggle", label: market.is_active ? "暂停交易" : "启用交易", onSelect: () => toggleMarket(market) },
+            ]}
+            onPrimaryClick={() => setSelectedMarketId(market.id)}
+            primaryLabel="查看"
+          />
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="admin-market-page">
+      <AdminToolbar
+        activeFilterIds={[statusFilter]}
+        filters={filters}
+        onFilterToggle={(id) => {
+          if (marketStatusIds.includes(id as MarketStatusFilter)) setStatusFilter(id as MarketStatusFilter);
+        }}
+        onReset={() => {
+          setQuery("");
+          setStatusFilter("all");
+        }}
+        onSearch={() => undefined}
+        onSearchChange={setQuery}
+        searchPlaceholder="搜索交易对 / 价格 / 手续费 / MMR"
+        searchValue={query}
+      >
+        <button className="admin-button admin-button-primary" onClick={() => { setCreateError(""); setCreateOpen(true); }} type="button">创建交易对</button>
+      </AdminToolbar>
+
+      <AdminTable
+        columns={columns}
+        emptyState={<EmptyState compact description="调整搜索或状态筛选后再试。" title="暂无交易市场" />}
+        getRowKey={(market) => market.id}
+        onRowClick={(market) => setSelectedMarketId(market.id)}
+        rows={visibleMarkets}
+        selectedRowKey={selectedMarketId ?? undefined}
+      />
+
+      <AdminDrawer
+        description="创建后会使用当前后台市场接口写入。"
+        footer={(
+          <>
+            <button className="admin-button admin-button-ghost" onClick={() => setCreateOpen(false)} type="button">取消</button>
+            <button className="admin-button admin-button-primary" onClick={createMarket} type="button">创建</button>
+          </>
+        )}
+        onClose={() => setCreateOpen(false)}
+        open={createOpen}
+        title="创建交易对"
+        width={440}
+      >
+        <SectionCard title="基础参数">
+          <div className="admin-market-form">
+            <label><span>交易对</span><input onChange={(event) => setNewMarket({ ...newMarket, symbol: event.target.value })} value={newMarket.symbol} /></label>
+            <label><span>价格</span><input min="0" onChange={(event) => setNewMarket({ ...newMarket, price: Number(event.target.value) })} step="any" type="number" value={newMarket.price} /></label>
+            <label><span>杠杆上限</span><input min="1" onChange={(event) => setNewMarket({ ...newMarket, maxLeverage: Number(event.target.value) })} type="number" value={newMarket.maxLeverage} /></label>
+          </div>
+          {createError && <div className="form-error">{createError}</div>}
+        </SectionCard>
+      </AdminDrawer>
+
+      <AdminDrawer
+        description={selectedMarket ? `${selectedMarket.symbol} · ${marketStatusLabel(selectedMarket.is_active)}` : undefined}
+        footer={selectedMarket ? (
+          <>
+            <button className="admin-button admin-button-ghost" onClick={() => setSelectedMarketId(null)} type="button">关闭</button>
+            <button className={selectedMarket.is_active ? "admin-button admin-button-danger" : "admin-button admin-button-primary"} onClick={() => toggleMarket(selectedMarket)} type="button">{selectedMarket.is_active ? "暂停交易" : "启用交易"}</button>
+          </>
+        ) : undefined}
+        onClose={() => setSelectedMarketId(null)}
+        open={!!selectedMarket}
+        statusLabel={selectedMarket ? marketStatusLabel(selectedMarket.is_active) : undefined}
+        statusTone={selectedMarket ? marketStatusTone(selectedMarket.is_active) : undefined}
+        title={selectedMarket?.symbol || "交易市场"}
+        width={440}
+      >
+        {selectedMarket && (
+          <>
+            <SectionCard title="基础信息">
+              <div className="admin-review-detail-grid">
+                <div><span>交易对</span><strong>{selectedMarket.symbol}</strong></div>
+                <div><span>当前价格</span><strong>{money(selectedMarket.price)}</strong></div>
+                <div><span>状态</span><strong>{marketStatusLabel(selectedMarket.is_active)}</strong></div>
+                <div><span>杠杆上限</span><strong>{selectedMarket.max_leverage}x</strong></div>
+              </div>
+            </SectionCard>
+            <SectionCard title="交易参数" description="价格请在列表中编辑，失焦后自动保存。">
+              <div className="admin-review-detail-grid">
+                <div><span>手续费</span><strong>{selectedMarket.fee_rate}</strong></div>
+                <div><span>维持保证金率</span><strong>{selectedMarket.maintenance_margin_rate}</strong></div>
+              </div>
+            </SectionCard>
+          </>
+        )}
+      </AdminDrawer>
+    </div>
+  );
 }
 
 function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSettings }: { settings: Partial<Settings>; setSettings: (value: Partial<Settings>) => void; markDirty: () => void; saveSettings: (settings: Partial<Settings>) => Promise<void> }) {

@@ -1329,6 +1329,11 @@
   gap: 16px;
 }
 
+.admin-market-page {
+  display: grid;
+  gap: 16px;
+}
+
 .admin-review-page .admin-table-shell {
   overflow-x: auto;
 }
@@ -1338,6 +1343,10 @@
 }
 
 .admin-address-page .admin-table-shell {
+  overflow-x: auto;
+}
+
+.admin-market-page .admin-table-shell {
   overflow-x: auto;
 }
 
@@ -1351,6 +1360,10 @@
 
 .admin-address-page .admin-table {
   min-width: 920px;
+}
+
+.admin-market-page .admin-table {
+  min-width: 980px;
 }
 
 .admin-review-user,
@@ -1589,6 +1602,59 @@
 .admin-address-form select:disabled {
   cursor: not-allowed;
   opacity: 0.58;
+}
+
+.admin-market-price-cell {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.admin-market-price-cell input {
+  width: 116px;
+  min-height: 34px;
+  border: 1px solid var(--admin-line);
+  border-radius: 9px;
+  outline: 0;
+  background: rgba(8, 13, 22, 0.62);
+  color: var(--admin-text);
+  padding: 0 10px;
+  text-align: right;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-market-price-cell small {
+  color: #fca5a5;
+  font-size: 11px;
+}
+
+.admin-market-form {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-market-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.admin-market-form span {
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.admin-market-form input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  outline: 0;
+  background: rgba(8, 13, 22, 0.62);
+  color: var(--admin-text);
+  padding: 0 11px;
+  font: inherit;
 }
 
 @media (max-width: 920px) {
