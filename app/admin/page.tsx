@@ -1820,65 +1820,207 @@ function DepositAddressesTab() {
   );
 }
 
-function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus, mutate }: { orders: Order[]; allOrders: Order[]; query: string; setQuery: (value: string) => void; status: "all" | "open" | "won" | "lost"; setStatus: (value: "all" | "open" | "won" | "lost") => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+type OrderStatusFilter = "all" | "open" | "won" | "lost";
+
+const orderStatusIds: OrderStatusFilter[] = ["all", "open", "won", "lost"];
+
+function orderStatusLabel(status: string) {
+  if (status === "open") return "运行中";
+  if (status === "won") return "已盈利";
+  if (status === "lost") return "已亏损";
+  return status || "-";
+}
+
+function orderStatusTone(status: string): StatusChipTone {
+  if (status === "open") return "info";
+  if (status === "won") return "success";
+  if (status === "lost") return "danger";
+  return "muted";
+}
+
+function orderManualLabel(order: Order) {
+  if (order.manual_result === "won") return "Preset Win";
+  if (order.manual_result === "lost") return "Preset Loss";
+  return "-";
+}
+
+function orderStatusMeta(order: Order): { label: string; tone: StatusChipTone } {
+  const expiresAt = new Date(order.expires_at).getTime();
+  const expired = Number.isFinite(expiresAt) && expiresAt <= Date.now();
+  if (order.status === "open" && expired && !order.manual_result) return { label: "待结算", tone: "warning" };
+  return { label: orderStatusLabel(order.status), tone: orderStatusTone(order.status) };
+}
+
+function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus, mutate }: { orders: Order[]; allOrders: Order[]; query: string; setQuery: (value: string) => void; status: OrderStatusFilter; setStatus: (value: OrderStatusFilter) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
   const [settlePrice, setSettlePrice] = useState<Record<number, string>>({});
-  const tabs: Array<["all" | "open" | "won" | "lost", string]> = [["all", "All"], ["open", "Open"], ["won", "Won"], ["lost", "Lost"]];
-  const now = Date.now();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const selectedOrder = selectedId == null ? null : orders.find((order) => order.id === selectedId) ?? allOrders.find((order) => order.id === selectedId) ?? null;
+  const selectedRawSettlePrice = selectedOrder ? settlePrice[selectedOrder.id] ?? (selectedOrder.manual_settle_price ? String(selectedOrder.manual_settle_price) : "") : "";
+  const selectedNextSettlePrice = selectedOrder ? Number(selectedRawSettlePrice || selectedOrder.entry_price) : 0;
+
+  const filters: AdminToolbarFilter[] = [
+    { id: "all", label: "全部", count: allOrders.length, tone: "info" },
+    { id: "open", label: "运行中", count: allOrders.filter((order) => order.status === "open").length, tone: "info" },
+    { id: "won", label: "已盈利", count: allOrders.filter((order) => order.status === "won").length, tone: "success" },
+    { id: "lost", label: "已亏损", count: allOrders.filter((order) => order.status === "lost").length, tone: "danger" },
+  ];
+
+  function riskAmount(order: Order) {
+    return Number(order.risk_amount || order.stake);
+  }
+
+  function presetWin(order: Order) {
+    return mutate("/api/admin/orders", "PATCH", {
+      orderId: order.id,
+      result: "won",
+      settlePrice: Number((settlePrice[order.id] ?? (order.manual_settle_price ? String(order.manual_settle_price) : "")) || order.entry_price),
+      note: "Admin preset win",
+    });
+  }
+
+  function presetLoss(order: Order) {
+    return mutate("/api/admin/orders", "PATCH", {
+      orderId: order.id,
+      result: "lost",
+      settlePrice: Number((settlePrice[order.id] ?? (order.manual_settle_price ? String(order.manual_settle_price) : "")) || order.entry_price),
+      note: "Admin preset loss",
+    });
+  }
+
+  const columns: Array<AdminTableColumn<Order>> = [
+    { id: "id", header: "ID", cell: (order) => <span className="admin-review-mono">{order.id}</span> },
+    {
+      id: "user",
+      header: "用户",
+      cell: (order) => (
+        <div className="admin-review-user">
+          <strong>{order.email || order.username}</strong>
+          <span>UID {displayUid(order)}</span>
+        </div>
+      ),
+    },
+    { id: "symbol", header: "交易对", cell: (order) => <span className="admin-review-mono">{order.symbol}</span> },
+    {
+      id: "direction",
+      header: "方向",
+      align: "center",
+      cell: (order) => <StatusChip label={order.direction.toUpperCase()} tone={order.direction === "call" ? "success" : "danger"} />,
+    },
+    { id: "stake", header: "投入", numeric: true, cell: (order) => <span className="admin-review-money">{money(order.stake)}</span> },
+    { id: "risk", header: "风险金额", numeric: true, cell: (order) => <span className="admin-review-money">{money(riskAmount(order))}</span> },
+    { id: "duration", header: "周期/赔率", cell: (order) => <span className="admin-review-muted">{order.duration_seconds}s / +{Math.round(order.odds * 100)}%</span> },
+    { id: "entry", header: "入场价", numeric: true, cell: (order) => <span className="admin-review-money">{money(order.entry_price)}</span> },
+    { id: "manualPrice", header: "预设价", numeric: true, cell: (order) => <span className="admin-review-money">{order.manual_settle_price == null ? "-" : money(order.manual_settle_price)}</span> },
+    { id: "manualResult", header: "预设结果", align: "center", cell: (order) => <span className="admin-review-muted">{orderManualLabel(order)}</span> },
+    { id: "status", header: "状态", align: "center", cell: (order) => {
+      const meta = orderStatusMeta(order);
+      return <StatusChip label={meta.label} tone={meta.tone} />;
+    } },
+    { id: "expires", header: "到期时间", cell: (order) => <span className="admin-user-time">{cnTime(order.expires_at)}</span> },
+    { id: "profit", header: "盈亏", numeric: true, cell: (order) => <span className={`admin-review-money ${Number(order.profit || 0) < 0 ? "is-danger" : Number(order.profit || 0) > 0 ? "is-success" : ""}`}>{order.profit == null ? "-" : money(order.profit)}</span> },
+    {
+      id: "action",
+      header: "操作",
+      align: "center",
+      cell: (order) => (
+        <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
+          <ActionMenu
+            items={[
+              { id: "manual", label: "人工处理", disabled: order.status !== "open", onSelect: () => setSelectedId(order.id) },
+            ]}
+            onPrimaryClick={() => setSelectedId(order.id)}
+            primaryLabel="查看"
+          />
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div className="panel">
-      <div className="panel-head">
-        <h2><WalletCards />Binary Orders</h2>
-        <div className="tools">
-          <input className="input" style={{ width: 220 }} placeholder="Search user ID / email / symbol" value={query} onChange={(e) => setQuery(e.target.value)} />
-        </div>
-      </div>
-      <div className="panel-body">
-        <div className="tabs">
-          {tabs.map(([id, label]) => <button key={id} className={status === id ? "on" : ""} onClick={() => setStatus(id)}>{label} {id === "all" ? allOrders.length : allOrders.filter((o) => o.status === id).length}</button>)}
-        </div>
-      </div>
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr><th>ID</th><th>User ID</th><th>User</th><th>Symbol</th><th>Side</th><th>Stake</th><th>Duration</th><th>Entry</th><th>Status</th><th>Expires</th><th>PnL</th><th>Manual Settlement</th></tr>
-          </thead>
-          <tbody>
-            {orders.length === 0 && <tr><td colSpan={12} className="empty">No orders</td></tr>}
-            {orders.map((o) => {
-              const expiresAt = new Date(o.expires_at).getTime();
-              const expired = Number.isFinite(expiresAt) && expiresAt <= now;
-              const canConfigure = o.status === "open";
-              const rawSettlePrice = settlePrice[o.id] ?? (o.manual_settle_price ? String(o.manual_settle_price) : "");
-              const nextSettlePrice = Number(rawSettlePrice || o.entry_price);
-              const presetLabel = o.manual_result === "won" ? "preset win" : o.manual_result === "lost" ? "preset loss" : "";
-              const riskAmount = Number(o.risk_amount || o.stake);
-              return (
-                <tr key={o.id}>
-                  <td className="mono">{o.id}</td>
-                  <td className="mono">{displayUid(o)}</td>
-                  <td>{o.email || o.username}</td>
-                  <td className="mono">{o.symbol}</td>
-                  <td><span className={`pill ${o.direction === "call" ? "ok" : "sys"}`}>{o.direction.toUpperCase()}</span></td>
-                  <td className="mono">{money(o.stake)}</td>
-                  <td>{o.duration_seconds}s / +{Math.round(o.odds * 100)}% / -{money(riskAmount)}</td>
-                  <td className="mono">{money(o.entry_price)}</td>
-                  <td>{o.status === "open" && presetLabel ? <span className={`pill ${o.manual_result === "won" ? "ok" : "sys"}`}>{expired ? presetLabel : presetLabel}</span> : o.status === "open" && expired ? <span className="pill wait">pending</span> : <Status status={o.status} />}</td>
-                  <td className="muted">{cnTime(o.expires_at)}</td>
-                  <td className="mono">{o.profit == null ? "-" : money(o.profit)}</td>
-                  <td>
-                    <div className="actions">
-                      <input className="input" style={{ width: 110 }} placeholder="Preset price" value={rawSettlePrice} onChange={(e) => setSettlePrice({ ...settlePrice, [o.id]: e.target.value })} disabled={!canConfigure} />
-                      <button className={`btn good ${!canConfigure ? "disabled" : ""}`} disabled={!canConfigure} onClick={() => mutate("/api/admin/orders", "PATCH", { orderId: o.id, result: "won", settlePrice: nextSettlePrice, note: "Admin preset win" })}>{o.manual_result === "won" ? "Win Set" : "Set Win"}</button>
-                      <button className={`btn danger ${!canConfigure ? "disabled" : ""}`} disabled={!canConfigure} onClick={() => mutate("/api/admin/orders", "PATCH", { orderId: o.id, result: "lost", settlePrice: nextSettlePrice, note: "Admin preset loss" })}>{o.manual_result === "lost" ? "Loss Set" : "Set Loss"}</button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+    <div className="admin-orders-page">
+      <AdminToolbar
+        activeFilterIds={[status]}
+        filters={filters}
+        onFilterToggle={(id) => {
+          if (orderStatusIds.includes(id as OrderStatusFilter)) setStatus(id as OrderStatusFilter);
+        }}
+        onReset={() => {
+          setQuery("");
+          setStatus("all");
+        }}
+        onSearch={() => undefined}
+        onSearchChange={setQuery}
+        searchPlaceholder="搜索订单 ID / UID / 邮箱 / 交易对 / 备注"
+        searchValue={query}
+      />
+
+      <AdminTable
+        columns={columns}
+        emptyState={<EmptyState compact description="换个状态或搜索关键词后再试。" title="没有二元订单" />}
+        getRowKey={(order) => order.id}
+        onRowClick={(order) => setSelectedId(order.id)}
+        rows={orders}
+        selectedRowKey={selectedId ?? undefined}
+      />
+
+      <AdminDrawer
+        description={selectedOrder ? `${selectedOrder.symbol} · ${selectedOrder.direction.toUpperCase()} · ${cnTime(selectedOrder.created_at)}` : undefined}
+        footer={selectedOrder ? (
+          selectedOrder.status === "open" ? (
+            <>
+              <button className="admin-button admin-button-ghost" onClick={() => setSelectedId(null)} type="button">取消</button>
+              <button className="admin-button admin-button-danger" onClick={() => presetLoss(selectedOrder)} type="button">{selectedOrder.manual_result === "lost" ? "Loss Set" : "Set Loss"}</button>
+              <button className="admin-button admin-button-primary" onClick={() => presetWin(selectedOrder)} type="button">{selectedOrder.manual_result === "won" ? "Win Set" : "Set Win"}</button>
+            </>
+          ) : <span className="admin-review-processed">该订单已结束，不能人工处理</span>
+        ) : undefined}
+        onClose={() => setSelectedId(null)}
+        open={!!selectedOrder}
+        statusLabel={selectedOrder ? orderStatusMeta(selectedOrder).label : undefined}
+        statusTone={selectedOrder ? orderStatusMeta(selectedOrder).tone : undefined}
+        title={selectedOrder ? `二元订单 #${selectedOrder.id}` : "二元订单"}
+        width={460}
+      >
+        {selectedOrder && (
+          <>
+            <SectionCard title="基本信息">
+              <div className="admin-review-detail-grid">
+                <div><span>用户</span><strong>{selectedOrder.email || selectedOrder.username}</strong></div>
+                <div><span>UID</span><strong>{displayUid(selectedOrder)}</strong></div>
+                <div><span>交易对</span><strong>{selectedOrder.symbol}</strong></div>
+                <div><span>方向</span><strong>{selectedOrder.direction.toUpperCase()}</strong></div>
+                <div><span>创建时间</span><strong>{cnTime(selectedOrder.created_at)}</strong></div>
+                <div><span>到期时间</span><strong>{cnTime(selectedOrder.expires_at)}</strong></div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="订单信息">
+              <div className="admin-review-detail-grid">
+                <div><span>投入金额</span><strong>{money(selectedOrder.stake)}</strong></div>
+                <div><span>风险金额</span><strong>{money(riskAmount(selectedOrder))}</strong></div>
+                <div><span>周期</span><strong>{selectedOrder.duration_seconds}s</strong></div>
+                <div><span>赔率</span><strong>+{Math.round(selectedOrder.odds * 100)}%</strong></div>
+                <div><span>Entry Price</span><strong>{money(selectedOrder.entry_price)}</strong></div>
+                <div><span>Settlement Price</span><strong>{selectedOrder.settle_price == null ? "-" : money(selectedOrder.settle_price)}</strong></div>
+                <div><span>Profit</span><strong>{selectedOrder.profit == null ? "-" : money(selectedOrder.profit)}</strong></div>
+                <div><span>Note</span><strong>{selectedOrder.note || "-"}</strong></div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="人工预设" description="默认使用入场价；只有运行中订单可以设置。">
+              <div className="admin-order-manual-grid">
+                <label>
+                  <span>Preset price</span>
+                  <input disabled={selectedOrder.status !== "open"} onChange={(event) => setSettlePrice({ ...settlePrice, [selectedOrder.id]: event.target.value })} placeholder="Preset price" type="number" value={selectedRawSettlePrice} />
+                </label>
+                <div><span>将使用价格</span><strong>{Number.isFinite(selectedNextSettlePrice) ? money(selectedNextSettlePrice) : "-"}</strong></div>
+                <div><span>Manual Result</span><strong>{orderManualLabel(selectedOrder)}</strong></div>
+                <div><span>Manual Settle Price</span><strong>{selectedOrder.manual_settle_price == null ? "-" : money(selectedOrder.manual_settle_price)}</strong></div>
+              </div>
+            </SectionCard>
+          </>
+        )}
+      </AdminDrawer>
     </div>
   );
 }

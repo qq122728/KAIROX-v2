@@ -1319,12 +1319,25 @@
   gap: 16px;
 }
 
+.admin-orders-page {
+  display: grid;
+  gap: 16px;
+}
+
 .admin-review-page .admin-table-shell {
+  overflow-x: auto;
+}
+
+.admin-orders-page .admin-table-shell {
   overflow-x: auto;
 }
 
 .admin-review-page .admin-table {
   min-width: 1120px;
+}
+
+.admin-orders-page .admin-table {
+  min-width: 1420px;
 }
 
 .admin-review-user,
@@ -1362,6 +1375,14 @@
 .admin-review-money {
   color: #ffffff;
   font-weight: 760;
+}
+
+.admin-review-money.is-success {
+  color: #86efac;
+}
+
+.admin-review-money.is-danger {
+  color: #fca5a5;
 }
 
 .admin-review-code {
@@ -1459,6 +1480,47 @@
   line-height: 1.5;
 }
 
+.admin-order-manual-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.admin-order-manual-grid label,
+.admin-order-manual-grid div {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-order-manual-grid span {
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.admin-order-manual-grid strong {
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-order-manual-grid input {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  outline: 0;
+  background: rgba(8, 13, 22, 0.62);
+  color: var(--admin-text);
+  padding: 0 11px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-order-manual-grid input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 @media (max-width: 920px) {
   .admin-shell {
     grid-template-columns: 1fr;
@@ -1526,7 +1588,8 @@
   }
 
   .admin-review-detail-grid,
-  .admin-review-proof-grid {
+  .admin-review-proof-grid,
+  .admin-order-manual-grid {
     grid-template-columns: 1fr;
   }
 }
