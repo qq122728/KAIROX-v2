@@ -1,3 +1,4 @@
+.admin-page,
 .admin-console {
   --admin-bg: #0b111c;
   --admin-sidebar-bg: #080d16;
@@ -23,6 +24,9 @@
   --admin-muted-soft: rgba(148, 163, 184, 0.1);
   --admin-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
   --admin-radius: 14px;
+}
+
+.admin-console {
   min-height: 100vh;
   background: var(--admin-bg);
   color: var(--admin-text);
@@ -1280,6 +1284,90 @@
   color: var(--admin-text);
   font-style: normal;
   font-variant-numeric: tabular-nums;
+}
+
+.admin-user-modal-form {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-user-modal-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.admin-user-modal-form label > span,
+.admin-user-modal-note {
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.admin-user-modal-form input,
+.admin-user-modal-form textarea {
+  width: 100%;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  outline: 0;
+  background: rgba(8, 13, 22, 0.62);
+  color: var(--admin-text);
+  font: inherit;
+  font-size: 13px;
+  padding: 0 11px;
+}
+
+.admin-user-modal-form input {
+  min-height: 38px;
+}
+
+.admin-user-modal-form textarea {
+  min-height: 118px;
+  resize: vertical;
+  padding: 11px;
+}
+
+.admin-user-modal-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-user-modal-option {
+  min-height: 34px;
+  border: 1px solid var(--admin-line);
+  border-radius: 999px;
+  background: rgba(8, 13, 22, 0.42);
+  color: var(--admin-text-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 780;
+  padding: 0 12px;
+}
+
+.admin-user-modal-option:hover {
+  border-color: rgba(59, 130, 246, 0.34);
+  color: #ffffff;
+}
+
+.admin-user-modal-option.is-active {
+  border-color: rgba(59, 130, 246, 0.58);
+  background: var(--admin-blue-soft);
+  color: #ffffff;
+}
+
+.admin-user-modal-option.is-danger.is-active {
+  border-color: rgba(239, 68, 68, 0.48);
+  background: var(--admin-danger-soft);
+  color: #fecaca;
+}
+
+.admin-user-modal-error {
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  border-radius: 10px;
+  background: var(--admin-danger-soft);
+  color: #fecaca;
+  font-size: 12px;
+  padding: 10px 12px;
 }
 
 .admin-user-switch-list > div {

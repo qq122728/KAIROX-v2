@@ -46,6 +46,7 @@ export function ConfirmDialog({
       <button
         aria-label="关闭确认弹窗"
         className="admin-confirm-backdrop"
+        disabled={busy}
         onClick={onClose}
         type="button"
       />
@@ -71,11 +72,11 @@ export function ConfirmDialog({
           ) : null}
         </div>
         <footer className="admin-confirm-actions">
-          <button className="admin-button admin-button-ghost" onClick={onClose} type="button">
+          <button className="admin-button admin-button-ghost" disabled={busy} onClick={onClose} type="button">
             {cancelLabel}
           </button>
           <button
-            className="admin-button admin-button-danger"
+            className={`admin-button ${tone === "danger" ? "admin-button-danger" : "admin-button-primary"}`}
             disabled={!canConfirm || busy}
             onClick={onConfirm}
             type="button"

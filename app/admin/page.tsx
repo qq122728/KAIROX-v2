@@ -26,6 +26,7 @@ import {
   X
 } from "lucide-react";
 import ActionMenu, { type ActionMenuItem } from "./components/ActionMenu";
+import AdminConfirmDialog from "./components/ConfirmDialog";
 import AdminDrawer from "./components/AdminDrawer";
 import AdminLayout from "./components/AdminLayout";
 import type { AdminNavGroup, AdminNavItem } from "./components/AdminSidebar";
@@ -886,6 +887,7 @@ function getConfirmOptions(url: string, method: string, body: unknown, context?:
 
 function ConfirmDialog({ confirm, close }: { confirm: NonNullable<ConfirmState>; close: () => void }) {
   const [busy, setBusy] = useState(false);
+  const tone = confirm.variant === "danger" ? "danger" : "warning";
   async function submit() {
     setBusy(true);
     try {
@@ -897,16 +899,17 @@ function ConfirmDialog({ confirm, close }: { confirm: NonNullable<ConfirmState>;
   }
 
   return (
-    <div className="modal-bg" onClick={close}>
-      <div className="modal confirm" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-head"><h3>{confirm.title}</h3><button className="btn icon" onClick={close}><X /></button></div>
-        <div className="modal-body"><p>{confirm.message}</p></div>
-        <div className="modal-foot">
-          <button className="btn" onClick={close} disabled={busy}>{"\u53d6\u6d88"}</button>
-          <button className={`btn ${confirm.variant || "primary"}`} onClick={submit} disabled={busy}>{busy ? "\u5904\u7406\u4e2d..." : confirm.confirmText || "\u786e\u8ba4"}</button>
-        </div>
-      </div>
-    </div>
+    <AdminConfirmDialog
+      busy={busy}
+      cancelLabel="取消"
+      confirmLabel={confirm.confirmText || "确认"}
+      description={confirm.message}
+      onClose={busy ? () => undefined : close}
+      onConfirm={submit}
+      open
+      title={confirm.title}
+      tone={tone}
+    />
   );
 }
 
@@ -1250,37 +1253,117 @@ function UserModal({ modal, assets, close, mutate }: { modal: Exclude<ModalState
   }
 
   const title = modal.type === "funds" ? "上下分" : modal.type === "loginPassword" ? "修改登录密码" : modal.type === "withdrawPassword" ? "修改提款密码" : "编辑备注";
+  const operationOptions: Array<{ id: typeof operation; label: string; danger?: boolean }> = [
+    { id: "credit", label: "上分" },
+    { id: "debit", label: "下分", danger: true },
+    { id: "freeze", label: "冻结", danger: true },
+    { id: "unfreeze", label: "解除冻结" },
+  ];
+  const isHighRisk = modal.type !== "remark";
   return (
-    <div className="modal-bg">
-      <div className="modal">
-        <div className="modal-head"><h3>{title}</h3><button className="btn icon" onClick={close}><X /></button></div>
-        <div className="modal-body">
-          {modal.type === "funds" && (
-            <>
-              <div className="asset-mini">{balances.map((row) => <div key={row.asset}><b>{row.asset}</b><span className="mono">{money(row.balance, 8)}</span></div>)}</div>
-              <div className="form-grid" style={{ gridTemplateColumns: "1fr" }}>
-                <label className="field"><span>用户 ID</span><input className="input" value={displayUid(modal.user)} readOnly /></label>
-                <label className="field"><span>币种</span><div className="tabs">{coins.map((coin) => <button key={coin} className={asset === coin ? "on" : ""} onClick={() => setAsset(coin)}>{coin}</button>)}</div></label>
-                <label className="field"><span>操作类型</span><div className="tabs">
-                  {[["credit", "上分"], ["debit", "下分"], ["freeze", "冻结"], ["unfreeze", "解除冻结"]].map(([id, label]) => <button key={id} className={operation === id ? "on" : ""} onClick={() => setOperation(id as typeof operation)}>{label}</button>)}
-                </div></label>
-                <label className="field"><span>操作金额</span><input className="input" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} /></label>
-              </div>
-            </>
-          )}
-          {(modal.type === "loginPassword" || modal.type === "withdrawPassword") && (
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr" }}>
-              <label className="field"><span>新密码</span><input className="input" type="password" placeholder="至少 6 位" value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-              <label className="field"><span>确认新密码</span><input className="input" type="password" placeholder="再次输入新密码" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></label>
-              <p className="muted">用户：{modal.user.email || modal.user.username} / UID {displayUid(modal.user)}</p>
+    <AdminDrawer
+      description={`${modal.user.email || modal.user.username} · UID ${displayUid(modal.user)}`}
+      footer={(
+        <>
+          <button className="admin-button admin-button-ghost" disabled={saving} onClick={close} type="button">取消</button>
+          <button className={`admin-button ${isHighRisk ? "admin-button-danger" : "admin-button-primary"}`} disabled={saving} onClick={submit} type="button">
+            {saving ? "保存中..." : isHighRisk ? "继续确认" : "保存"}
+          </button>
+        </>
+      )}
+      onClose={saving ? () => undefined : close}
+      open
+      title={title}
+      width={440}
+    >
+      {modal.type === "funds" && (
+        <>
+          <SectionCard description="操作前资产快照，提交后仍会进入二次确认。" title="当前资产">
+            <div className="admin-user-asset-list">
+              {balances.map((row) => (
+                <div className="admin-user-asset-row" key={row.asset}>
+                  <b>{row.asset}</b>
+                  <span>可用 <em>{money(row.balance, 8)}</em></span>
+                  <span>冻结 <em>{money(row.locked, 8)}</em></span>
+                </div>
+              ))}
             </div>
-          )}
-          {modal.type === "remark" && <label className="field"><span>备注</span><textarea className="textarea" value={remark} onChange={(e) => setRemark(e.target.value)} /></label>}
-          {formError && <div className="error">{formError}</div>}
-        </div>
-        <div className="modal-foot"><button className="btn" onClick={close} disabled={saving}>取消</button><button className="btn primary" onClick={submit} disabled={saving}>{saving ? "保存中..." : "确定"}</button></div>
-      </div>
-    </div>
+          </SectionCard>
+
+          <SectionCard description="资金调整属于高风险操作，确认后才会提交。" title="资金操作" tone="danger">
+            <div className="admin-user-modal-form">
+              <label>
+                <span>用户 UID</span>
+                <input readOnly value={displayUid(modal.user)} />
+              </label>
+              <label>
+                <span>币种</span>
+                <div className="admin-user-modal-options">
+                  {coins.map((coin) => (
+                    <button
+                      className={`admin-user-modal-option ${asset === coin ? "is-active" : ""}`}
+                      key={coin}
+                      onClick={() => setAsset(coin)}
+                      type="button"
+                    >
+                      {coin}
+                    </button>
+                  ))}
+                </div>
+              </label>
+              <label>
+                <span>操作类型</span>
+                <div className="admin-user-modal-options">
+                  {operationOptions.map((item) => (
+                    <button
+                      className={`admin-user-modal-option ${item.danger ? "is-danger" : ""} ${operation === item.id ? "is-active" : ""}`}
+                      key={item.id}
+                      onClick={() => setOperation(item.id)}
+                      type="button"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </label>
+              <label>
+                <span>操作金额</span>
+                <input onChange={(event) => setAmount(event.target.value)} type="number" value={amount} />
+              </label>
+            </div>
+          </SectionCard>
+        </>
+      )}
+
+      {(modal.type === "loginPassword" || modal.type === "withdrawPassword") && (
+        <SectionCard description="密码重置属于高风险操作，确认后才会提交。" title="密码信息" tone="danger">
+          <div className="admin-user-modal-form">
+            <label>
+              <span>新密码</span>
+              <input onChange={(event) => setPassword(event.target.value)} placeholder="至少 6 位" type="password" value={password} />
+            </label>
+            <label>
+              <span>确认新密码</span>
+              <input onChange={(event) => setConfirmPassword(event.target.value)} placeholder="再次输入新密码" type="password" value={confirmPassword} />
+            </label>
+            <p className="admin-user-modal-note">用户：{modal.user.email || modal.user.username} / UID {displayUid(modal.user)}</p>
+          </div>
+        </SectionCard>
+      )}
+
+      {modal.type === "remark" && (
+        <SectionCard description="仅更新后台备注，不改变用户资金、密码或权限。" title="运营备注">
+          <div className="admin-user-modal-form">
+            <label>
+              <span>备注</span>
+              <textarea onChange={(event) => setRemark(event.target.value)} value={remark} />
+            </label>
+          </div>
+        </SectionCard>
+      )}
+
+      {formError && <div className="admin-user-modal-error">{formError}</div>}
+    </AdminDrawer>
   );
 }
 
