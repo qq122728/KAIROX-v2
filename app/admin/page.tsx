@@ -98,6 +98,18 @@ type ModalState =
 type ConfirmVariant = "primary" | "good" | "danger" | "warn";
 type ConfirmOptions = { title: string; message: string; confirmText?: string; variant?: ConfirmVariant };
 type ConfirmState = (ConfirmOptions & { action: () => Promise<void> }) | null;
+type ConfirmContext = {
+  target?: string;
+  address?: string;
+  asset?: string;
+  network?: string;
+  symbol?: string;
+  changes?: string[];
+  onConfirmed?: () => void | Promise<void>;
+};
+type MutateResult = "executed" | "queued";
+type AdminMutate = (url: string, method: string, body: unknown, context?: ConfirmContext) => Promise<MutateResult>;
+type AdminSaveSettings = (settings: Partial<Settings>, context?: ConfirmContext) => Promise<MutateResult>;
 type AdminRealtimePayload = { type?: string; [key: string]: unknown };
 type RealtimeStatus = "connecting" | "connected" | "polling";
 type AdminNotification = {
@@ -523,16 +535,25 @@ export default function AdminPage() {
       setError(message);
       throw new Error(message);
     }
+    if (url === "/api/admin/settings" && method === "PATCH") settingsDirtyRef.current = false;
     await load();
   }
 
-  async function mutate(url: string, method: string, body: unknown) {
-    const confirmOptions = getConfirmOptions(url, method, body);
+  async function mutate(url: string, method: string, body: unknown, context?: ConfirmContext): Promise<MutateResult> {
+    const confirmOptions = getConfirmOptions(url, method, body, context);
     if (confirmOptions) {
-      setConfirm({ ...confirmOptions, action: () => executeMutate(url, method, body) });
-      return;
+      setConfirm({
+        ...confirmOptions,
+        action: async () => {
+          await executeMutate(url, method, body);
+          await context?.onConfirmed?.();
+        }
+      });
+      return "queued";
     }
     await executeMutate(url, method, body);
+    await context?.onConfirmed?.();
+    return "executed";
   }
 
   function updateSettingsDraft(nextSettings: Partial<Settings>) {
@@ -544,18 +565,15 @@ export default function AdminPage() {
     settingsDirtyRef.current = true;
   }
 
-  async function saveSettingsDraft(nextSettings: Partial<Settings>) {
-    setError("");
-    const res = await fetch("/api/admin/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nextSettings) });
-    if (!res.ok) {
-      const result = await res.json().catch(() => ({ error: "Operation failed" }));
-      const message = result.error || "Operation failed";
-      setError(message);
-      throw new Error(message);
-    }
-    settingsDirtyRef.current = false;
-    setSettings(nextSettings);
-    await load({ forceSettings: true });
+  async function saveSettingsDraft(nextSettings: Partial<Settings>, context?: ConfirmContext) {
+    return mutate("/api/admin/settings", "PATCH", nextSettings, {
+      ...context,
+      onConfirmed: async () => {
+        setSettings(nextSettings);
+        await context?.onConfirmed?.();
+        await load({ forceSettings: true });
+      }
+    });
   }
 
   async function logout() {
@@ -719,7 +737,7 @@ export default function AdminPage() {
         {!loading && data && (
           <>
             {tab === "dashboard" && <Dashboard data={data} lastSyncAt={lastSyncAt} realtimeStatus={realtimeStatus} setTab={setTab} unreadNotifications={unreadNotifications} />}
-            {tab === "depositAddresses" && <DepositAddressesTab />}
+            {tab === "depositAddresses" && <DepositAddressesTab mutate={mutate} />}
             {tab === "deposits" && <DepositsTab deposits={deposits} all={data.deposits} status={depositStatus} setStatus={setDepositStatus} mutate={mutate} />}
             {tab === "withdrawals" && <WithdrawalsTab withdrawals={withdrawals} all={data.withdrawals} status={withdrawStatus} setStatus={setWithdrawStatus} mutate={mutate} />}
             {tab === "kyc" && <KycTab submissions={kycRows} all={data.kycSubmissions} status={kycStatusFilter} setStatus={setKycStatusFilter} mutate={mutate} />}
@@ -736,9 +754,108 @@ export default function AdminPage() {
   );
 }
 
-function getConfirmOptions(url: string, method: string, body: unknown): ConfirmOptions | null {
-  if (method !== "PATCH") return null;
+function getConfirmOptions(url: string, method: string, body: unknown, context?: ConfirmContext): ConfirmOptions | null {
   const payload = (body || {}) as Record<string, unknown>;
+  const target = context?.target || "当前对象";
+
+  if (url === "/api/admin/deposit-addresses") {
+    const addressTarget = context?.address
+      ? `${target} · ${context.asset || "资产"} / ${context.network || "网络"} · ${context.address}`
+      : target;
+    if (method === "DELETE") {
+      return {
+        title: "确认删除充值地址？",
+        message: `将删除 ${addressTarget}。删除后该地址不会再作为充值地址分配或展示，请确认没有仍需使用的用户。`,
+        confirmText: "确认删除",
+        variant: "danger"
+      };
+    }
+    if (method === "PATCH" && typeof payload.isActive === "boolean") {
+      const enabled = Boolean(payload.isActive);
+      return {
+        title: `确认${enabled ? "启用" : "停用"}充值地址？`,
+        message: `${addressTarget} 将被${enabled ? "启用" : "停用"}。这会影响对应范围内用户看到的充值地址。`,
+        confirmText: `确认${enabled ? "启用" : "停用"}`,
+        variant: enabled ? "warn" : "danger"
+      };
+    }
+    return null;
+  }
+
+  if (method !== "PATCH") return null;
+
+  if (url === "/api/admin/users") {
+    if (typeof payload.tradingEnabled === "boolean") {
+      const enabled = Boolean(payload.tradingEnabled);
+      return {
+        title: `确认${enabled ? "开启" : "关闭"}用户交易权限？`,
+        message: `${target} 的交易权限将被${enabled ? "开启" : "关闭"}。关闭后用户将无法继续发起交易。`,
+        confirmText: `确认${enabled ? "开启" : "关闭"}`,
+        variant: enabled ? "warn" : "danger"
+      };
+    }
+    if (typeof payload.loginEnabled === "boolean") {
+      const enabled = Boolean(payload.loginEnabled);
+      return {
+        title: `确认${enabled ? "开启" : "关闭"}用户登录权限？`,
+        message: `${target} 的登录权限将被${enabled ? "开启" : "关闭"}。关闭后用户将无法登录账户。`,
+        confirmText: `确认${enabled ? "开启" : "关闭"}`,
+        variant: enabled ? "warn" : "danger"
+      };
+    }
+    if (typeof payload.operation === "string") {
+      const operationMap: Record<string, { label: string; effect: string; variant: ConfirmVariant }> = {
+        credit: { label: "上分", effect: "增加用户可用余额", variant: "warn" },
+        debit: { label: "下分", effect: "扣减用户可用余额", variant: "danger" },
+        freeze: { label: "冻结", effect: "从可用余额转入冻结余额", variant: "danger" },
+        unfreeze: { label: "解冻", effect: "从冻结余额转回可用余额", variant: "warn" },
+      };
+      const meta = operationMap[payload.operation] || { label: "资金调整", effect: "调整用户资金", variant: "danger" as ConfirmVariant };
+      return {
+        title: `确认${meta.label}？`,
+        message: `${target} 将执行${meta.label}操作：${payload.asset || context?.asset || "资产"} ${money(Number(payload.delta || 0), 8)}。该操作会${meta.effect}并写入后台资金变更。`,
+        confirmText: `确认${meta.label}`,
+        variant: meta.variant
+      };
+    }
+    if (typeof payload.loginPassword === "string") {
+      return {
+        title: "确认重置登录密码？",
+        message: `${target} 的登录密码将被重置。用户下次登录必须使用新密码，请确认已经完成身份核验。`,
+        confirmText: "确认重置",
+        variant: "danger"
+      };
+    }
+    if (typeof payload.withdrawalPassword === "string") {
+      return {
+        title: "确认重置提款密码？",
+        message: `${target} 的提款密码将被重置。该操作会影响提现安全，请确认已经完成身份核验。`,
+        confirmText: "确认重置",
+        variant: "danger"
+      };
+    }
+  }
+
+  if (url === "/api/admin/markets" && typeof payload.isActive === "boolean") {
+    const enabled = Boolean(payload.isActive);
+    const symbol = context?.symbol || target || `市场 #${payload.marketId}`;
+    return {
+      title: `确认${enabled ? "启用" : "暂停"}市场？`,
+      message: `${symbol} 将被${enabled ? "启用交易" : "暂停交易"}。这会影响用户是否可以继续在该交易对下单。`,
+      confirmText: `确认${enabled ? "启用" : "暂停"}`,
+      variant: enabled ? "warn" : "danger"
+    };
+  }
+
+  if (url === "/api/admin/settings") {
+    const changes = context?.changes?.filter(Boolean) ?? [];
+    return {
+      title: "确认保存平台关键配置？",
+      message: `本次保存会更新平台关键配置${changes.length ? `：${changes.join("；")}` : "。"}。请确认注册、提现、交易开关、最小提现金额和二元期权配置无误。`,
+      confirmText: "确认保存",
+      variant: "warn"
+    };
+  }
 
   if (url === "/api/admin/kyc") {
     const id = payload.submissionId;
@@ -878,7 +995,11 @@ function userInitial(user: User) {
   return text.trim().slice(0, 1).toUpperCase();
 }
 
-function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users: User[]; assets: AssetRow[]; query: string; setQuery: (value: string) => void; mutate: (url: string, method: string, body: unknown) => Promise<void>; openModal: (modal: ModalState) => void }) {
+function userConfirmTarget(user: User) {
+  return `UID ${displayUid(user)} · ${user.email || user.username}`;
+}
+
+function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users: User[]; assets: AssetRow[]; query: string; setQuery: (value: string) => void; mutate: AdminMutate; openModal: (modal: ModalState) => void }) {
   const [activeFilter, setActiveFilter] = useState<UserFilterId>("all");
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const assetsByUser = useMemo(() => {
@@ -1074,11 +1195,11 @@ function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users
               <div className="admin-user-switch-list">
                 <div>
                   <div><strong>交易权限</strong><span>{selectedUser.trading_enabled !== 0 ? "允许用户交易" : "用户交易已关闭"}</span></div>
-                  <Toggle enabled={selectedUser.trading_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, tradingEnabled: enabled })} />
+                  <Toggle enabled={selectedUser.trading_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, tradingEnabled: enabled }, { target: userConfirmTarget(selectedUser) })} />
                 </div>
                 <div>
                   <div><strong>登录权限</strong><span>{selectedUser.login_enabled !== 0 ? "允许用户登录" : "用户登录已关闭"}</span></div>
-                  <Toggle enabled={selectedUser.login_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, loginEnabled: enabled })} />
+                  <Toggle enabled={selectedUser.login_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, loginEnabled: enabled }, { target: userConfirmTarget(selectedUser) })} />
                 </div>
               </div>
             </SectionCard>
@@ -1097,7 +1218,7 @@ function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users
   );
 }
 
-function UserModal({ modal, assets, close, mutate }: { modal: Exclude<ModalState, null>; assets: AssetRow[]; close: () => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+function UserModal({ modal, assets, close, mutate }: { modal: Exclude<ModalState, null>; assets: AssetRow[]; close: () => void; mutate: AdminMutate }) {
   const [asset, setAsset] = useState("USDC");
   const [operation, setOperation] = useState<"credit" | "debit" | "freeze" | "unfreeze">("credit");
   const [amount, setAmount] = useState("0");
@@ -1114,11 +1235,13 @@ function UserModal({ modal, assets, close, mutate }: { modal: Exclude<ModalState
     if ((modal.type === "loginPassword" || modal.type === "withdrawPassword") && password.trim() !== confirmPassword.trim()) return setFormError("\u4e24\u6b21\u8f93\u5165\u7684\u5bc6\u7801\u4e0d\u4e00\u81f4");
     setSaving(true);
     try {
-      if (modal.type === "funds") await mutate("/api/admin/users", "PATCH", { userId: modal.user.id, asset, operation, delta: Number(amount) });
-      if (modal.type === "loginPassword") await mutate("/api/admin/users", "PATCH", { userId: modal.user.id, loginPassword: password.trim() });
-      if (modal.type === "withdrawPassword") await mutate("/api/admin/users", "PATCH", { userId: modal.user.id, withdrawalPassword: password.trim() });
-      if (modal.type === "remark") await mutate("/api/admin/users", "PATCH", { userId: modal.user.id, remark });
-      close();
+      let result: MutateResult = "executed";
+      const confirmContext = { target: userConfirmTarget(modal.user), onConfirmed: close };
+      if (modal.type === "funds") result = await mutate("/api/admin/users", "PATCH", { userId: modal.user.id, asset, operation, delta: Number(amount) }, confirmContext);
+      if (modal.type === "loginPassword") result = await mutate("/api/admin/users", "PATCH", { userId: modal.user.id, loginPassword: password.trim() }, confirmContext);
+      if (modal.type === "withdrawPassword") result = await mutate("/api/admin/users", "PATCH", { userId: modal.user.id, withdrawalPassword: password.trim() }, confirmContext);
+      if (modal.type === "remark") result = await mutate("/api/admin/users", "PATCH", { userId: modal.user.id, remark });
+      if (result === "executed") close();
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "\u4fdd\u5b58\u5931\u8d25");
     } finally {
@@ -1213,7 +1336,7 @@ function ReviewPreviewModal({ preview, close }: { preview: PreviewState; close: 
   );
 }
 
-function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: Deposit[]; all: Deposit[]; status: ReviewStatusFilter; setStatus: (value: ReviewStatusFilter) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: Deposit[]; all: Deposit[]; status: ReviewStatusFilter; setStatus: (value: ReviewStatusFilter) => void; mutate: AdminMutate }) {
   const [query, setQuery] = useState("");
   const [note, setNote] = useState<Record<number, string>>({});
   const [preview, setPreview] = useState<PreviewState>(null);
@@ -1338,7 +1461,7 @@ function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: D
   );
 }
 
-function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: KycSubmission[]; all: KycSubmission[]; status: ReviewStatusFilter; setStatus: (value: ReviewStatusFilter) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: KycSubmission[]; all: KycSubmission[]; status: ReviewStatusFilter; setStatus: (value: ReviewStatusFilter) => void; mutate: AdminMutate }) {
   const [query, setQuery] = useState("");
   const [reason, setReason] = useState<Record<number, string>>({});
   const [preview, setPreview] = useState<PreviewState>(null);
@@ -1470,7 +1593,7 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
   );
 }
 
-function WithdrawalsTab({ withdrawals, all, status, setStatus, mutate }: { withdrawals: Withdrawal[]; all: Withdrawal[]; status: string; setStatus: (value: string) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+function WithdrawalsTab({ withdrawals, all, status, setStatus, mutate }: { withdrawals: Withdrawal[]; all: Withdrawal[]; status: string; setStatus: (value: string) => void; mutate: AdminMutate }) {
   const [query, setQuery] = useState("");
   const [note, setNote] = useState<Record<number, string>>({});
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -1747,7 +1870,7 @@ function addressStatusTone(enabled: number): StatusChipTone {
   return enabled ? "success" : "muted";
 }
 
-function DepositAddressesTab() {
+function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
   const [rows, setRows] = useState<{ defaultAddresses: DepositAddress[]; userAddresses: UserDepositAddress[] }>({ defaultAddresses: [], userAddresses: [] });
   const [form, setForm] = useState<{ scope: DepositAddressScope; userId: string; asset: string; network: string; address: string }>({ scope: "default", userId: "", asset: "USDC", network: "TRC20", address: "" });
   const [editing, setEditing] = useState<{ scope: DepositAddressScope; id: number } | null>(null);
@@ -1794,24 +1917,36 @@ function DepositAddressesTab() {
     await loadAddresses();
   }
 
+  function addressConfirmContext(scope: DepositAddressScope, id: number): ConfirmContext {
+    const row = scope === "default"
+      ? rows.defaultAddresses.find((item) => item.id === id)
+      : rows.userAddresses.find((item) => item.id === id);
+    const userLabel = row && scope === "user" ? `UID ${displayUid(row as UserDepositAddress)} · ` : "";
+    return {
+      target: row ? `${scope === "default" ? "平台默认地址" : userLabel}${row.asset}/${row.network}` : `${scope} #${id}`,
+      address: row?.address,
+      asset: row?.asset,
+      network: row?.network,
+      onConfirmed: loadAddresses
+    };
+  }
+
   async function toggleAddress(scope: DepositAddressScope, id: number, enabled: boolean) {
-    const res = await fetch("/api/admin/deposit-addresses", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scope, id, isActive: enabled })
-    });
-    if (!res.ok) return setError((await res.json()).error || "操作失败");
-    await loadAddresses();
+    setError("");
+    try {
+      await mutate("/api/admin/deposit-addresses", "PATCH", { scope, id, isActive: enabled }, addressConfirmContext(scope, id));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "操作失败");
+    }
   }
 
   async function deleteAddress(scope: DepositAddressScope, id: number) {
-    const res = await fetch("/api/admin/deposit-addresses", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scope, id })
-    });
-    if (!res.ok) return setError((await res.json()).error || "删除失败");
-    await loadAddresses();
+    setError("");
+    try {
+      await mutate("/api/admin/deposit-addresses", "DELETE", { scope, id }, addressConfirmContext(scope, id));
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "删除失败");
+    }
   }
 
   function editDefault(row: DepositAddress) {
@@ -2109,7 +2244,7 @@ function orderStatusMeta(order: Order): { label: string; tone: StatusChipTone } 
   return { label: orderStatusLabel(order.status), tone: orderStatusTone(order.status) };
 }
 
-function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus, mutate }: { orders: Order[]; allOrders: Order[]; query: string; setQuery: (value: string) => void; status: OrderStatusFilter; setStatus: (value: OrderStatusFilter) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus, mutate }: { orders: Order[]; allOrders: Order[]; query: string; setQuery: (value: string) => void; status: OrderStatusFilter; setStatus: (value: OrderStatusFilter) => void; mutate: AdminMutate }) {
   const [settlePrice, setSettlePrice] = useState<Record<number, string>>({});
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selectedOrder = selectedId == null ? null : orders.find((order) => order.id === selectedId) ?? allOrders.find((order) => order.id === selectedId) ?? null;
@@ -2301,7 +2436,7 @@ function marketStatusTone(enabled: number): StatusChipTone {
   return enabled ? "success" : "muted";
 }
 
-function MarketsTab({ markets, newMarket, setNewMarket, mutate }: { markets: Market[]; newMarket: { symbol: string; price: number; maxLeverage: number; feeRate: number; mmr: number }; setNewMarket: (value: { symbol: string; price: number; maxLeverage: number; feeRate: number; mmr: number }) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+function MarketsTab({ markets, newMarket, setNewMarket, mutate }: { markets: Market[]; newMarket: { symbol: string; price: number; maxLeverage: number; feeRate: number; mmr: number }; setNewMarket: (value: { symbol: string; price: number; maxLeverage: number; feeRate: number; mmr: number }) => void; mutate: AdminMutate }) {
   const [marketErrors, setMarketErrors] = useState<Record<number, string>>({});
   const [createError, setCreateError] = useState("");
   const [query, setQuery] = useState("");
@@ -2343,7 +2478,7 @@ function MarketsTab({ markets, newMarket, setNewMarket, mutate }: { markets: Mar
   }
 
   function toggleMarket(market: Market) {
-    return mutate("/api/admin/markets", "PATCH", { marketId: market.id, isActive: !market.is_active });
+    return mutate("/api/admin/markets", "PATCH", { marketId: market.id, isActive: !market.is_active }, { target: market.symbol, symbol: market.symbol });
   }
 
   const columns: Array<AdminTableColumn<Market>> = [
@@ -2471,7 +2606,7 @@ function MarketsTab({ markets, newMarket, setNewMarket, mutate }: { markets: Mar
   );
 }
 
-function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSettings }: { settings: Partial<Settings>; setSettings: (value: Partial<Settings>) => void; markDirty: () => void; saveSettings: (settings: Partial<Settings>) => Promise<void> }) {
+function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSettings }: { settings: Partial<Settings>; setSettings: (value: Partial<Settings>) => void; markDirty: () => void; saveSettings: AdminSaveSettings }) {
   const [dirty, setDirty] = useState(false);
   const setSwitch = (key: keyof Settings, enabled: boolean) => {
     setDirty(true);
@@ -2488,14 +2623,29 @@ function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSe
     setBinaryText(formatBinaryOptionsConfig(settings.binary_options_config));
   }, [settings.binary_options_config]);
 
+  function confirmChanges(nextSettings: Partial<Settings>) {
+    const binaryCount = binaryText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).length;
+    return [
+      `注册开关：${nextSettings.registration_enabled !== "false" ? "开启" : "关闭"}`,
+      `提现开关：${nextSettings.withdrawals_enabled !== "false" ? "开启" : "关闭"}`,
+      `交易开关：${nextSettings.trading_enabled !== "false" ? "开启" : "关闭"}`,
+      `最小提现金额：${nextSettings.min_withdrawal_amount || "0"}`,
+      `二元期权配置：${binaryCount} 档`
+    ];
+  }
+
   async function submitSettings() {
     try {
       setBinaryError("");
-      await persistSettings({
+      const nextSettings = {
         ...settings,
         binary_options_config: binaryOptionsTextToConfig(binaryText)
+      };
+      const result = await persistSettings(nextSettings, {
+        changes: confirmChanges(nextSettings),
+        onConfirmed: () => setDirty(false)
       });
-      setDirty(false);
+      if (result === "executed") setDirty(false);
     } catch (error) {
       setBinaryError(error instanceof Error ? error.message : "Invalid binary option settings");
     }
