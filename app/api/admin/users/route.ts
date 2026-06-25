@@ -44,6 +44,18 @@ export async function PATCH(request: Request) {
       | { id: number; role: "admin" | "trader"; balance: number }
       | undefined;
     if (!targetUser) return badRequest("User does not exist");
+    const adminAccountOperation = (
+      typeof body.delta === "number" ||
+      body.role === "admin" ||
+      body.role === "trader" ||
+      typeof body.tradingEnabled === "boolean" ||
+      typeof body.loginEnabled === "boolean" ||
+      typeof body.loginPassword === "string" ||
+      typeof body.withdrawalPassword === "string"
+    );
+    if (targetUser.role === "admin" && adminAccountOperation) {
+      return badRequest("Admin accounts must be managed from the admin accounts page");
+    }
     const asset = normalizeAsset(body.asset || "USDC");
     if (!/^[A-Z0-9]{2,12}$/.test(asset)) return badRequest("Invalid asset");
     if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");

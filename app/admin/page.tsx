@@ -21,6 +21,7 @@ import {
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
+  UserPlus,
   Users,
   WalletCards,
   X
@@ -78,6 +79,7 @@ type Settings = {
 };
 type AdminData = {
   stats: { users: number; open_positions: number; trader_realized_pnl: number; fees: number; pending_withdrawals: number; pending_deposits?: number; pending_kyc?: number; markets?: number; total_stable_balance?: number };
+  currentAdmin: Pick<User, "id" | "public_uid" | "username" | "email" | "role" | "created_at">;
   settings: Settings;
   users: User[];
   assetRows: AssetRow[];
@@ -89,7 +91,7 @@ type AdminData = {
   orders: Order[];
   withdrawals: Withdrawal[];
 };
-type TabId = "dashboard" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "orders" | "markets" | "settings";
+type TabId = "dashboard" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "admins" | "orders" | "markets" | "settings";
 type ModalState =
   | { type: "funds"; user: User }
   | { type: "loginPassword"; user: User }
@@ -623,6 +625,7 @@ export default function AdminPage() {
       label: "用户管理",
       items: [
         { id: "users", label: "用户管理", icon: Users },
+        { id: "admins", label: "管理员", icon: UserPlus },
         { id: "depositAddresses", label: "资金地址", icon: Landmark },
       ],
     },
@@ -655,6 +658,7 @@ export default function AdminPage() {
     withdrawals: { title: "提现审核", description: "处理提现申请与冻结资金释放。" },
     kyc: { title: "身份审核", description: "审核用户身份认证材料。" },
     users: { title: "用户管理", description: "查询用户、资金、安全与权限状态。" },
+    admins: { title: "管理员", description: "新增后台管理员，并修改当前登录管理员账号与密码。" },
     orders: { title: "二元订单", description: "查看二元订单并处理人工结算预设。" },
     markets: { title: "交易市场", description: "管理交易对与市场参数。" },
     settings: { title: "平台设置", description: "配置平台开关、提现说明与前台内容。" },
@@ -743,6 +747,7 @@ export default function AdminPage() {
             {tab === "withdrawals" && <WithdrawalsTab withdrawals={withdrawals} all={data.withdrawals} status={withdrawStatus} setStatus={setWithdrawStatus} mutate={mutate} />}
             {tab === "kyc" && <KycTab submissions={kycRows} all={data.kycSubmissions} status={kycStatusFilter} setStatus={setKycStatusFilter} mutate={mutate} />}
             {tab === "users" && <UsersTab users={users} assets={data.assetRows} query={query} setQuery={setQuery} mutate={mutate} openModal={setModal} />}
+            {tab === "admins" && <AdminAccountsTab admins={data.users.filter((user) => user.role === "admin")} currentAdmin={data.currentAdmin} mutate={mutate} />}
             {tab === "orders" && <ManualOrdersTab orders={orders} allOrders={data.orders} query={orderQuery} setQuery={setOrderQuery} status={orderStatus} setStatus={setOrderStatus} mutate={mutate} />}
             {tab === "markets" && <MarketsTab markets={data.markets} newMarket={newMarket} setNewMarket={setNewMarket} mutate={mutate} />}
             {tab === "settings" && <SettingsTab settings={settings} setSettings={updateSettingsDraft} markDirty={markSettingsDirty} saveSettings={saveSettingsDraft} />}
@@ -783,7 +788,26 @@ function getConfirmOptions(url: string, method: string, body: unknown, context?:
     return null;
   }
 
+  if (url === "/api/admin/admins" && method === "POST") {
+    return {
+      title: "确认新增管理员？",
+      message: `${target} 将获得后台管理权限。请确认账号归属可信，并已完成线下授权。`,
+      confirmText: "确认新增",
+      variant: "danger"
+    };
+  }
+
   if (method !== "PATCH") return null;
+
+  if (url === "/api/admin/account") {
+    const changes = context?.changes?.filter(Boolean) ?? [];
+    return {
+      title: "确认修改当前管理员账号？",
+      message: `当前登录管理员账号将被更新${changes.length ? `：${changes.join("；")}` : "。"}。如果修改了密码，其他后台会话会被清理。`,
+      confirmText: "确认修改",
+      variant: "danger"
+    };
+  }
 
   if (url === "/api/admin/users") {
     if (typeof payload.tradingEnabled === "boolean") {
@@ -1002,6 +1026,204 @@ function userConfirmTarget(user: User) {
   return `UID ${displayUid(user)} · ${user.email || user.username}`;
 }
 
+function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; currentAdmin: AdminData["currentAdmin"]; mutate: AdminMutate }) {
+  const [newUsername, setNewUsername] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newConfirmPassword, setNewConfirmPassword] = useState("");
+  const [createCurrentPassword, setCreateCurrentPassword] = useState("");
+  const [accountUsername, setAccountUsername] = useState(currentAdmin.username || "");
+  const [accountEmail, setAccountEmail] = useState(currentAdmin.email || "");
+  const [accountCurrentPassword, setAccountCurrentPassword] = useState("");
+  const [accountNewPassword, setAccountNewPassword] = useState("");
+  const [accountConfirmPassword, setAccountConfirmPassword] = useState("");
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setAccountUsername(currentAdmin.username || "");
+    setAccountEmail(currentAdmin.email || "");
+  }, [currentAdmin.email, currentAdmin.username]);
+
+  const columns: Array<AdminTableColumn<User>> = [
+    {
+      id: "admin",
+      header: "管理员",
+      cell: (admin) => (
+        <div className="admin-user-identity">
+          <span className="admin-user-avatar">{userInitial(admin)}</span>
+          <div>
+            <strong>{admin.email || admin.username}</strong>
+            <span>UID {displayUid(admin)} · {admin.username}</span>
+          </div>
+        </div>
+      ),
+    },
+    { id: "role", header: "角色", align: "center", cell: () => <StatusChip label="管理员" tone="info" /> },
+    { id: "created", header: "创建时间", cell: (admin) => <span className="admin-user-time">{cnTime(admin.created_at)}</span> },
+  ];
+
+  async function createAdmin() {
+    setFormError("");
+    if (!newUsername.trim()) return setFormError("请输入新管理员账号");
+    if (newPassword.trim().length < 8) return setFormError("新管理员密码至少 8 位");
+    if (newPassword.trim() !== newConfirmPassword.trim()) return setFormError("两次输入的新管理员密码不一致");
+    if (!createCurrentPassword.trim()) return setFormError("请输入当前管理员密码确认新增");
+    setSaving(true);
+    try {
+      const username = newUsername.trim().toLowerCase();
+      const email = newEmail.trim().toLowerCase();
+      const result = await mutate("/api/admin/admins", "POST", {
+        username,
+        email,
+        password: newPassword.trim(),
+        confirmPassword: newConfirmPassword.trim(),
+        currentPassword: createCurrentPassword.trim()
+      }, {
+        target: `管理员 ${email || username}`,
+        onConfirmed: () => {
+          setNewUsername("");
+          setNewEmail("");
+          setNewPassword("");
+          setNewConfirmPassword("");
+          setCreateCurrentPassword("");
+        }
+      });
+      if (result === "executed") {
+        setNewUsername("");
+        setNewEmail("");
+        setNewPassword("");
+        setNewConfirmPassword("");
+        setCreateCurrentPassword("");
+      }
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "新增管理员失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateAccount() {
+    setFormError("");
+    const username = accountUsername.trim().toLowerCase();
+    const email = accountEmail.trim().toLowerCase();
+    const password = accountNewPassword.trim();
+    const changes = [
+      username !== currentAdmin.username ? `账号 ${currentAdmin.username} → ${username}` : "",
+      email !== (currentAdmin.email || "") ? `邮箱 ${currentAdmin.email || "-"} → ${email || "-"}` : "",
+      password ? "登录密码将更新" : "",
+    ].filter(Boolean);
+    if (!changes.length) return setFormError("没有需要保存的修改");
+    if (!accountCurrentPassword.trim()) return setFormError("请输入当前管理员密码确认修改");
+    if (password && password.length < 8) return setFormError("新管理员密码至少 8 位");
+    if (password && password !== accountConfirmPassword.trim()) return setFormError("两次输入的新密码不一致");
+    setSaving(true);
+    try {
+      const result = await mutate("/api/admin/account", "PATCH", {
+        username,
+        email,
+        currentPassword: accountCurrentPassword.trim(),
+        newPassword: password,
+        confirmPassword: accountConfirmPassword.trim()
+      }, {
+        changes,
+        onConfirmed: () => {
+          setAccountCurrentPassword("");
+          setAccountNewPassword("");
+          setAccountConfirmPassword("");
+        }
+      });
+      if (result === "executed") {
+        setAccountCurrentPassword("");
+        setAccountNewPassword("");
+        setAccountConfirmPassword("");
+      }
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "保存管理员账号失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="admin-users-page">
+      {formError && <div className="error">{formError}</div>}
+
+      <div className="admin-dashboard-columns">
+        <SectionCard title="当前登录管理员" description="修改当前后台登录账号或登录密码，必须输入当前密码。">
+          <div className="admin-user-detail-grid">
+            <div><span>UID</span><strong>{displayUid(currentAdmin)}</strong></div>
+            <div><span>角色</span><strong>管理员</strong></div>
+            <div><span>创建时间</span><strong>{cnTime(currentAdmin.created_at)}</strong></div>
+          </div>
+          <div className="admin-user-modal-form">
+            <label>
+              <span>管理员账号</span>
+              <input autoComplete="username" onChange={(event) => setAccountUsername(event.target.value)} value={accountUsername} />
+            </label>
+            <label>
+              <span>邮箱</span>
+              <input autoComplete="email" onChange={(event) => setAccountEmail(event.target.value)} placeholder="可选" value={accountEmail} />
+            </label>
+            <label>
+              <span>当前密码</span>
+              <input autoComplete="current-password" onChange={(event) => setAccountCurrentPassword(event.target.value)} placeholder="保存修改前必须填写" type="password" value={accountCurrentPassword} />
+            </label>
+            <label>
+              <span>新登录密码</span>
+              <input autoComplete="new-password" onChange={(event) => setAccountNewPassword(event.target.value)} placeholder="不修改密码可留空" type="password" value={accountNewPassword} />
+            </label>
+            <label>
+              <span>确认新密码</span>
+              <input autoComplete="new-password" onChange={(event) => setAccountConfirmPassword(event.target.value)} placeholder="再次输入新密码" type="password" value={accountConfirmPassword} />
+            </label>
+            <button className="admin-button admin-button-danger" disabled={saving} onClick={updateAccount} type="button">
+              {saving ? "保存中..." : "保存当前管理员账号"}
+            </button>
+          </div>
+        </SectionCard>
+
+        <SectionCard title="新增管理员" description="新账号会直接拥有后台管理权限，请只添加已授权运营人员。" tone="danger">
+          <div className="admin-user-modal-form">
+            <label>
+              <span>新管理员账号</span>
+              <input autoComplete="off" onChange={(event) => setNewUsername(event.target.value)} placeholder="例如 ops-vorx" value={newUsername} />
+            </label>
+            <label>
+              <span>邮箱</span>
+              <input autoComplete="off" onChange={(event) => setNewEmail(event.target.value)} placeholder="可选" value={newEmail} />
+            </label>
+            <label>
+              <span>登录密码</span>
+              <input autoComplete="new-password" onChange={(event) => setNewPassword(event.target.value)} type="password" value={newPassword} />
+            </label>
+            <label>
+              <span>确认密码</span>
+              <input autoComplete="new-password" onChange={(event) => setNewConfirmPassword(event.target.value)} type="password" value={newConfirmPassword} />
+            </label>
+            <label>
+              <span>当前管理员密码</span>
+              <input autoComplete="current-password" onChange={(event) => setCreateCurrentPassword(event.target.value)} placeholder="用于确认新增管理员" type="password" value={createCurrentPassword} />
+            </label>
+            <button className="admin-button admin-button-danger" disabled={saving} onClick={createAdmin} type="button">
+              {saving ? "提交中..." : "新增管理员"}
+            </button>
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard title="管理员列表" description="这里只展示后台管理员账号；普通用户仍在用户管理页维护。">
+        <AdminTable
+          columns={columns}
+          emptyState={<EmptyState compact description="当前没有管理员账号。" title="没有管理员" />}
+          getRowKey={(admin) => admin.id}
+          rows={admins}
+        />
+      </SectionCard>
+    </div>
+  );
+}
+
 function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users: User[]; assets: AssetRow[]; query: string; setQuery: (value: string) => void; mutate: AdminMutate; openModal: (modal: ModalState) => void }) {
   const [activeFilter, setActiveFilter] = useState<UserFilterId>("all");
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -1041,6 +1263,11 @@ function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users
   }
 
   function actionItems(user: User): ActionMenuItem[] {
+    if (user.role === "admin") {
+      return [
+        { id: "remark", label: "编辑备注", onSelect: () => openModal({ type: "remark", user }) },
+      ];
+    }
     return [
       { id: "funds", label: "资金操作", onSelect: () => openModal({ type: "funds", user }) },
       { id: "remark", label: "编辑备注", onSelect: () => openModal({ type: "remark", user }) },
@@ -1158,7 +1385,7 @@ function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users
         footer={selectedUser ? (
           <>
             <button className="admin-button admin-button-ghost" onClick={() => openModal({ type: "remark", user: selectedUser })} type="button">编辑备注</button>
-            <button className="admin-button admin-button-primary" onClick={() => openModal({ type: "funds", user: selectedUser })} type="button">资金操作</button>
+            {selectedUser.role !== "admin" && <button className="admin-button admin-button-primary" onClick={() => openModal({ type: "funds", user: selectedUser })} type="button">资金操作</button>}
           </>
         ) : undefined}
       >
@@ -1195,25 +1422,31 @@ function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users
             </SectionCard>
 
             <SectionCard title="账户状态">
-              <div className="admin-user-switch-list">
-                <div>
-                  <div><strong>交易权限</strong><span>{selectedUser.trading_enabled !== 0 ? "允许用户交易" : "用户交易已关闭"}</span></div>
-                  <Toggle enabled={selectedUser.trading_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, tradingEnabled: enabled }, { target: userConfirmTarget(selectedUser) })} />
+              {selectedUser.role === "admin" ? (
+                <div className="admin-user-empty-line">管理员账号请在“管理员”页面维护，避免误改后台登录权限。</div>
+              ) : (
+                <div className="admin-user-switch-list">
+                  <div>
+                    <div><strong>交易权限</strong><span>{selectedUser.trading_enabled !== 0 ? "允许用户交易" : "用户交易已关闭"}</span></div>
+                    <Toggle enabled={selectedUser.trading_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, tradingEnabled: enabled }, { target: userConfirmTarget(selectedUser) })} />
+                  </div>
+                  <div>
+                    <div><strong>登录权限</strong><span>{selectedUser.login_enabled !== 0 ? "允许用户登录" : "用户登录已关闭"}</span></div>
+                    <Toggle enabled={selectedUser.login_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, loginEnabled: enabled }, { target: userConfirmTarget(selectedUser) })} />
+                  </div>
                 </div>
-                <div>
-                  <div><strong>登录权限</strong><span>{selectedUser.login_enabled !== 0 ? "允许用户登录" : "用户登录已关闭"}</span></div>
-                  <Toggle enabled={selectedUser.login_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, loginEnabled: enabled }, { target: userConfirmTarget(selectedUser) })} />
-                </div>
-              </div>
+              )}
             </SectionCard>
 
-            <SectionCard title="风险操作" description="密码重置和资金调整继续走原有后台接口。" tone="danger">
-              <div className="admin-user-danger-actions">
-                <button className="admin-button admin-button-ghost" onClick={() => openModal({ type: "funds", user: selectedUser })} type="button"><SlidersHorizontal size={15} />上下分 / 冻结</button>
-                <button className="admin-button admin-button-danger" onClick={() => openModal({ type: "loginPassword", user: selectedUser })} type="button"><KeyRound size={15} />登录密码</button>
-                <button className="admin-button admin-button-danger" onClick={() => openModal({ type: "withdrawPassword", user: selectedUser })} type="button"><LockKeyhole size={15} />提款密码</button>
-              </div>
-            </SectionCard>
+            {selectedUser.role !== "admin" && (
+              <SectionCard title="风险操作" description="密码重置和资金调整继续走原有后台接口。" tone="danger">
+                <div className="admin-user-danger-actions">
+                  <button className="admin-button admin-button-ghost" onClick={() => openModal({ type: "funds", user: selectedUser })} type="button"><SlidersHorizontal size={15} />上下分 / 冻结</button>
+                  <button className="admin-button admin-button-danger" onClick={() => openModal({ type: "loginPassword", user: selectedUser })} type="button"><KeyRound size={15} />登录密码</button>
+                  <button className="admin-button admin-button-danger" onClick={() => openModal({ type: "withdrawPassword", user: selectedUser })} type="button"><LockKeyhole size={15} />提款密码</button>
+                </div>
+              </SectionCard>
+            )}
           </>
         )}
       </AdminDrawer>

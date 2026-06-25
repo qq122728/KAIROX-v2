@@ -6,7 +6,7 @@ import { getSettings } from "@/lib/settings";
 
 export async function GET() {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const users = getDb()
       .prepare(
         `SELECT u.id, u.public_uid, u.username, u.email, u.role, u.balance, u.wallet, u.remark,
@@ -96,6 +96,14 @@ export async function GET() {
       .get();
     return json({
       stats,
+      currentAdmin: {
+        id: admin.id,
+        public_uid: admin.public_uid,
+        username: admin.username,
+        email: admin.email,
+        role: admin.role,
+        created_at: admin.created_at
+      },
       settings: getSettings(),
       users,
       assetRows,
