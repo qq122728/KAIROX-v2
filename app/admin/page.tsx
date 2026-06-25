@@ -1161,7 +1161,434 @@ function UserModal({ modal, assets, close, mutate }: { modal: Exclude<ModalState
   );
 }
 
-function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: Deposit[]; all: Deposit[]; status: "all" | "pending" | "approved" | "rejected"; setStatus: (value: "all" | "pending" | "approved" | "rejected") => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+type ReviewStatusFilter = "all" | "pending" | "approved" | "rejected";
+type PreviewState = { title: string; src: string } | null;
+
+const reviewStatusIds: ReviewStatusFilter[] = ["all", "pending", "approved", "rejected"];
+
+function reviewStatusLabel(status: string) {
+  if (status === "pending") return "待审核";
+  if (status === "approved") return "已通过";
+  if (status === "rejected") return "已拒绝";
+  return status || "-";
+}
+
+function reviewStatusTone(status: string): StatusChipTone {
+  if (status === "pending") return "warning";
+  if (status === "approved") return "success";
+  if (status === "rejected") return "danger";
+  return "muted";
+}
+
+function reviewFilters<T extends { status: string }>(all: T[]): AdminToolbarFilter[] {
+  return [
+    { id: "all", label: "全部", count: all.length, tone: "info" },
+    { id: "pending", label: "待审核", count: all.filter((row) => row.status === "pending").length, tone: "warning" },
+    { id: "approved", label: "已通过", count: all.filter((row) => row.status === "approved").length, tone: "success" },
+    { id: "rejected", label: "已拒绝", count: all.filter((row) => row.status === "rejected").length, tone: "danger" },
+  ];
+}
+
+function reviewUserCell(row: { username: string; email: string | null; user_public_uid?: string | null; user_id: number }) {
+  return (
+    <div className="admin-review-user">
+      <strong>{row.email || row.username}</strong>
+      <span>UID {displayUid(row)}</span>
+    </div>
+  );
+}
+
+function ReviewPreviewModal({ preview, close }: { preview: PreviewState; close: () => void }) {
+  if (!preview) return null;
+
+  return (
+    <div className="modal-bg" onClick={close}>
+      <div className="modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head"><h3>{preview.title}</h3><button className="btn icon" onClick={close}><X /></button></div>
+        <div className="modal-body">
+          <img src={preview.src} alt={preview.title} style={{ display: "block", width: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 8, background: "#0f172a" }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: Deposit[]; all: Deposit[]; status: ReviewStatusFilter; setStatus: (value: ReviewStatusFilter) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+  const [query, setQuery] = useState("");
+  const [note, setNote] = useState<Record<number, string>>({});
+  const [preview, setPreview] = useState<PreviewState>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const visibleRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return deposits;
+    return deposits.filter((row) => `${row.id} ${displayUid(row)} ${row.username} ${row.email ?? ""} ${row.asset} ${row.network} ${row.tx_hash ?? ""} ${row.deposit_address ?? ""}`.toLowerCase().includes(q));
+  }, [deposits, query]);
+  const selected = selectedId == null ? null : deposits.find((row) => row.id === selectedId) ?? all.find((row) => row.id === selectedId) ?? null;
+
+  function approve(row: Deposit) {
+    return mutate("/api/admin/deposits", "PATCH", { depositId: row.id, status: "approved", adminNote: note[row.id] || "" });
+  }
+
+  function reject(row: Deposit) {
+    return mutate("/api/admin/deposits", "PATCH", { depositId: row.id, status: "rejected", adminNote: note[row.id] || "" });
+  }
+
+  const columns: Array<AdminTableColumn<Deposit>> = [
+    { id: "id", header: "ID", cell: (row) => <span className="admin-review-mono">{row.id}</span> },
+    { id: "user", header: "用户", cell: reviewUserCell },
+    { id: "asset", header: "币种/网络", cell: (row) => <div className="admin-review-stack"><strong>{row.asset}</strong><span>{row.network}</span></div> },
+    { id: "amount", header: "金额", numeric: true, cell: (row) => <span className="admin-review-money">{money(row.amount, 8)}</span> },
+    { id: "tx", header: "TX Hash", cell: (row) => <span className="admin-review-code">{row.tx_hash || "-"}</span> },
+    { id: "address", header: "地址", cell: (row) => <span className="admin-review-code">{row.deposit_address || "-"}</span> },
+    { id: "status", header: "状态", align: "center", cell: (row) => <StatusChip label={reviewStatusLabel(row.status)} tone={reviewStatusTone(row.status)} /> },
+    { id: "time", header: "提交时间", cell: (row) => <span className="admin-user-time">{cnTime(row.created_at)}</span> },
+    {
+      id: "action",
+      header: "操作",
+      align: "center",
+      cell: (row) => (
+        <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
+          <ActionMenu
+            items={[
+              { id: "proof", label: "查看截图", disabled: !row.proof_data, onSelect: () => row.proof_data && setPreview({ title: `充值截图 #${row.id}`, src: row.proof_data }) },
+            ]}
+            onPrimaryClick={() => setSelectedId(row.id)}
+            primaryLabel="查看"
+          />
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="admin-review-page">
+      <AdminToolbar
+        activeFilterIds={[status]}
+        filters={reviewFilters(all)}
+        onFilterToggle={(id) => {
+          if (reviewStatusIds.includes(id as ReviewStatusFilter)) setStatus(id as ReviewStatusFilter);
+        }}
+        onReset={() => {
+          setQuery("");
+          setStatus("all");
+        }}
+        onSearch={() => undefined}
+        onSearchChange={setQuery}
+        searchPlaceholder="搜索单号 / UID / 邮箱 / TX / 地址"
+        searchValue={query}
+      />
+
+      <AdminTable
+        columns={columns}
+        emptyState={<EmptyState compact description="换个状态或搜索关键词后再试。" title="没有充值记录" />}
+        getRowKey={(row) => row.id}
+        onRowClick={(row) => setSelectedId(row.id)}
+        rows={visibleRows}
+        selectedRowKey={selectedId ?? undefined}
+      />
+
+      <AdminDrawer
+        description={selected ? `${selected.asset} · ${selected.network} · ${cnTime(selected.created_at)}` : undefined}
+        footer={selected ? (
+          selected.status === "pending" ? (
+            <>
+              <button className="admin-button admin-button-ghost" onClick={() => setSelectedId(null)} type="button">取消</button>
+              <button className="admin-button admin-button-danger" onClick={() => reject(selected)} type="button">拒绝</button>
+              <button className="admin-button admin-button-primary" onClick={() => approve(selected)} type="button">通过</button>
+            </>
+          ) : <span className="admin-review-processed">该记录已处理</span>
+        ) : undefined}
+        onClose={() => setSelectedId(null)}
+        open={!!selected}
+        statusLabel={selected ? reviewStatusLabel(selected.status) : undefined}
+        statusTone={selected ? reviewStatusTone(selected.status) : undefined}
+        title={selected ? `充值审核 #${selected.id}` : "充值审核"}
+        width={460}
+      >
+        {selected && (
+          <>
+            <SectionCard title="基本信息">
+              <div className="admin-review-detail-grid">
+                <div><span>用户</span><strong>{selected.email || selected.username}</strong></div>
+                <div><span>UID</span><strong>{displayUid(selected)}</strong></div>
+                <div><span>币种</span><strong>{selected.asset}</strong></div>
+                <div><span>网络</span><strong>{selected.network}</strong></div>
+                <div><span>金额</span><strong>{money(selected.amount, 8)}</strong></div>
+                <div><span>提交时间</span><strong>{cnTime(selected.created_at)}</strong></div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="审核资料">
+              <div className="admin-review-field-list">
+                <div><span>TX Hash</span><strong>{selected.tx_hash || "-"}</strong></div>
+                <div><span>充值地址</span><strong>{selected.deposit_address || "-"}</strong></div>
+                <div><span>凭证截图</span>{selected.proof_data ? <button className="admin-inline-link" onClick={() => setPreview({ title: `充值截图 #${selected.id}`, src: selected.proof_data! })} type="button">查看截图</button> : <strong>-</strong>}</div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="审核备注">
+              <textarea className="admin-review-textarea" disabled={selected.status !== "pending"} onChange={(event) => setNote({ ...note, [selected.id]: event.target.value })} placeholder="填写运营备注" value={note[selected.id] || ""} />
+            </SectionCard>
+          </>
+        )}
+      </AdminDrawer>
+
+      <ReviewPreviewModal close={() => setPreview(null)} preview={preview} />
+    </div>
+  );
+}
+
+function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: KycSubmission[]; all: KycSubmission[]; status: ReviewStatusFilter; setStatus: (value: ReviewStatusFilter) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+  const [query, setQuery] = useState("");
+  const [reason, setReason] = useState<Record<number, string>>({});
+  const [preview, setPreview] = useState<PreviewState>(null);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const visibleRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return submissions;
+    return submissions.filter((row) => `${row.id} ${displayUid(row)} ${row.username} ${row.email ?? ""} ${row.legal_name} ${row.document_type} ${row.rejection_reason ?? ""}`.toLowerCase().includes(q));
+  }, [query, submissions]);
+  const selected = selectedId == null ? null : submissions.find((row) => row.id === selectedId) ?? all.find((row) => row.id === selectedId) ?? null;
+
+  function approve(row: KycSubmission) {
+    return mutate("/api/admin/kyc", "PATCH", { submissionId: row.id, status: "approved" });
+  }
+
+  function reject(row: KycSubmission) {
+    return mutate("/api/admin/kyc", "PATCH", { submissionId: row.id, status: "rejected", reason: reason[row.id] || "Verification requirements not met." });
+  }
+
+  function selfieData(row: KycSubmission) {
+    return (row as KycSubmission & { selfie_data?: string | null }).selfie_data || null;
+  }
+
+  const columns: Array<AdminTableColumn<KycSubmission>> = [
+    { id: "id", header: "ID", cell: (row) => <span className="admin-review-mono">{row.id}</span> },
+    { id: "user", header: "用户", cell: reviewUserCell },
+    { id: "name", header: "姓名", cell: (row) => <strong className="admin-review-strong">{row.legal_name}</strong> },
+    { id: "document", header: "证件类型", cell: (row) => row.document_type },
+    { id: "images", header: "资料", align: "center", cell: (row) => <span className="admin-review-muted">{[row.front_data && "正面", row.back_data && "反面", selfieData(row) && "自拍"].filter(Boolean).join(" / ") || "-"}</span> },
+    { id: "status", header: "状态", align: "center", cell: (row) => <StatusChip label={reviewStatusLabel(row.status)} tone={reviewStatusTone(row.status)} /> },
+    { id: "time", header: "提交时间", cell: (row) => <span className="admin-user-time">{cnTime(row.created_at)}</span> },
+    { id: "reason", header: "拒绝原因", cell: (row) => <span className="admin-review-muted">{row.rejection_reason || "-"}</span> },
+    {
+      id: "action",
+      header: "操作",
+      align: "center",
+      cell: (row) => (
+        <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
+          <ActionMenu
+            items={[
+              { id: "front", label: "查看正面", disabled: !row.front_data, onSelect: () => row.front_data && setPreview({ title: `${row.legal_name} 正面证件`, src: row.front_data }) },
+              { id: "back", label: "查看反面", disabled: !row.back_data, onSelect: () => row.back_data && setPreview({ title: `${row.legal_name} 反面证件`, src: row.back_data }) },
+              { id: "selfie", label: "查看自拍", disabled: !selfieData(row), onSelect: () => { const src = selfieData(row); if (src) setPreview({ title: `${row.legal_name} 自拍照`, src }); } },
+            ]}
+            onPrimaryClick={() => setSelectedId(row.id)}
+            primaryLabel="查看"
+          />
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="admin-review-page">
+      <AdminToolbar
+        activeFilterIds={[status]}
+        filters={reviewFilters(all)}
+        onFilterToggle={(id) => {
+          if (reviewStatusIds.includes(id as ReviewStatusFilter)) setStatus(id as ReviewStatusFilter);
+        }}
+        onReset={() => {
+          setQuery("");
+          setStatus("all");
+        }}
+        onSearch={() => undefined}
+        onSearchChange={setQuery}
+        searchPlaceholder="搜索单号 / UID / 邮箱 / 姓名 / 证件类型"
+        searchValue={query}
+      />
+
+      <AdminTable
+        columns={columns}
+        emptyState={<EmptyState compact description="换个状态或搜索关键词后再试。" title="没有 KYC 记录" />}
+        getRowKey={(row) => row.id}
+        onRowClick={(row) => setSelectedId(row.id)}
+        rows={visibleRows}
+        selectedRowKey={selectedId ?? undefined}
+      />
+
+      <AdminDrawer
+        description={selected ? `${selected.legal_name} · ${selected.document_type}` : undefined}
+        footer={selected ? (
+          selected.status === "pending" ? (
+            <>
+              <button className="admin-button admin-button-ghost" onClick={() => setSelectedId(null)} type="button">取消</button>
+              <button className="admin-button admin-button-danger" onClick={() => reject(selected)} type="button">拒绝</button>
+              <button className="admin-button admin-button-primary" onClick={() => approve(selected)} type="button">通过</button>
+            </>
+          ) : <span className="admin-review-processed">该记录已处理</span>
+        ) : undefined}
+        onClose={() => setSelectedId(null)}
+        open={!!selected}
+        statusLabel={selected ? reviewStatusLabel(selected.status) : undefined}
+        statusTone={selected ? reviewStatusTone(selected.status) : undefined}
+        title={selected ? `KYC审核 #${selected.id}` : "KYC审核"}
+        width={460}
+      >
+        {selected && (
+          <>
+            <SectionCard title="基本信息">
+              <div className="admin-review-detail-grid">
+                <div><span>用户</span><strong>{selected.email || selected.username}</strong></div>
+                <div><span>UID</span><strong>{displayUid(selected)}</strong></div>
+                <div><span>姓名</span><strong>{selected.legal_name}</strong></div>
+                <div><span>证件类型</span><strong>{selected.document_type}</strong></div>
+                <div><span>提交时间</span><strong>{cnTime(selected.created_at)}</strong></div>
+                <div><span>审核时间</span><strong>{selected.reviewed_at ? cnTime(selected.reviewed_at) : "-"}</strong></div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="审核资料">
+              <div className="admin-review-proof-grid">
+                <button disabled={!selected.front_data} onClick={() => selected.front_data && setPreview({ title: `${selected.legal_name} 正面证件`, src: selected.front_data })} type="button">正面证件</button>
+                <button disabled={!selected.back_data} onClick={() => selected.back_data && setPreview({ title: `${selected.legal_name} 反面证件`, src: selected.back_data })} type="button">反面证件</button>
+                <button disabled={!selfieData(selected)} onClick={() => { const src = selfieData(selected); if (src) setPreview({ title: `${selected.legal_name} 自拍照`, src }); }} type="button">自拍照</button>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="审核结果">
+              <textarea className="admin-review-textarea" disabled={selected.status !== "pending"} onChange={(event) => setReason({ ...reason, [selected.id]: event.target.value })} placeholder="拒绝时填写原因，留空则使用默认原因" value={reason[selected.id] || ""} />
+              {selected.rejection_reason && <p className="admin-review-note">当前拒绝原因：{selected.rejection_reason}</p>}
+            </SectionCard>
+          </>
+        )}
+      </AdminDrawer>
+
+      <ReviewPreviewModal close={() => setPreview(null)} preview={preview} />
+    </div>
+  );
+}
+
+function WithdrawalsTab({ withdrawals, all, status, setStatus, mutate }: { withdrawals: Withdrawal[]; all: Withdrawal[]; status: string; setStatus: (value: string) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+  const [query, setQuery] = useState("");
+  const [note, setNote] = useState<Record<number, string>>({});
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const visibleRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return withdrawals;
+    return withdrawals.filter((row) => `${row.id} ${displayUid(row)} ${row.username} ${row.email ?? ""} ${row.amount} ${row.address} ${row.note ?? ""}`.toLowerCase().includes(q));
+  }, [query, withdrawals]);
+  const selected = selectedId == null ? null : withdrawals.find((row) => row.id === selectedId) ?? all.find((row) => row.id === selectedId) ?? null;
+
+  function asset(row: Withdrawal) {
+    return (row as Withdrawal & { asset?: string }).asset || "USDC";
+  }
+
+  function approve(row: Withdrawal) {
+    return mutate("/api/admin/withdrawals", "PATCH", { withdrawalId: row.id, status: "approved", note: note[row.id] || "" });
+  }
+
+  function reject(row: Withdrawal) {
+    return mutate("/api/admin/withdrawals", "PATCH", { withdrawalId: row.id, status: "rejected", note: note[row.id] || "" });
+  }
+
+  const columns: Array<AdminTableColumn<Withdrawal>> = [
+    { id: "id", header: "ID", cell: (row) => <span className="admin-review-mono">{row.id}</span> },
+    { id: "user", header: "用户", cell: reviewUserCell },
+    { id: "asset", header: "资产", cell: (row) => asset(row) },
+    { id: "amount", header: "金额", numeric: true, cell: (row) => <span className="admin-review-money">{money(row.amount)}</span> },
+    { id: "address", header: "地址", cell: (row) => <span className="admin-review-code">{row.address || "-"}</span> },
+    { id: "status", header: "状态", align: "center", cell: (row) => <StatusChip label={reviewStatusLabel(row.status)} tone={reviewStatusTone(row.status)} /> },
+    { id: "time", header: "提交时间", cell: (row) => <span className="admin-user-time">{cnTime(row.created_at)}</span> },
+    {
+      id: "action",
+      header: "操作",
+      align: "center",
+      cell: (row) => (
+        <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
+          <ActionMenu items={[]} onPrimaryClick={() => setSelectedId(row.id)} primaryLabel="查看" />
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="admin-review-page">
+      <AdminToolbar
+        activeFilterIds={[status]}
+        filters={reviewFilters(all)}
+        onFilterToggle={(id) => {
+          if (reviewStatusIds.includes(id as ReviewStatusFilter)) setStatus(id);
+        }}
+        onReset={() => {
+          setQuery("");
+          setStatus("all");
+        }}
+        onSearch={() => undefined}
+        onSearchChange={setQuery}
+        searchPlaceholder="搜索单号 / UID / 邮箱 / 地址"
+        searchValue={query}
+      />
+
+      <AdminTable
+        columns={columns}
+        emptyState={<EmptyState compact description="换个状态或搜索关键词后再试。" title="没有提现记录" />}
+        getRowKey={(row) => row.id}
+        onRowClick={(row) => setSelectedId(row.id)}
+        rows={visibleRows}
+        selectedRowKey={selectedId ?? undefined}
+      />
+
+      <AdminDrawer
+        description={selected ? `${asset(selected)} · ${cnTime(selected.created_at)}` : undefined}
+        footer={selected ? (
+          selected.status === "pending" ? (
+            <>
+              <button className="admin-button admin-button-ghost" onClick={() => setSelectedId(null)} type="button">取消</button>
+              <button className="admin-button admin-button-danger" onClick={() => reject(selected)} type="button">拒绝</button>
+              <button className="admin-button admin-button-primary" onClick={() => approve(selected)} type="button">通过</button>
+            </>
+          ) : <span className="admin-review-processed">该记录已处理</span>
+        ) : undefined}
+        onClose={() => setSelectedId(null)}
+        open={!!selected}
+        statusLabel={selected ? reviewStatusLabel(selected.status) : undefined}
+        statusTone={selected ? reviewStatusTone(selected.status) : undefined}
+        title={selected ? `提现审核 #${selected.id}` : "提现审核"}
+        width={460}
+      >
+        {selected && (
+          <>
+            <SectionCard title="基本信息">
+              <div className="admin-review-detail-grid">
+                <div><span>用户</span><strong>{selected.email || selected.username}</strong></div>
+                <div><span>UID</span><strong>{displayUid(selected)}</strong></div>
+                <div><span>资产</span><strong>{asset(selected)}</strong></div>
+                <div><span>金额</span><strong>{money(selected.amount)}</strong></div>
+                <div><span>提交时间</span><strong>{cnTime(selected.created_at)}</strong></div>
+                <div><span>当前状态</span><strong>{reviewStatusLabel(selected.status)}</strong></div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="审核资料">
+              <div className="admin-review-field-list">
+                <div><span>提现地址</span><strong>{selected.address || "-"}</strong></div>
+                <div><span>历史备注</span><strong>{selected.note || "-"}</strong></div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="审核备注">
+              <textarea className="admin-review-textarea" disabled={selected.status !== "pending"} onChange={(event) => setNote({ ...note, [selected.id]: event.target.value })} placeholder="填写运营备注" value={note[selected.id] || ""} />
+            </SectionCard>
+          </>
+        )}
+      </AdminDrawer>
+    </div>
+  );
+}
+
+function LegacyDepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: Deposit[]; all: Deposit[]; status: "all" | "pending" | "approved" | "rejected"; setStatus: (value: "all" | "pending" | "approved" | "rejected") => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
   const [note, setNote] = useState<Record<number, string>>({});
   const [preview, setPreview] = useState<{ title: string; src: string } | null>(null);
   const tabs: Array<["all" | "pending" | "approved" | "rejected", string]> = [["all", "\u5168\u90e8"], ["pending", "\u5f85\u5ba1\u6838"], ["approved", "\u5df2\u901a\u8fc7"], ["rejected", "\u5df2\u62d2\u7edd"]];
@@ -1220,7 +1647,7 @@ function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: D
   );
 }
 
-function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: KycSubmission[]; all: KycSubmission[]; status: "all" | "pending" | "approved" | "rejected"; setStatus: (value: "all" | "pending" | "approved" | "rejected") => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+function LegacyKycTab({ submissions, all, status, setStatus, mutate }: { submissions: KycSubmission[]; all: KycSubmission[]; status: "all" | "pending" | "approved" | "rejected"; setStatus: (value: "all" | "pending" | "approved" | "rejected") => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
   const [reason, setReason] = useState<Record<number, string>>({});
   const [preview, setPreview] = useState<{ title: string; src: string } | null>(null);
   const tabs: Array<["all" | "pending" | "approved" | "rejected", string]> = [["all", "\u5168\u90e8"], ["pending", "\u5f85\u5ba1\u6838"], ["approved", "\u5df2\u901a\u8fc7"], ["rejected", "\u5df2\u62d2\u7edd"]];
@@ -1283,7 +1710,7 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
   );
 }
 
-function WithdrawalsTab({ withdrawals, all, status, setStatus, mutate }: { withdrawals: Withdrawal[]; all: Withdrawal[]; status: string; setStatus: (value: string) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
+function LegacyWithdrawalsTab({ withdrawals, all, status, setStatus, mutate }: { withdrawals: Withdrawal[]; all: Withdrawal[]; status: string; setStatus: (value: string) => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
   const tabs = [["all", "\u5168\u90e8"], ["pending", "\u5f85\u5ba1\u6838"], ["approved", "\u5df2\u901a\u8fc7"], ["rejected", "\u5df2\u62d2\u7edd"]];
   return (
     <div className="panel">

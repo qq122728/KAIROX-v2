@@ -1314,6 +1314,151 @@
   font-size: 12px;
 }
 
+.admin-review-page {
+  display: grid;
+  gap: 16px;
+}
+
+.admin-review-page .admin-table-shell {
+  overflow-x: auto;
+}
+
+.admin-review-page .admin-table {
+  min-width: 1120px;
+}
+
+.admin-review-user,
+.admin-review-stack {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.admin-review-user strong,
+.admin-review-stack strong,
+.admin-review-strong {
+  overflow: hidden;
+  color: #ffffff;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-review-user span,
+.admin-review-stack span,
+.admin-review-muted,
+.admin-review-processed {
+  color: var(--admin-muted);
+  font-size: 12px;
+}
+
+.admin-review-mono,
+.admin-review-money,
+.admin-review-code {
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-review-mono,
+.admin-review-money {
+  color: #ffffff;
+  font-weight: 760;
+}
+
+.admin-review-code {
+  display: inline-block;
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--admin-text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-review-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.admin-review-detail-grid div,
+.admin-review-field-list > div {
+  display: grid;
+  gap: 4px;
+}
+
+.admin-review-detail-grid span,
+.admin-review-field-list span {
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.admin-review-detail-grid strong,
+.admin-review-field-list strong {
+  overflow-wrap: anywhere;
+  color: #ffffff;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-review-field-list {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-review-textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  border: 1px solid var(--admin-line);
+  border-radius: 12px;
+  outline: 0;
+  background: rgba(8, 13, 22, 0.62);
+  color: var(--admin-text);
+  padding: 12px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.admin-review-textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.admin-review-proof-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.admin-review-proof-grid button {
+  min-height: 42px;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  background: rgba(8, 13, 22, 0.42);
+  color: var(--admin-text-soft);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.admin-review-proof-grid button:hover:not(:disabled) {
+  border-color: rgba(59, 130, 246, 0.45);
+  background: var(--admin-blue-soft);
+  color: #ffffff;
+}
+
+.admin-review-proof-grid button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.admin-review-note {
+  margin: 10px 0 0;
+  color: var(--admin-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 @media (max-width: 920px) {
   .admin-shell {
     grid-template-columns: 1fr;
@@ -1378,5 +1523,10 @@
 
   .admin-user-danger-actions .admin-button {
     width: 100%;
+  }
+
+  .admin-review-detail-grid,
+  .admin-review-proof-grid {
+    grid-template-columns: 1fr;
   }
 }
