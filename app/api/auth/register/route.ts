@@ -4,6 +4,7 @@ import { createPublicUid, getDb } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
 import { getSettings, settingBool } from "@/lib/settings";
 import { consumeIpRate } from "@/lib/rate-limit";
+import { emitRealtime } from "@/lib/realtime";
 
 const startingBalance = 0;
 
@@ -56,6 +57,7 @@ export async function POST(request: Request) {
         .run(userId, startingBalance, "Signup simulated USDC");
     }
     await createSession(userId, "user");
+    emitRealtime("admin:update", { room: "admin", payload: { type: "user:registered", userId, email } });
     return json({ ok: true });
   } catch (error) {
     const message = error instanceof Error && error.message.includes("UNIQUE") ? "Email is already registered" : undefined;

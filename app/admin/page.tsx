@@ -7,6 +7,7 @@ import {
   Activity,
   ArrowDownToLine,
   BarChart3,
+  Bell,
   Check,
   CircleDollarSign,
   Edit3,
@@ -93,9 +94,38 @@ type ConfirmOptions = { title: string; message: string; confirmText?: string; va
 type ConfirmState = (ConfirmOptions & { action: () => Promise<void> }) | null;
 type AdminRealtimePayload = { type?: string; [key: string]: unknown };
 type RealtimeStatus = "connecting" | "connected" | "polling";
+type AdminNotification = {
+  id: string;
+  type: string;
+  title: string;
+  meta?: string;
+  ts: number;
+  tabId?: TabId;
+  read: boolean;
+};
 
 const coins = ["USDC", "BTC", "ETH", "SOL"];
-const bellNotificationTypes = new Set(["deposit:created", "withdrawal:created", "kyc:created", "binary:created", "trade:created"]);
+/* Events that always ring the bell when first seen — high-signal account / cashflow events.
+   binary:created / trade:created additionally ring only above the size thresholds below. */
+const alwaysRingTypes = new Set([
+  "user:registered",
+  "deposit:created",
+  "withdrawal:created",
+  "kyc:created",
+]);
+/* Events that surface in the notification panel (de-duped by id).
+   Includes the always-ring types plus status-update echoes and the size-gated trade events. */
+const panelTypes = new Set([
+  "user:registered",
+  "deposit:created", "deposit:update",
+  "withdrawal:created", "withdrawal:update",
+  "kyc:created", "kyc:update",
+  "binary:created",
+  "trade:created",
+]);
+const BIG_BINARY_STAKE = Number(process.env.NEXT_PUBLIC_ADMIN_BIG_BINARY_STAKE || 500);
+const BIG_TRADE_NOTIONAL = Number(process.env.NEXT_PUBLIC_ADMIN_BIG_TRADE_NOTIONAL || 1000);
+const NOTIFICATION_LIMIT = 50;
 const money = (n: number, digits = 2) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
 const actor = (item: { email?: string | null; username: string }) => item.email || item.username;
 const cnTime = (value: string) => new Date(value).toLocaleString("zh-CN", { hour12: false });
@@ -148,6 +178,18 @@ const adminCss = `
 .side-foot{display:grid;gap:8px;padding:14px;border-top:1px solid rgba(255,255,255,.08)}
 .main{min-width:0}.topbar{height:64px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;padding:0 24px}.topbar h1{font-size:18px;margin:0}.topbar p{margin:3px 0 0;color:#64748b;font-size:12px}.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .realtime-state{display:inline-flex;align-items:center;gap:6px;border:1px solid #d8dee9;border-radius:999px;background:#fff;color:#64748b;font-size:12px;font-weight:800;min-height:28px;padding:4px 9px}.realtime-state span{width:7px;height:7px;border-radius:999px;background:#94a3b8}.realtime-state.connected{color:#15803d;border-color:#bbf7d0;background:#f0fdf4}.realtime-state.connected span{background:#22c55e}.realtime-state.polling{color:#b45309;border-color:#fed7aa;background:#fff7ed}.realtime-state.polling span{background:#f97316}.realtime-state.connecting span{background:#38bdf8}
+.bell-wrap{position:relative;display:inline-flex}
+.bell-btn{position:relative;border:1px solid #d8dee9;background:#fff;color:#475569;border-radius:8px;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}.bell-btn:hover{border-color:#2563eb;color:#2563eb}.bell-btn svg{width:18px;height:18px}.bell-btn.has-unread{color:#2563eb;border-color:#bfdbfe}
+.bell-dot{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;line-height:18px;border-radius:999px;text-align:center;box-shadow:0 0 0 2px #fff}
+.bell-panel{position:absolute;top:calc(100% + 8px);right:0;width:min(360px,92vw);background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 18px 50px rgba(15,23,42,.18);z-index:50;overflow:hidden}
+.bell-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e5e7eb;font-size:13px}.bell-panel-head strong{font-size:13px}
+.bell-panel-actions{display:flex;gap:10px}.bell-link{background:transparent;border:0;color:#2563eb;font-size:12px;cursor:pointer;padding:0}.bell-link:disabled{color:#94a3b8;cursor:not-allowed}.bell-link:hover:not(:disabled){text-decoration:underline}
+.bell-panel-body{max-height:60vh;overflow-y:auto}
+.bell-empty{padding:34px 16px;text-align:center;color:#94a3b8;font-size:13px}
+.bell-item{display:grid;grid-template-columns:1fr auto;grid-template-areas:"title time" "meta meta";gap:2px 12px;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid #f1f5f9;padding:11px 14px;cursor:pointer;font:inherit}.bell-item:last-child{border-bottom:0}.bell-item:hover{background:#f8fafc}.bell-item.read{opacity:.55}
+.bell-item-title{grid-area:title;font-size:13px;font-weight:700;color:#0f172a}.bell-item.read .bell-item-title{font-weight:500;color:#475569}
+.bell-item-time{grid-area:time;font-size:11px;color:#94a3b8;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bell-item-meta{grid-area:meta;font-size:12px;color:#64748b}
 .content{padding:22px;display:grid;gap:16px}.btn{border:1px solid #d8dee9;background:#fff;color:#334155;border-radius:6px;min-height:34px;padding:7px 12px;font-size:13px;font-weight:700;display:inline-flex;gap:7px;align-items:center;justify-content:center;cursor:pointer;text-decoration:none}.btn:hover{border-color:#2563eb;color:#2563eb}.btn svg{width:15px;height:15px}.btn.primary{background:#2563eb;border-color:#2563eb;color:#fff}.btn.good{background:#16a34a;border-color:#16a34a;color:#fff}.btn.danger{background:#ef4444;border-color:#ef4444;color:#fff}.btn.warn{background:#fff7ed;border-color:#fdba74;color:#ea580c}.btn.icon{width:32px;padding:0}.btn.disabled{opacity:.55;pointer-events:none}
 .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;box-shadow:0 1px 2px rgba(15,23,42,.04)}.stat{display:flex;justify-content:space-between;gap:12px}.stat label{display:block;color:#64748b;font-size:13px}.stat strong{display:block;margin-top:10px;font-size:24px;letter-spacing:-.02em}.stat small{display:block;color:#94a3b8;margin-top:4px}.stat svg{width:22px;height:22px;color:#2563eb}
 .panel{background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #e5e7eb}.panel-head h2{font-size:15px;margin:0;display:flex;align-items:center;gap:8px}.panel-head svg{width:17px;height:17px;color:#2563eb}.panel-body{padding:16px}.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
@@ -180,10 +222,16 @@ export default function AdminPage() {
   const [settings, setSettings] = useState<Partial<Settings>>({});
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("connecting");
   const [newMarket, setNewMarket] = useState({ symbol: "DOGE-PERP", price: 0.18, maxLeverage: 20, feeRate: 0.0008, mmr: 0.0075 });
+  const [notifications, setNotifications] = useState<AdminNotification[]>([]);
+  const [bellOpen, setBellOpen] = useState(false);
   const loadingRef = useRef(false);
   const settingsDirtyRef = useRef(false);
   const audioRef = useRef<AudioContext | null>(null);
   const notifiedEventsRef = useRef<Set<string>>(new Set());
+  /* Synchronous mirror of `data` so the realtime handler can read fresh state immediately
+     after load() resolves, without waiting for a React render cycle. */
+  const dataRef = useRef<AdminData | null>(null);
+  const bellWrapRef = useRef<HTMLDivElement | null>(null);
 
   async function load(options: { forceSettings?: boolean } = {}) {
     if (loadingRef.current) return;
@@ -200,6 +248,7 @@ export default function AdminPage() {
         return;
       }
       const json = await res.json();
+      dataRef.current = json;
       setData(json);
       if (options.forceSettings || !settingsDirtyRef.current) setSettings(json.settings);
       setLoading(false);
@@ -209,6 +258,68 @@ export default function AdminPage() {
     } finally {
       loadingRef.current = false;
     }
+  }
+
+  function buildNotificationContent(type: string, body: AdminRealtimePayload, snap: AdminData | null): { title: string; meta?: string; tabId?: TabId } {
+    switch (type) {
+      case "user:registered": {
+        const email = typeof body.email === "string" ? body.email : "";
+        return { title: "新用户注册", meta: email || `UID #${body.userId}`, tabId: "users" };
+      }
+      case "deposit:created":
+        return { title: "新充值申请", meta: `订单 #${body.depositId}`, tabId: "deposits" };
+      case "deposit:update":
+        return { title: "充值状态更新", meta: `订单 #${body.depositId} → ${body.status ?? ""}`, tabId: "deposits" };
+      case "withdrawal:created":
+        return { title: "新提现申请", meta: `订单 #${body.withdrawalId}`, tabId: "withdrawals" };
+      case "withdrawal:update":
+        return { title: "提现状态更新", meta: `订单 #${body.withdrawalId} → ${body.status ?? ""}`, tabId: "withdrawals" };
+      case "kyc:created":
+        return { title: "新 KYC 提交", meta: `单号 #${body.submissionId}`, tabId: "kyc" };
+      case "kyc:update":
+        return { title: "KYC 状态更新", meta: `单号 #${body.submissionId} → ${body.status ?? ""}`, tabId: "kyc" };
+      case "binary:created": {
+        const order = snap?.orders.find((o) => o.id === body.orderId);
+        return {
+          title: "新二元下单",
+          meta: order ? `${order.symbol} ${order.direction.toUpperCase()} · ${money(order.stake)} USDC` : `订单 #${body.orderId}`,
+          tabId: "orders",
+        };
+      }
+      case "trade:created": {
+        const pos = snap?.positions.find((p) => p.id === body.positionId);
+        const notional = pos ? pos.margin * (pos.leverage || 1) : 0;
+        return {
+          title: "新 Perp 仓位",
+          meta: pos ? `${pos.symbol} ${pos.side.toUpperCase()} · ${money(notional)} USDC` : `仓位 #${body.positionId}`,
+          tabId: "dashboard",
+        };
+      }
+      default:
+        return { title: type };
+    }
+  }
+
+  function pushNotification(next: AdminNotification) {
+    setNotifications((prev) => {
+      if (prev.some((n) => n.id === next.id)) return prev;
+      const merged = [next, ...prev];
+      return merged.length > NOTIFICATION_LIMIT ? merged.slice(0, NOTIFICATION_LIMIT) : merged;
+    });
+  }
+
+  function markAllNotificationsRead() {
+    setNotifications((prev) => (prev.some((n) => !n.read) ? prev.map((n) => ({ ...n, read: true })) : prev));
+  }
+
+  function openNotification(n: AdminNotification) {
+    setNotifications((prev) => prev.map((item) => (item.id === n.id ? { ...item, read: true } : item)));
+    if (n.tabId) setTab(n.tabId);
+    setBellOpen(false);
+  }
+
+  function formatNotificationTime(ts: number) {
+    return new Date(ts).toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   }
 
   function getAudioContext() {
@@ -268,6 +379,22 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
+    if (!bellOpen) return;
+    const onPointer = (event: MouseEvent) => {
+      if (bellWrapRef.current && !bellWrapRef.current.contains(event.target as Node)) setBellOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setBellOpen(false); };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [bellOpen]);
+
+  const unreadNotifications = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
+
+  useEffect(() => {
     let socket: Awaited<ReturnType<typeof connectRealtime>> | null = null;
     let active = true;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -305,19 +432,43 @@ export default function AdminPage() {
     };
     const handleDisconnect = () => startPolling();
     const handleConnectError = () => startPolling();
-    const handleAdminUpdate = (payload?: unknown) => {
-      const body = typeof payload === "object" && payload ? (payload as AdminRealtimePayload) : undefined;
-      const type = body?.type;
-      if (type && bellNotificationTypes.has(type)) {
-        const eventId = body.withdrawalId || body.depositId || body.submissionId || body.orderId || body.positionId || body.userId || "unknown";
-        const key = `${type}:${eventId}`;
-        if (!notifiedEventsRef.current.has(key)) {
-          notifiedEventsRef.current.add(key);
+    const handleAdminUpdate = async (payload?: unknown) => {
+      const body = (typeof payload === "object" && payload ? payload : {}) as AdminRealtimePayload;
+      const type = typeof body.type === "string" ? body.type : "";
+      /* Push the panel entry BEFORE any await so a slow/failed load() can't drop it.
+         Bell logic that does NOT need data lookup also runs immediately. */
+      if (type && panelTypes.has(type)) {
+        const eventId = body.withdrawalId ?? body.depositId ?? body.submissionId ?? body.orderId ?? body.positionId ?? body.userId ?? "unknown";
+        const id = `${type}:${eventId}`;
+        const snapPre = dataRef.current;
+        const { title, meta, tabId } = buildNotificationContent(type, body, snapPre);
+        pushNotification({ id, type, title, meta, tabId, ts: Date.now(), read: false });
+        if (alwaysRingTypes.has(type) && !notifiedEventsRef.current.has(id)) {
+          notifiedEventsRef.current.add(id);
           if (notifiedEventsRef.current.size > 120) notifiedEventsRef.current.clear();
           void playNotificationBell();
         }
       }
-      void load();
+      /* Refresh tables; also lets threshold-gated types (binary/trade) check fresh stake/margin. */
+      await load();
+      if (!active) return;
+      if (type !== "binary:created" && type !== "trade:created") return;
+      const eventId = body.withdrawalId ?? body.depositId ?? body.submissionId ?? body.orderId ?? body.positionId ?? body.userId ?? "unknown";
+      const id = `${type}:${eventId}`;
+      const snap = dataRef.current;
+      let shouldRing = false;
+      if (type === "binary:created") {
+        const order = snap?.orders.find((o) => o.id === body.orderId);
+        if (order && Number(order.stake) >= BIG_BINARY_STAKE) shouldRing = true;
+      } else if (type === "trade:created") {
+        const pos = snap?.positions.find((p) => p.id === body.positionId);
+        if (pos && Number(pos.margin) * Number(pos.leverage || 1) >= BIG_TRADE_NOTIONAL) shouldRing = true;
+      }
+      if (shouldRing && !notifiedEventsRef.current.has(id)) {
+        notifiedEventsRef.current.add(id);
+        if (notifiedEventsRef.current.size > 120) notifiedEventsRef.current.clear();
+        void playNotificationBell();
+      }
     };
     setRealtimeStatus("connecting");
     connectTimer = setTimeout(startPolling, 5000);
@@ -469,6 +620,48 @@ export default function AdminPage() {
             <div><h1>{nav.find((item) => item.id === tab)?.label}</h1><p>中文后台管理，当前接入本地 SQLite 与 Next.js API。</p></div>
             <div className="tools">
               <span className={`realtime-state ${realtimeStatus}`} title={realtimeStatus === "polling" ? "Socket offline; polling admin summary" : "Admin realtime connection state"}><span />{realtimeLabel}</span>
+              <div className="bell-wrap" ref={bellWrapRef}>
+                <button
+                  type="button"
+                  className={`bell-btn${unreadNotifications > 0 ? " has-unread" : ""}`}
+                  aria-label={`通知${unreadNotifications > 0 ? ` (${unreadNotifications} 未读)` : ""}`}
+                  aria-haspopup="dialog"
+                  aria-expanded={bellOpen}
+                  onClick={() => setBellOpen((v) => !v)}
+                >
+                  <Bell />
+                  {unreadNotifications > 0 && <span className="bell-dot">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}
+                </button>
+                {bellOpen && (
+                  <div className="bell-panel" role="dialog" aria-label="通知">
+                    <div className="bell-panel-head">
+                      <strong>通知 {notifications.length ? `(${notifications.length})` : ""}</strong>
+                      <div className="bell-panel-actions">
+                        <button type="button" className="bell-link" disabled={unreadNotifications === 0} onClick={markAllNotificationsRead}>全部已读</button>
+                        <button type="button" className="bell-link" onClick={() => setBellOpen(false)}>关闭</button>
+                      </div>
+                    </div>
+                    <div className="bell-panel-body">
+                      {notifications.length === 0 ? (
+                        <div className="bell-empty">暂无通知</div>
+                      ) : (
+                        notifications.map((n) => (
+                          <button
+                            key={n.id}
+                            type="button"
+                            className={`bell-item${n.read ? " read" : ""}`}
+                            onClick={() => openNotification(n)}
+                          >
+                            <span className="bell-item-title">{n.title}</span>
+                            {n.meta && <span className="bell-item-meta">{n.meta}</span>}
+                            <span className="bell-item-time">{formatNotificationTime(n.ts)}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
               <Link href="/markets" className="btn">前台</Link>
               <button className="btn primary" onClick={() => void load()}><RefreshCw />刷新</button>
             </div>

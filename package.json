@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "socket": "node realtime/socket-server.mjs",
-    "settlement": "node realtime/settlement-worker.mjs",
+    "socket": "node --env-file-if-exists=.env.local realtime/socket-server.mjs",
+    "settlement": "node --env-file-if-exists=.env.local realtime/settlement-worker.mjs",
     "build": "next build",
     "start": "next start",
     "start:production": "node scripts/start-production.mjs",
