@@ -249,6 +249,125 @@ proxy_set_header X-Forwarded-Proto $scheme;
 
 Socket.IO must have WebSocket upgrade enabled.
 
+## Public and Admin Domains
+
+Recommended Beta domain layout:
+
+- Public app: `https://your-beta-domain.example`
+- Admin console: `https://ops-random.your-beta-domain.example`
+
+Do not rely on a hidden admin domain as the only security control. Avoid obvious admin subdomains such as:
+
+- `admin`
+- `backend`
+- `console`
+- `manage`
+- `dashboard`
+- `root`
+- `control`
+- `cms`
+
+Use a non-obvious operations subdomain only to reduce casual discovery and to make separate security rules easier. The real protection must come from access controls.
+
+Required admin-domain protection:
+
+- Do not link the admin domain from the public app.
+- Put the admin domain behind Cloudflare Access, VPN, or an IP allowlist.
+- Add stricter WAF/rate-limit rules for `/api/auth/admin-login`.
+- Keep the application-level admin login rate limit enabled.
+- Add admin 2FA before moving beyond Beta.
+
+If using an IP allowlist, protect the entire admin host, not only the login page:
+
+```text
+Host equals ops-random.your-beta-domain.example
+AND source IP is not in allowed_admin_ips
+-> block or challenge
+```
+
+If there is no fixed office IP, prefer Cloudflare Access or a VPN over a static allowlist.
+
+Public-domain protection:
+
+- Public app remains accessible to users.
+- Use HTTPS only.
+- Enable HSTS after TLS is confirmed stable.
+- Keep WAF managed rules enabled.
+- Apply rate limits to login, register, withdraw, swap, and binary-order endpoints.
+
+Server exposure rules:
+
+- Only expose ports `80` and `443` publicly.
+- Keep Next.js on `127.0.0.1:3000` behind Nginx.
+- Keep Socket.IO on `127.0.0.1:3001` behind Nginx.
+- Do not expose SQLite paths or internal service ports.
+- Restrict SSH to trusted IPs where possible.
+
+Two-domain Nginx shape:
+
+```nginx
+server {
+    listen 80;
+    server_name your-beta-domain.example;
+
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+
+server {
+    listen 80;
+    server_name ops-random.your-beta-domain.example;
+
+    # Prefer Cloudflare Access, VPN, or Cloudflare WAF allowlist before traffic reaches Nginx.
+    # If using direct IP allowlist at Nginx, configure real client IP handling first.
+
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+For the server `.env.production.local`, keep `NEXT_PUBLIC_APP_URL` and `NEXT_PUBLIC_SOCKET_URL` pointed at the public app domain unless intentionally running the entire app behind the admin host:
+
+```env
+NEXT_PUBLIC_APP_URL=https://your-beta-domain.example
+NEXT_PUBLIC_SOCKET_URL=https://your-beta-domain.example
+PERP_SIM_ALLOWED_ORIGINS=https://your-beta-domain.example,https://ops-random.your-beta-domain.example
+```
+
 ## Pre-Deploy Checks
 
 Run before switching traffic:
