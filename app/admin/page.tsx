@@ -178,7 +178,7 @@ function binaryOptionsTextToConfig(value: string) {
       const seconds = Number(secondsRaw);
       const percent = Number(String(percentRaw || "").replace("%", ""));
       if (!Number.isInteger(seconds) || seconds < 5 || seconds > 86400 || !Number.isFinite(percent) || percent <= 0) {
-        throw new Error("Binary options format: seconds,profitPercent");
+        throw new Error("二元期权配置格式：秒数,收益率");
       }
       return { seconds, odds: Number((percent / 100).toFixed(6)) };
     });
@@ -295,9 +295,9 @@ export default function AdminPage() {
       case "withdrawal:update":
         return { title: "提现状态更新", meta: `订单 #${body.withdrawalId} → ${body.status ?? ""}`, tabId: "withdrawals" };
       case "kyc:created":
-        return { title: "新 KYC 提交", meta: `单号 #${body.submissionId}`, tabId: "kyc" };
+        return { title: "新身份资料提交", meta: `单号 #${body.submissionId}`, tabId: "kyc" };
       case "kyc:update":
-        return { title: "KYC 状态更新", meta: `单号 #${body.submissionId} → ${body.status ?? ""}`, tabId: "kyc" };
+        return { title: "身份审核状态更新", meta: `单号 #${body.submissionId} → ${body.status ?? ""}`, tabId: "kyc" };
       case "binary:created": {
         const order = snap?.orders.find((o) => o.id === body.orderId);
         return {
@@ -630,7 +630,7 @@ export default function AdminPage() {
       items: [
         { id: "deposits", label: "充值审核", icon: CircleDollarSign, badge: data?.stats.pending_deposits },
         { id: "withdrawals", label: "提现审核", icon: ArrowDownToLine, badge: data?.stats.pending_withdrawals },
-        { id: "kyc", label: "KYC审核", icon: ShieldCheck, badge: data?.stats.pending_kyc },
+        { id: "kyc", label: "身份审核", icon: ShieldCheck, badge: data?.stats.pending_kyc },
       ],
     },
     {
@@ -652,7 +652,7 @@ export default function AdminPage() {
     depositAddresses: { title: "资金地址", description: "平台默认地址与用户自定义地址管理。" },
     deposits: { title: "充值审核", description: "处理用户充值凭证与入账状态。" },
     withdrawals: { title: "提现审核", description: "处理提现申请与冻结资金释放。" },
-    kyc: { title: "KYC审核", description: "审核用户身份认证材料。" },
+    kyc: { title: "身份审核", description: "审核用户身份认证材料。" },
     users: { title: "用户管理", description: "查询用户、资金、安全与权限状态。" },
     orders: { title: "二元订单", description: "查看二元订单并处理人工结算预设。" },
     markets: { title: "交易市场", description: "管理交易对与市场参数。" },
@@ -859,8 +859,8 @@ function getConfirmOptions(url: string, method: string, body: unknown, context?:
 
   if (url === "/api/admin/kyc") {
     const id = payload.submissionId;
-    if (payload.status === "approved") return { title: "\u786e\u8ba4\u901a\u8fc7 KYC\uff1f", message: `KYC \u8bb0\u5f55 #${id} \u5c06\u88ab\u6807\u8bb0\u4e3a\u5df2\u901a\u8fc7\uff0c\u7528\u6237\u7aef\u4f1a\u540c\u6b65\u663e\u793a\u5df2\u8ba4\u8bc1\u3002`, confirmText: "\u786e\u8ba4\u901a\u8fc7", variant: "good" };
-    if (payload.status === "rejected") return { title: "\u786e\u8ba4\u62d2\u7edd KYC\uff1f", message: `KYC \u8bb0\u5f55 #${id} \u5c06\u88ab\u62d2\u7edd\uff0c\u7528\u6237\u7aef\u4f1a\u770b\u5230\u62d2\u7edd\u72b6\u6001\u548c\u539f\u56e0\u3002`, confirmText: "\u786e\u8ba4\u62d2\u7edd", variant: "danger" };
+    if (payload.status === "approved") return { title: "\u786e\u8ba4\u901a\u8fc7\u8eab\u4efd\u5ba1\u6838\uff1f", message: `\u8eab\u4efd\u5ba1\u6838\u8bb0\u5f55 #${id} \u5c06\u88ab\u6807\u8bb0\u4e3a\u5df2\u901a\u8fc7\uff0c\u7528\u6237\u7aef\u4f1a\u540c\u6b65\u663e\u793a\u5df2\u8ba4\u8bc1\u3002`, confirmText: "\u786e\u8ba4\u901a\u8fc7", variant: "good" };
+    if (payload.status === "rejected") return { title: "\u786e\u8ba4\u62d2\u7edd\u8eab\u4efd\u5ba1\u6838\uff1f", message: `\u8eab\u4efd\u5ba1\u6838\u8bb0\u5f55 #${id} \u5c06\u88ab\u62d2\u7edd\uff0c\u7528\u6237\u7aef\u4f1a\u770b\u5230\u62d2\u7edd\u72b6\u6001\u548c\u539f\u56e0\u3002`, confirmText: "\u786e\u8ba4\u62d2\u7edd", variant: "danger" };
   }
 
   if (url === "/api/admin/deposits") {
@@ -923,7 +923,7 @@ function Dashboard({ data, setTab, realtimeStatus, lastSyncAt, unreadNotificatio
   const todoItems: Array<{ label: string; value: number; tone: "warning" | "info"; tab: TabId; action: string }> = [
     { label: "待审核充值", value: pendingDeposits, tone: "warning", tab: "deposits", action: "处理充值" },
     { label: "待审核提现", value: pendingWithdrawals, tone: "warning", tab: "withdrawals", action: "处理提现" },
-    { label: "待审核KYC", value: pendingKyc, tone: "warning", tab: "kyc", action: "处理KYC" },
+    { label: "待审核身份资料", value: pendingKyc, tone: "warning", tab: "kyc", action: "处理审核" },
     { label: "运行中订单", value: openBinaryOrders, tone: "info", tab: "orders", action: "查看订单" },
   ];
 
@@ -932,8 +932,8 @@ function Dashboard({ data, setTab, realtimeStatus, lastSyncAt, unreadNotificatio
       <section className="admin-dashboard-stats" aria-label="核心指标">
         <StatCard title="平台总资产" value={`$${money(totalStableBalance, 2)}`} description="USDC 用户资产合计" tone="info" icon={<CircleDollarSign size={18} />} />
         <StatCard title="冻结资金" value={`$${money(lockedStableBalance, 2)}`} description="当前锁定 USDC" tone={lockedStableBalance > 0 ? "warning" : "muted"} icon={<LockKeyhole size={18} />} />
-        <StatCard title="运行中订单" value={openBinaryOrders} description="Open binary orders" tone={openBinaryOrders > 0 ? "info" : "muted"} icon={<WalletCards size={18} />} />
-        <StatCard title="开放持仓" value={data.stats.open_positions} description="Perpetual positions" tone={data.stats.open_positions > 0 ? "info" : "muted"} icon={<Gauge size={18} />} />
+        <StatCard title="运行中订单" value={openBinaryOrders} description="二元期权未结算订单" tone={openBinaryOrders > 0 ? "info" : "muted"} icon={<WalletCards size={18} />} />
+        <StatCard title="开放持仓" value={data.stats.open_positions} description="永续合约未平仓持仓" tone={data.stats.open_positions > 0 ? "info" : "muted"} icon={<Gauge size={18} />} />
       </section>
 
       <section className="admin-dashboard-todos" aria-label="运营待办">
@@ -947,7 +947,7 @@ function Dashboard({ data, setTab, realtimeStatus, lastSyncAt, unreadNotificatio
       </section>
 
       <section className="admin-dashboard-status-card" aria-label="平台运行状态">
-        <div><span>Realtime</span><StatusChip label={realtimeLabel} tone={realtimeTone} /></div>
+        <div><span>实时状态</span><StatusChip label={realtimeLabel} tone={realtimeTone} /></div>
         <div><span>最后同步</span><strong className="tabular-nums">{lastSyncAt || "等待同步"}</strong></div>
         <div><span>通知</span><strong className="tabular-nums">{unreadNotifications} 未读</strong></div>
         <div><span>市场</span><strong className="tabular-nums">{activeMarkets}/{data.markets.length} 开启</strong></div>
@@ -1534,7 +1534,7 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
 
       <AdminTable
         columns={columns}
-        emptyState={<EmptyState compact description="换个状态或搜索关键词后再试。" title="没有 KYC 记录" />}
+        emptyState={<EmptyState compact description="换个状态或搜索关键词后再试。" title="没有身份审核记录" />}
         getRowKey={(row) => row.id}
         onRowClick={(row) => setSelectedId(row.id)}
         rows={visibleRows}
@@ -1556,7 +1556,7 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
         open={!!selected}
         statusLabel={selected ? reviewStatusLabel(selected.status) : undefined}
         statusTone={selected ? reviewStatusTone(selected.status) : undefined}
-        title={selected ? `KYC审核 #${selected.id}` : "KYC审核"}
+        title={selected ? `身份审核 #${selected.id}` : "身份审核"}
         width={460}
       >
         {selected && (
@@ -1778,7 +1778,7 @@ function LegacyKycTab({ submissions, all, status, setStatus, mutate }: { submiss
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2><ShieldCheck />KYC {"\u5ba1\u6838"}</h2>
+        <h2><ShieldCheck />身份审核</h2>
         <div className="tabs">
           {tabs.map(([id, label]) => <button key={id} className={status === id ? "on" : ""} onClick={() => setStatus(id)}>{label} {id === "all" ? all.length : all.filter((row) => row.status === id).length}</button>)}
         </div>
@@ -1789,7 +1789,7 @@ function LegacyKycTab({ submissions, all, status, setStatus, mutate }: { submiss
             <tr><th>ID</th><th>{"\u7528\u6237"}</th><th>{"\u59d3\u540d"}</th><th>{"\u8bc1\u4ef6\u7c7b\u578b"}</th><th>{"\u8bc1\u4ef6\u56fe\u7247"}</th><th>{"\u72b6\u6001"}</th><th>{"\u63d0\u4ea4\u65f6\u95f4"}</th><th>{"\u62d2\u7edd\u539f\u56e0"}</th><th>{"\u64cd\u4f5c"}</th></tr>
           </thead>
           <tbody>
-            {submissions.length === 0 && <tr><td colSpan={9} className="empty">{"\u6ca1\u6709 KYC \u8bb0\u5f55"}</td></tr>}
+            {submissions.length === 0 && <tr><td colSpan={9} className="empty">没有身份审核记录</td></tr>}
             {submissions.map((k) => (
               <tr key={k.id}>
                 <td className="mono">{k.id}</td>
@@ -2232,9 +2232,13 @@ function orderStatusTone(status: string): StatusChipTone {
 }
 
 function orderManualLabel(order: Order) {
-  if (order.manual_result === "won") return "Preset Win";
-  if (order.manual_result === "lost") return "Preset Loss";
+  if (order.manual_result === "won") return "预设判赢";
+  if (order.manual_result === "lost") return "预设判输";
   return "-";
+}
+
+function orderDirectionLabel(direction: Order["direction"]) {
+  return direction === "call" ? "看涨" : "看跌";
 }
 
 function orderStatusMeta(order: Order): { label: string; tone: StatusChipTone } {
@@ -2267,7 +2271,7 @@ function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus
       orderId: order.id,
       result: "won",
       settlePrice: Number((settlePrice[order.id] ?? (order.manual_settle_price ? String(order.manual_settle_price) : "")) || order.entry_price),
-      note: "Admin preset win",
+      note: "后台预设判赢",
     });
   }
 
@@ -2276,7 +2280,7 @@ function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus
       orderId: order.id,
       result: "lost",
       settlePrice: Number((settlePrice[order.id] ?? (order.manual_settle_price ? String(order.manual_settle_price) : "")) || order.entry_price),
-      note: "Admin preset loss",
+      note: "后台预设判输",
     });
   }
 
@@ -2297,7 +2301,7 @@ function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus
       id: "direction",
       header: "方向",
       align: "center",
-      cell: (order) => <StatusChip label={order.direction.toUpperCase()} tone={order.direction === "call" ? "success" : "danger"} />,
+      cell: (order) => <StatusChip label={orderDirectionLabel(order.direction)} tone={order.direction === "call" ? "success" : "danger"} />,
     },
     { id: "stake", header: "投入", numeric: true, cell: (order) => <span className="admin-review-money">{money(order.stake)}</span> },
     { id: "risk", header: "风险金额", numeric: true, cell: (order) => <span className="admin-review-money">{money(riskAmount(order))}</span> },
@@ -2357,13 +2361,13 @@ function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus
       />
 
       <AdminDrawer
-        description={selectedOrder ? `${selectedOrder.symbol} · ${selectedOrder.direction.toUpperCase()} · ${cnTime(selectedOrder.created_at)}` : undefined}
+        description={selectedOrder ? `${selectedOrder.symbol} · ${orderDirectionLabel(selectedOrder.direction)} · ${cnTime(selectedOrder.created_at)}` : undefined}
         footer={selectedOrder ? (
           selectedOrder.status === "open" ? (
             <>
               <button className="admin-button admin-button-ghost" onClick={() => setSelectedId(null)} type="button">取消</button>
-              <button className="admin-button admin-button-danger" onClick={() => presetLoss(selectedOrder)} type="button">{selectedOrder.manual_result === "lost" ? "Loss Set" : "Set Loss"}</button>
-              <button className="admin-button admin-button-primary" onClick={() => presetWin(selectedOrder)} type="button">{selectedOrder.manual_result === "won" ? "Win Set" : "Set Win"}</button>
+              <button className="admin-button admin-button-danger" onClick={() => presetLoss(selectedOrder)} type="button">{selectedOrder.manual_result === "lost" ? "已设为判输" : "设置判输"}</button>
+              <button className="admin-button admin-button-primary" onClick={() => presetWin(selectedOrder)} type="button">{selectedOrder.manual_result === "won" ? "已设为判赢" : "设置判赢"}</button>
             </>
           ) : <span className="admin-review-processed">该订单已结束，不能人工处理</span>
         ) : undefined}
@@ -2381,7 +2385,7 @@ function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus
                 <div><span>用户</span><strong>{selectedOrder.email || selectedOrder.username}</strong></div>
                 <div><span>UID</span><strong>{displayUid(selectedOrder)}</strong></div>
                 <div><span>交易对</span><strong>{selectedOrder.symbol}</strong></div>
-                <div><span>方向</span><strong>{selectedOrder.direction.toUpperCase()}</strong></div>
+                <div><span>方向</span><strong>{orderDirectionLabel(selectedOrder.direction)}</strong></div>
                 <div><span>创建时间</span><strong>{cnTime(selectedOrder.created_at)}</strong></div>
                 <div><span>到期时间</span><strong>{cnTime(selectedOrder.expires_at)}</strong></div>
               </div>
@@ -2393,22 +2397,22 @@ function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus
                 <div><span>风险金额</span><strong>{money(riskAmount(selectedOrder))}</strong></div>
                 <div><span>周期</span><strong>{selectedOrder.duration_seconds}s</strong></div>
                 <div><span>赔率</span><strong>+{Math.round(selectedOrder.odds * 100)}%</strong></div>
-                <div><span>Entry Price</span><strong>{money(selectedOrder.entry_price)}</strong></div>
-                <div><span>Settlement Price</span><strong>{selectedOrder.settle_price == null ? "-" : money(selectedOrder.settle_price)}</strong></div>
-                <div><span>Profit</span><strong>{selectedOrder.profit == null ? "-" : money(selectedOrder.profit)}</strong></div>
-                <div><span>Note</span><strong>{selectedOrder.note || "-"}</strong></div>
+                <div><span>入场价格</span><strong>{money(selectedOrder.entry_price)}</strong></div>
+                <div><span>结算价格</span><strong>{selectedOrder.settle_price == null ? "-" : money(selectedOrder.settle_price)}</strong></div>
+                <div><span>盈亏</span><strong>{selectedOrder.profit == null ? "-" : money(selectedOrder.profit)}</strong></div>
+                <div><span>备注</span><strong>{selectedOrder.note || "-"}</strong></div>
               </div>
             </SectionCard>
 
             <SectionCard title="人工预设" description="默认使用入场价；只有运行中订单可以设置。">
               <div className="admin-order-manual-grid">
                 <label>
-                  <span>Preset price</span>
-                  <input disabled={selectedOrder.status !== "open"} onChange={(event) => setSettlePrice({ ...settlePrice, [selectedOrder.id]: event.target.value })} placeholder="Preset price" type="number" value={selectedRawSettlePrice} />
+                  <span>预设结算价</span>
+                  <input disabled={selectedOrder.status !== "open"} onChange={(event) => setSettlePrice({ ...settlePrice, [selectedOrder.id]: event.target.value })} placeholder="输入预设结算价" type="number" value={selectedRawSettlePrice} />
                 </label>
                 <div><span>将使用价格</span><strong>{Number.isFinite(selectedNextSettlePrice) ? money(selectedNextSettlePrice) : "-"}</strong></div>
-                <div><span>Manual Result</span><strong>{orderManualLabel(selectedOrder)}</strong></div>
-                <div><span>Manual Settle Price</span><strong>{selectedOrder.manual_settle_price == null ? "-" : money(selectedOrder.manual_settle_price)}</strong></div>
+                <div><span>人工结果</span><strong>{orderManualLabel(selectedOrder)}</strong></div>
+                <div><span>人工结算价</span><strong>{selectedOrder.manual_settle_price == null ? "-" : money(selectedOrder.manual_settle_price)}</strong></div>
               </div>
             </SectionCard>
           </>
@@ -2496,7 +2500,7 @@ function MarketsTab({ markets, newMarket, setNewMarket, mutate }: { markets: Mar
     },
     { id: "leverage", header: "杠杆", numeric: true, cell: (market) => <span className="admin-review-money">{market.max_leverage}x</span> },
     { id: "fee", header: "手续费", numeric: true, cell: (market) => <span className="admin-review-money">{market.fee_rate}</span> },
-    { id: "mmr", header: "MMR", numeric: true, cell: (market) => <span className="admin-review-money">{market.maintenance_margin_rate}</span> },
+    { id: "mmr", header: "维持保证金率", numeric: true, cell: (market) => <span className="admin-review-money">{market.maintenance_margin_rate}</span> },
     { id: "status", header: "状态", align: "center", cell: (market) => <StatusChip label={marketStatusLabel(market.is_active)} tone={marketStatusTone(market.is_active)} /> },
     {
       id: "actions",
@@ -2530,7 +2534,7 @@ function MarketsTab({ markets, newMarket, setNewMarket, mutate }: { markets: Mar
         }}
         onSearch={() => undefined}
         onSearchChange={setQuery}
-        searchPlaceholder="搜索交易对 / 价格 / 手续费 / MMR"
+        searchPlaceholder="搜索交易对 / 价格 / 手续费 / 维持保证金率"
         searchValue={query}
       >
         <button className="admin-button admin-button-primary" onClick={() => { setCreateError(""); setCreateOpen(true); }} type="button">创建交易对</button>
@@ -2647,7 +2651,7 @@ function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSe
       });
       if (result === "executed") setDirty(false);
     } catch (error) {
-      setBinaryError(error instanceof Error ? error.message : "Invalid binary option settings");
+      setBinaryError(error instanceof Error ? error.message : "二元期权配置格式无效");
     }
   }
 
@@ -2690,22 +2694,22 @@ function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSe
         </SectionCard>
       </div>
 
-      <SectionCard title="二元期权配置" description="每行一个档位，格式保持 seconds,profitPercent。">
+      <SectionCard title="二元期权配置" description="每行一个档位，格式保持：秒数,收益率。">
         <div className="admin-settings-form">
           <label className="is-wide">
             <span>时间和收益率</span>
             <textarea className="is-mono" value={binaryText} onChange={(event) => { markDirty(); setDirty(true); setBinaryText(event.target.value); }} placeholder={"30,30\n60,35"} />
           </label>
         </div>
-        <p className="admin-settings-help">示例：30,30。保存前仍走现有 binaryOptionsTextToConfig 解析。</p>
+        <p className="admin-settings-help">示例：30,30。保存前仍按现有规则解析为二元期权档位。</p>
         {binaryError && <div className="error">{binaryError}</div>}
       </SectionCard>
 
       <SectionCard title="前端页面内容" description="这些文案会显示在前台静态页面。">
         <div className="admin-settings-content-grid">
-          <label><span>About</span><textarea value={settings.about_content || ""} onChange={(event) => setValue("about_content", event.target.value)} /></label>
-          <label><span>Terms of Service</span><textarea value={settings.terms_content || ""} onChange={(event) => setValue("terms_content", event.target.value)} /></label>
-          <label><span>Privacy Policy</span><textarea value={settings.privacy_content || ""} onChange={(event) => setValue("privacy_content", event.target.value)} /></label>
+          <label><span>关于我们</span><textarea value={settings.about_content || ""} onChange={(event) => setValue("about_content", event.target.value)} /></label>
+          <label><span>服务条款</span><textarea value={settings.terms_content || ""} onChange={(event) => setValue("terms_content", event.target.value)} /></label>
+          <label><span>隐私政策</span><textarea value={settings.privacy_content || ""} onChange={(event) => setValue("privacy_content", event.target.value)} /></label>
         </div>
       </SectionCard>
     </div>
@@ -2726,7 +2730,7 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (enabled: b
 
 function Status({ status }: { status: string }) {
   const cls = status === "approved" || status === "paid" || status === "won" ? "ok" : status === "pending" || status === "open" ? "wait" : status === "rejected" || status === "lost" ? "sys" : "off";
-  const label = status === "approved" ? "已通过" : status === "paid" ? "已支付" : status === "pending" ? "待审核" : status === "rejected" ? "已拒绝" : status === "won" ? "won" : status === "lost" ? "lost" : status;
+  const label = status === "approved" ? "已通过" : status === "paid" ? "已支付" : status === "pending" ? "待审核" : status === "rejected" ? "已拒绝" : status === "won" ? "已盈利" : status === "lost" ? "已亏损" : status;
   return <span className={`pill ${cls}`}>{label}</span>;
 }
 

@@ -49,7 +49,7 @@ export const defaultAdminNavGroups: AdminNavGroup[] = [
     items: [
       { id: "deposits", label: "充值审核", icon: CircleDollarSign },
       { id: "withdrawals", label: "提现审核", icon: ArrowDownToLine },
-      { id: "kyc", label: "KYC审核", icon: ShieldCheck },
+      { id: "kyc", label: "身份审核", icon: ShieldCheck },
     ],
   },
   {
