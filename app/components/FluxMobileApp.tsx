@@ -1471,7 +1471,7 @@ function RunningModeBody({ order, now, currentPrice }: { order: BinaryOrder; now
   const progress = Math.min(1, Math.max(0, elapsedMs / (totalSec * 1000)));
   const winAmount = order.stake * order.duration.odds;
   const payout = order.stake + winAmount;
-  const ringSize = 86;
+  const ringSize = 92;
   const stroke = 6;
   const r = (ringSize - stroke) / 2;
   const circumference = 2 * Math.PI * r;
@@ -1591,7 +1591,7 @@ function SettledModeBody({ order, tradeAgain }: { order: BinaryOrder; tradeAgain
 
       <div className="settled-hero">
         <div className={`settled-trophy ${won ? "win" : "loss"}`}>
-          {won ? <Trophy size={22} strokeWidth={2.1} aria-hidden="true" /> : <X size={22} strokeWidth={2.4} aria-hidden="true" />}
+          {won ? <Trophy size={18} strokeWidth={2.1} aria-hidden="true" /> : <X size={18} strokeWidth={2.4} aria-hidden="true" />}
         </div>
         <b className={`settled-title ${won ? "win" : "loss"}`}>{won ? "You Won!" : "You Lost"}</b>
       </div>

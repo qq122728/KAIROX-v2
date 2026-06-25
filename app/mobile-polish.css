@@ -8684,3 +8684,198 @@ a:focus-visible,
     white-space: nowrap !important;
   }
 }
+
+/* Final trade sheet hierarchy pass: tighter running/settled rhythm without touching behavior. */
+.bottom-sheet.order-sheet.sheet-mode-running,
+.bottom-sheet.order-sheet.sheet-mode-settled {
+  gap: 7px !important;
+  padding-top: 2px !important;
+  padding-bottom: max(14px, env(safe-area-inset-bottom)) !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running > .sheet-handle,
+.bottom-sheet.order-sheet.sheet-mode-settled > .sheet-handle {
+  margin: 5px auto 2px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-header {
+  gap: 3px !important;
+  margin-top: -3px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-trade-panel {
+  grid-template-columns: 100px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 10px !important;
+  margin-top: 0 !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-timer-stack {
+  gap: 5px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-status {
+  max-width: 100px !important;
+  min-height: 21px !important;
+  padding: 3px 8px !important;
+  font-size: 10px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-panel {
+  padding: 7px 10px !important;
+  border-radius: 11px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-row {
+  grid-template-columns: 45px minmax(0, 1fr) !important;
+  gap: 8px !important;
+  min-height: 30px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-row span {
+  grid-template-columns: minmax(0, 1fr) 38px !important;
+  gap: 6px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-row b {
+  font-size: 16px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-row em {
+  font-size: 9.5px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-sparkline {
+  height: 24px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-summary-panel {
+  border-radius: 11px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-summary-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: baseline !important;
+  gap: 8px !important;
+  min-height: 34px !important;
+  padding: 8px 11px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-summary-row span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-summary-row b {
+  font-size: 15.5px !important;
+  text-align: right !important;
+  white-space: nowrap !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-running .run-footer {
+  margin-top: -3px !important;
+  padding: 2px 0 0 !important;
+  font-size: 11px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-header {
+  gap: 3px !important;
+  margin-top: -3px !important;
+  padding-right: 36px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-hero {
+  gap: 6px !important;
+  padding: 0 0 3px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-trophy {
+  width: 38px !important;
+  height: 38px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-title {
+  font-size: 21px !important;
+  line-height: 1.05 !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-price-panel {
+  gap: 10px !important;
+  padding: 10px 12px !important;
+  border-radius: 11px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-price-divider {
+  height: 30px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-price-col {
+  gap: 3px !important;
+  min-width: 0 !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-price-col b {
+  font-size: 16px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-summary-card {
+  border-radius: 11px !important;
+  padding: 2px 11px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-summary-row {
+  min-height: 34px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-summary-row span {
+  font-size: 11.5px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-summary-row b {
+  font-size: 15.5px !important;
+}
+
+.bottom-sheet.order-sheet.sheet-mode-settled .settled-trade-again {
+  height: 52px !important;
+  margin-top: 3px !important;
+  border-radius: 13px !important;
+}
+
+@media (max-width: 380px) {
+  .bottom-sheet.order-sheet.sheet-mode-running .run-trade-panel {
+    grid-template-columns: 94px minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-panel {
+    padding: 7px 8px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row {
+    grid-template-columns: 40px minmax(0, 1fr) !important;
+    gap: 6px !important;
+    min-height: 29px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row span {
+    grid-template-columns: minmax(0, 1fr) 38px !important;
+    gap: 5px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row b {
+    font-size: 15px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row em {
+    font-size: 8.8px !important;
+  }
+}
