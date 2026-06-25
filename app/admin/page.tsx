@@ -60,8 +60,8 @@ type Order = { id: number; user_id: number; user_public_uid?: string | null; use
 type Withdrawal = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; amount: number; address: string; status: string; note: string | null; created_at: string };
 type DepositAddress = { id: number; asset: string; network: string; address: string; is_active: number };
 type UserDepositAddress = DepositAddress & { user_id: number; user_public_uid?: string | null; email: string | null; username: string };
-type Deposit = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; asset: string; network: string; amount: number; tx_hash: string | null; proof_data: string | null; deposit_address: string | null; status: "pending" | "approved" | "rejected"; admin_note: string | null; created_at: string };
-type KycSubmission = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; legal_name: string; document_type: string; front_data: string | null; back_data: string | null; status: "pending" | "approved" | "rejected"; rejection_reason: string | null; created_at: string; reviewed_at: string | null };
+type Deposit = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; asset: string; network: string; amount: number; tx_hash: string | null; proof_data?: string | null; has_proof?: number | boolean | null; deposit_address: string | null; status: "pending" | "approved" | "rejected"; admin_note: string | null; created_at: string };
+type KycSubmission = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; legal_name: string; document_type: string; front_data?: string | null; back_data?: string | null; has_front?: number | boolean | null; has_back?: number | boolean | null; status: "pending" | "approved" | "rejected"; rejection_reason: string | null; created_at: string; reviewed_at: string | null };
 type Settings = {
   whatsapp_support_url: string;
   telegram_url: string;
@@ -1369,8 +1369,31 @@ function UserModal({ modal, assets, close, mutate }: { modal: Exclude<ModalState
 
 type ReviewStatusFilter = "all" | "pending" | "approved" | "rejected";
 type PreviewState = { title: string; src: string } | null;
+type KycImageSide = "front" | "back";
 
 const reviewStatusIds: ReviewStatusFilter[] = ["all", "pending", "approved", "rejected"];
+
+function hasImageFlag(value: unknown) {
+  return value === true || value === 1 || value === "1";
+}
+
+function hasDepositProof(row: Deposit) {
+  return Boolean(row.proof_data) || hasImageFlag(row.has_proof);
+}
+
+function hasKycImage(row: KycSubmission, side: KycImageSide) {
+  return side === "front"
+    ? Boolean(row.front_data) || hasImageFlag(row.has_front)
+    : Boolean(row.back_data) || hasImageFlag(row.has_back);
+}
+
+async function fetchAdminImageSrc(url: string) {
+  const response = await fetch(url, { cache: "no-store" });
+  const result = await response.json().catch(() => ({})) as { src?: unknown; error?: string };
+  if (!response.ok) throw new Error(result.error || "图片加载失败");
+  if (typeof result.src !== "string" || !result.src) throw new Error("图片不存在");
+  return result.src;
+}
 
 function reviewStatusLabel(status: string) {
   if (status === "pending") return "待审核";
@@ -1423,6 +1446,7 @@ function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: D
   const [query, setQuery] = useState("");
   const [note, setNote] = useState<Record<number, string>>({});
   const [preview, setPreview] = useState<PreviewState>(null);
+  const [previewError, setPreviewError] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const visibleRows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1437,6 +1461,17 @@ function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: D
 
   function reject(row: Deposit) {
     return mutate("/api/admin/deposits", "PATCH", { depositId: row.id, status: "rejected", adminNote: note[row.id] || "" });
+  }
+
+  async function openDepositProof(row: Deposit) {
+    if (!hasDepositProof(row)) return;
+    setPreviewError("");
+    try {
+      const src = await fetchAdminImageSrc(`/api/admin/deposits/proof?depositId=${encodeURIComponent(String(row.id))}`);
+      setPreview({ title: `充值截图 #${row.id}`, src });
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : "图片加载失败");
+    }
   }
 
   const columns: Array<AdminTableColumn<Deposit>> = [
@@ -1456,7 +1491,7 @@ function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: D
         <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
           <ActionMenu
             items={[
-              { id: "proof", label: "查看截图", disabled: !row.proof_data, onSelect: () => row.proof_data && setPreview({ title: `充值截图 #${row.id}`, src: row.proof_data }) },
+              { id: "proof", label: "查看截图", disabled: !hasDepositProof(row), onSelect: () => void openDepositProof(row) },
             ]}
             onPrimaryClick={() => setSelectedId(row.id)}
             primaryLabel="查看"
@@ -1483,6 +1518,7 @@ function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: D
         searchPlaceholder="搜索单号 / UID / 邮箱 / TX / 地址"
         searchValue={query}
       />
+      {previewError && <div className="error">{previewError}</div>}
 
       <AdminTable
         columns={columns}
@@ -1528,7 +1564,7 @@ function DepositsTab({ deposits, all, status, setStatus, mutate }: { deposits: D
               <div className="admin-review-field-list">
                 <div><span>TX Hash</span><strong>{selected.tx_hash || "-"}</strong></div>
                 <div><span>充值地址</span><strong>{selected.deposit_address || "-"}</strong></div>
-                <div><span>凭证截图</span>{selected.proof_data ? <button className="admin-inline-link" onClick={() => setPreview({ title: `充值截图 #${selected.id}`, src: selected.proof_data! })} type="button">查看截图</button> : <strong>-</strong>}</div>
+                <div><span>凭证截图</span>{hasDepositProof(selected) ? <button className="admin-inline-link" onClick={() => void openDepositProof(selected)} type="button">查看截图</button> : <strong>-</strong>}</div>
               </div>
             </SectionCard>
 
@@ -1548,6 +1584,7 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
   const [query, setQuery] = useState("");
   const [reason, setReason] = useState<Record<number, string>>({});
   const [preview, setPreview] = useState<PreviewState>(null);
+  const [previewError, setPreviewError] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const visibleRows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1568,12 +1605,24 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
     return (row as KycSubmission & { selfie_data?: string | null }).selfie_data || null;
   }
 
+  async function openKycImage(row: KycSubmission, side: KycImageSide) {
+    if (!hasKycImage(row, side)) return;
+    setPreviewError("");
+    try {
+      const params = new URLSearchParams({ submissionId: String(row.id), side });
+      const src = await fetchAdminImageSrc(`/api/admin/kyc/image?${params.toString()}`);
+      setPreview({ title: `${row.legal_name} ${side === "front" ? "正面证件" : "反面证件"}`, src });
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : "图片加载失败");
+    }
+  }
+
   const columns: Array<AdminTableColumn<KycSubmission>> = [
     { id: "id", header: "ID", cell: (row) => <span className="admin-review-mono">{row.id}</span> },
     { id: "user", header: "用户", cell: reviewUserCell },
     { id: "name", header: "姓名", cell: (row) => <strong className="admin-review-strong">{row.legal_name}</strong> },
     { id: "document", header: "证件类型", cell: (row) => row.document_type },
-    { id: "images", header: "资料", align: "center", cell: (row) => <span className="admin-review-muted">{[row.front_data && "正面", row.back_data && "反面", selfieData(row) && "自拍"].filter(Boolean).join(" / ") || "-"}</span> },
+    { id: "images", header: "资料", align: "center", cell: (row) => <span className="admin-review-muted">{[hasKycImage(row, "front") && "正面", hasKycImage(row, "back") && "反面", selfieData(row) && "自拍"].filter(Boolean).join(" / ") || "-"}</span> },
     { id: "status", header: "状态", align: "center", cell: (row) => <StatusChip label={reviewStatusLabel(row.status)} tone={reviewStatusTone(row.status)} /> },
     { id: "time", header: "提交时间", cell: (row) => <span className="admin-user-time">{cnTime(row.created_at)}</span> },
     { id: "reason", header: "拒绝原因", cell: (row) => <span className="admin-review-muted">{row.rejection_reason || "-"}</span> },
@@ -1585,8 +1634,8 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
         <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
           <ActionMenu
             items={[
-              { id: "front", label: "查看正面", disabled: !row.front_data, onSelect: () => row.front_data && setPreview({ title: `${row.legal_name} 正面证件`, src: row.front_data }) },
-              { id: "back", label: "查看反面", disabled: !row.back_data, onSelect: () => row.back_data && setPreview({ title: `${row.legal_name} 反面证件`, src: row.back_data }) },
+              { id: "front", label: "查看正面", disabled: !hasKycImage(row, "front"), onSelect: () => void openKycImage(row, "front") },
+              { id: "back", label: "查看反面", disabled: !hasKycImage(row, "back"), onSelect: () => void openKycImage(row, "back") },
               { id: "selfie", label: "查看自拍", disabled: !selfieData(row), onSelect: () => { const src = selfieData(row); if (src) setPreview({ title: `${row.legal_name} 自拍照`, src }); } },
             ]}
             onPrimaryClick={() => setSelectedId(row.id)}
@@ -1614,6 +1663,7 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
         searchPlaceholder="搜索单号 / UID / 邮箱 / 姓名 / 证件类型"
         searchValue={query}
       />
+      {previewError && <div className="error">{previewError}</div>}
 
       <AdminTable
         columns={columns}
@@ -1657,8 +1707,8 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
 
             <SectionCard title="审核资料">
               <div className="admin-review-proof-grid">
-                <button disabled={!selected.front_data} onClick={() => selected.front_data && setPreview({ title: `${selected.legal_name} 正面证件`, src: selected.front_data })} type="button">正面证件</button>
-                <button disabled={!selected.back_data} onClick={() => selected.back_data && setPreview({ title: `${selected.legal_name} 反面证件`, src: selected.back_data })} type="button">反面证件</button>
+                <button disabled={!hasKycImage(selected, "front")} onClick={() => void openKycImage(selected, "front")} type="button">正面证件</button>
+                <button disabled={!hasKycImage(selected, "back")} onClick={() => void openKycImage(selected, "back")} type="button">反面证件</button>
                 <button disabled={!selfieData(selected)} onClick={() => { const src = selfieData(selected); if (src) setPreview({ title: `${selected.legal_name} 自拍照`, src }); }} type="button">自拍照</button>
               </div>
             </SectionCard>
