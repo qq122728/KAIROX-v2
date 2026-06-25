@@ -66,6 +66,168 @@ PERP_SIM_BACKFILL_WITHDRAWAL_PASSWORD=temporary-withdrawal-password
 
 Remove these after the first admin account and withdrawal-password backfill are complete.
 
+## Server Agent Runbook
+
+Use this section when a deployment agent prepares a fresh Beta server. Replace every placeholder before starting production.
+
+Recommended server paths:
+
+```bash
+APP_DIR=/var/www/vorx
+DATA_DIR=/var/lib/vorx
+BACKUP_DIR=/var/backups/vorx
+DB_PATH=/var/lib/vorx/vorx-beta.sqlite
+```
+
+Initial checkout:
+
+```bash
+mkdir -p /var/www/vorx /var/lib/vorx /var/backups/vorx
+cd /var/www/vorx
+git clone https://github.com/qq122728/VORXv1.git .
+npm install
+```
+
+Create `/var/www/vorx/.env.production.local`:
+
+```env
+NODE_ENV=production
+
+PORT=3000
+NEXT_HOSTNAME=0.0.0.0
+
+PERP_SIM_DB_PATH=/var/lib/vorx/vorx-beta.sqlite
+
+NEXT_PUBLIC_APP_URL=https://your-beta-domain.example
+NEXT_PUBLIC_SOCKET_URL=https://your-beta-domain.example
+PERP_SIM_ALLOWED_ORIGINS=https://your-beta-domain.example
+
+SOCKET_HOST=127.0.0.1
+SOCKET_PORT=3001
+SOCKET_INTERNAL_URL=http://127.0.0.1:3001/internal/emit
+SOCKET_INTERNAL_SECRET=replace-with-a-long-random-secret
+REALTIME_INTERNAL_SECRET=replace-with-the-same-long-random-secret
+
+PERP_SIM_SQLITE_BUSY_TIMEOUT_MS=5000
+SQLITE_BUSY_TIMEOUT_MS=5000
+SOCKET_SQLITE_BUSY_TIMEOUT_MS=5000
+SETTLEMENT_SQLITE_BUSY_TIMEOUT_MS=5000
+
+SETTLEMENT_INTERVAL_MS=1000
+
+OKX_API_BASE_URL=https://www.okx.com
+BINANCE_API_BASE_URL=https://api.binance.com
+MARKET_DATA_FETCH_TIMEOUT_MS=5000
+PRICE_TICK_MIN_INTERVAL_SECONDS=2
+
+PERP_SIM_LOGIN_MAX_FAILURES=5
+PERP_SIM_ADMIN_LOGIN_MAX_FAILURES=5
+PERP_SIM_LOGIN_LOCK_MS=900000
+PERP_SIM_ADMIN_LOGIN_LOCK_MS=900000
+
+PERP_SIM_REGISTER_LIMIT=5
+PERP_SIM_REGISTER_WINDOW_MS=60000
+
+PERP_SIM_SWAP_LIMIT=20
+PERP_SIM_SWAP_WINDOW_MS=60000
+PERP_SIM_SWAP_QUOTE_LIMIT=60
+PERP_SIM_SWAP_QUOTE_WINDOW_MS=60000
+
+PERP_SIM_BINARY_ORDER_LIMIT=30
+PERP_SIM_BINARY_ORDER_WINDOW_MS=60000
+
+PERP_SIM_WITHDRAW_PASSWORD_LIMIT=5
+PERP_SIM_WITHDRAW_PASSWORD_WINDOW_MS=900000
+
+PERP_SIM_DEPOSIT_LIMIT=10
+PERP_SIM_DEPOSIT_WINDOW_MS=60000
+
+PERP_SIM_ADMIN_PASSWORD=replace-with-temporary-admin-password
+PERP_SIM_BACKFILL_WITHDRAWAL_PASSWORD=replace-with-temporary-withdrawal-password
+
+PERP_SIM_DEMO_MODE=false
+
+NEXT_PUBLIC_ADMIN_BIG_BINARY_STAKE=500
+NEXT_PUBLIC_ADMIN_BIG_TRADE_NOTIONAL=5000
+```
+
+Remove `PERP_SIM_ADMIN_PASSWORD` and `PERP_SIM_BACKFILL_WITHDRAWAL_PASSWORD` after first-run setup is complete.
+
+Build checks:
+
+```bash
+cd /var/www/vorx
+npm run lint
+npm run build
+```
+
+Recommended PM2 start:
+
+```bash
+npm install -g pm2
+cd /var/www/vorx
+pm2 start ecosystem.config.cjs
+pm2 save
+pm2 status
+```
+
+PM2 logs:
+
+```bash
+pm2 logs vorx-next
+pm2 logs vorx-socket
+pm2 logs vorx-settlement
+```
+
+Nginx single-domain template:
+
+```nginx
+server {
+    listen 80;
+    server_name your-beta-domain.example;
+
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Database backup:
+
+```bash
+mkdir -p /var/backups/vorx
+if [ -f /var/lib/vorx/vorx-beta.sqlite ]; then
+  cp /var/lib/vorx/vorx-beta.sqlite "/var/backups/vorx/vorx-beta-$(date +%Y%m%d-%H%M%S).sqlite"
+fi
+```
+
+Post-start health checks:
+
+```bash
+curl http://127.0.0.1:3000
+curl http://127.0.0.1:3001/health
+pm2 status
+```
+
 ## Reverse Proxy
 
 Use HTTPS in front of the app.
