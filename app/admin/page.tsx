@@ -1,5 +1,6 @@
 "use client";
 
+import "./admin-console.css";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -8,9 +9,7 @@ import {
   ArrowDownToLine,
   BarChart3,
   Bell,
-  Check,
   CircleDollarSign,
-  Edit3,
   FileText,
   Gauge,
   KeyRound,
@@ -19,16 +18,23 @@ import {
   LogOut,
   RefreshCw,
   Save,
-  Search,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
-  UserCog,
   Users,
   WalletCards,
   X
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+import ActionMenu, { type ActionMenuItem } from "./components/ActionMenu";
+import AdminDrawer from "./components/AdminDrawer";
+import AdminLayout from "./components/AdminLayout";
+import type { AdminNavGroup, AdminNavItem } from "./components/AdminSidebar";
+import AdminTable, { type AdminTableColumn } from "./components/AdminTable";
+import AdminToolbar, { type AdminToolbarFilter } from "./components/AdminToolbar";
+import EmptyState from "./components/EmptyState";
+import SectionCard from "./components/SectionCard";
+import StatCard from "./components/StatCard";
+import StatusChip, { type StatusChipTone } from "./components/StatusChip";
 import { connectRealtime } from "@/app/components/realtime-client";
 import { displayUid } from "@/lib/uid";
 
@@ -171,7 +177,7 @@ function binaryOptionsTextToConfig(value: string) {
 const adminCss = `
 .admin-page{min-height:100vh;background:#f4f7fb;color:#172033;font-family:Inter,Arial,"Microsoft YaHei",sans-serif}
 .admin-page *{box-sizing:border-box}.admin-page button,.admin-page input,.admin-page select,.admin-page textarea{font:inherit}
-.admin-shell{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.legacy-admin-shell{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
 .admin-side{background:#111827;color:#cbd5e1;display:flex;flex-direction:column}
 .brand{padding:22px 20px;border-bottom:1px solid rgba(255,255,255,.08)}.brand b{display:block;color:#fff;font-size:18px;letter-spacing:.08em}.brand span{display:block;color:#38bdf8;font-size:11px;letter-spacing:.16em;text-transform:uppercase;margin-top:3px}
 .nav{padding:12px 10px;display:grid;gap:4px;flex:1}.nav button{border:0;background:transparent;color:#94a3b8;border-radius:8px;display:flex;align-items:center;gap:10px;padding:11px 12px;text-align:left;cursor:pointer;font-size:14px}.nav button:hover{background:#1f2937;color:#fff}.nav button.on{background:#2563eb;color:#fff}.nav svg{width:17px;height:17px}.badge{margin-left:auto;background:#ef4444;color:#fff;border-radius:999px;font-size:11px;font-weight:800;padding:1px 7px}
@@ -201,7 +207,7 @@ const adminCss = `
 .tabs{display:flex;gap:8px;flex-wrap:wrap}.tabs button{border:1px solid #d8dee9;background:#fff;border-radius:6px;padding:7px 12px;cursor:pointer}.tabs button.on{background:#2563eb;border-color:#2563eb;color:#fff}
 .ledger{display:grid}.ledger-row{display:grid;grid-template-columns:1fr auto;gap:10px;padding:11px 0;border-bottom:1px solid #edf2f7}.ledger-row:last-child{border-bottom:0}.error{border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;border-radius:8px;padding:10px 12px}.loading{display:grid;place-items:center;min-height:45vh;color:#64748b}
 .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.5);display:grid;place-items:center;z-index:40;padding:20px}.modal{background:#fff;border-radius:8px;box-shadow:0 22px 60px rgba(15,23,42,.28);width:min(720px,100%)}.modal.confirm{width:min(440px,100%)}.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e5e7eb}.modal-head h3{font-size:16px;margin:0}.modal-body{padding:20px}.modal-body p{margin:0;color:#475569;line-height:1.65}.modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:14px 20px;border-top:1px solid #e5e7eb}
-@media(max-width:980px){.admin-shell{grid-template-columns:1fr}.admin-side{position:static}.nav{display:flex;overflow:auto}.nav button{white-space:nowrap}.side-foot{display:none}.cards,.grid-2{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:980px){.legacy-admin-shell{grid-template-columns:1fr}.admin-side{position:static}.nav{display:flex;overflow:auto}.nav button{white-space:nowrap}.side-foot{display:none}.cards,.grid-2{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:640px){.topbar{height:auto;align-items:flex-start;padding:14px;gap:12px;flex-direction:column}.content{padding:14px}.cards,.grid-2,.form-grid{grid-template-columns:1fr}.asset-mini{grid-template-columns:1fr}.table{min-width:760px}}
 `;
 
@@ -221,6 +227,7 @@ export default function AdminPage() {
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [settings, setSettings] = useState<Partial<Settings>>({});
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>("connecting");
+  const [lastSyncAt, setLastSyncAt] = useState("");
   const [newMarket, setNewMarket] = useState({ symbol: "DOGE-PERP", price: 0.18, maxLeverage: 20, feeRate: 0.0008, mmr: 0.0075 });
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [bellOpen, setBellOpen] = useState(false);
@@ -250,6 +257,7 @@ export default function AdminPage() {
       const json = await res.json();
       dataRef.current = json;
       setData(json);
+      setLastSyncAt(new Date().toLocaleTimeString("zh-CN", { hour12: false }));
       if (options.forceSettings || !settingsDirtyRef.current) setSettings(json.settings);
       setLoading(false);
     } catch (error) {
@@ -584,107 +592,144 @@ export default function AdminPage() {
     return kycStatusFilter === "all" ? rows : rows.filter((row) => row.status === kycStatusFilter);
   }, [data?.kycSubmissions, kycStatusFilter]);
 
-  const nav: Array<{ id: TabId; label: string; icon: LucideIcon; badge?: number }> = [
-    { id: "dashboard", label: "Dashboard", icon: BarChart3 },
-    { id: "depositAddresses", label: "Deposit Addresses", icon: Landmark },
-    { id: "deposits", label: "Deposits", icon: CircleDollarSign, badge: data?.stats.pending_deposits },
-    { id: "withdrawals", label: "Withdrawals", icon: ArrowDownToLine, badge: data?.stats.pending_withdrawals },
-    { id: "kyc", label: "KYC", icon: ShieldCheck, badge: data?.stats.pending_kyc },
-    { id: "users", label: "Users", icon: Users },
-    { id: "orders", label: "Orders", icon: WalletCards },
-    { id: "markets", label: "Markets", icon: Activity },
-    { id: "settings", label: "Settings", icon: Settings2 }
+  const adminNavGroups: AdminNavGroup[] = [
+    {
+      label: "运营中心",
+      items: [
+        { id: "dashboard", label: "首页", icon: BarChart3 },
+        { id: "notifications", label: "通知中心", icon: Bell, badge: unreadNotifications || undefined },
+      ],
+    },
+    {
+      label: "用户管理",
+      items: [
+        { id: "users", label: "用户管理", icon: Users },
+        { id: "depositAddresses", label: "资金地址", icon: Landmark },
+      ],
+    },
+    {
+      label: "审核中心",
+      items: [
+        { id: "deposits", label: "充值审核", icon: CircleDollarSign, badge: data?.stats.pending_deposits },
+        { id: "withdrawals", label: "提现审核", icon: ArrowDownToLine, badge: data?.stats.pending_withdrawals },
+        { id: "kyc", label: "KYC审核", icon: ShieldCheck, badge: data?.stats.pending_kyc },
+      ],
+    },
+    {
+      label: "交易中心",
+      items: [
+        { id: "orders", label: "二元订单", icon: WalletCards },
+      ],
+    },
+    {
+      label: "系统",
+      items: [
+        { id: "markets", label: "交易市场", icon: Activity },
+        { id: "settings", label: "平台设置", icon: Settings2 },
+      ],
+    },
   ];
-  const realtimeLabel = realtimeStatus === "connected" ? "Realtime" : realtimeStatus === "polling" ? "Polling" : "Connecting";
+  const pageMeta: Record<TabId, { title: string; description: string }> = {
+    dashboard: { title: "首页", description: "今日待办、平台状态与资金风险总览。" },
+    depositAddresses: { title: "资金地址", description: "平台默认地址与用户自定义地址管理。" },
+    deposits: { title: "充值审核", description: "处理用户充值凭证与入账状态。" },
+    withdrawals: { title: "提现审核", description: "处理提现申请与冻结资金释放。" },
+    kyc: { title: "KYC审核", description: "审核用户身份认证材料。" },
+    users: { title: "用户管理", description: "查询用户、资金、安全与权限状态。" },
+    orders: { title: "二元订单", description: "查看二元订单并处理人工结算预设。" },
+    markets: { title: "交易市场", description: "管理交易对与市场参数。" },
+    settings: { title: "平台设置", description: "配置平台开关、提现说明与前台内容。" },
+  };
+  const notificationSlot = (
+    <div className="bell-wrap" ref={bellWrapRef}>
+      <button
+        type="button"
+        className={`bell-btn${unreadNotifications > 0 ? " has-unread" : ""}`}
+        aria-label={`通知${unreadNotifications > 0 ? ` (${unreadNotifications} 未读)` : ""}`}
+        aria-haspopup="dialog"
+        aria-expanded={bellOpen}
+        onClick={() => setBellOpen((value) => !value)}
+      >
+        <Bell />
+        {unreadNotifications > 0 && <span className="bell-dot">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}
+      </button>
+      {bellOpen && (
+        <div className="bell-panel" role="dialog" aria-label="通知">
+          <div className="bell-panel-head">
+            <strong>通知 {notifications.length ? `(${notifications.length})` : ""}</strong>
+            <div className="bell-panel-actions">
+              <button type="button" className="bell-link" disabled={unreadNotifications === 0} onClick={markAllNotificationsRead}>全部已读</button>
+              <button type="button" className="bell-link" onClick={() => setBellOpen(false)}>关闭</button>
+            </div>
+          </div>
+          <div className="bell-panel-body">
+            {notifications.length === 0 ? (
+              <div className="bell-empty">暂无通知</div>
+            ) : (
+              notifications.map((notification) => (
+                <button
+                  key={notification.id}
+                  type="button"
+                  className={`bell-item${notification.read ? " read" : ""}`}
+                  onClick={() => openNotification(notification)}
+                >
+                  <span className="bell-item-title">{notification.title}</span>
+                  {notification.meta && <span className="bell-item-meta">{notification.meta}</span>}
+                  <span className="bell-item-time">{formatNotificationTime(notification.ts)}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+  const headerActions = (
+    <>
+      <Link href="/markets" className="admin-button admin-button-ghost">前台</Link>
+      <button className="admin-button admin-button-primary" onClick={() => void load()} type="button"><RefreshCw />刷新</button>
+      <button className="admin-button admin-button-ghost" onClick={logout} type="button"><LogOut />退出</button>
+    </>
+  );
 
   return (
     <main className="admin-page">
       <style>{adminCss}</style>
-      <div className="admin-shell">
-        <aside className="admin-side">
-          <div className="brand"><b>VORX</b><span>Admin Console</span></div>
-          <nav className="nav">
-            {nav.map((item) => {
-              const Icon = item.icon;
-              return <button key={item.id} className={tab === item.id ? "on" : ""} onClick={() => setTab(item.id)}><Icon />{item.label}{!!item.badge && item.badge > 0 && <span className="badge">{item.badge}</span>}</button>;
-            })}
-          </nav>
-          <div className="side-foot">
-            <Link href="/markets" className="btn">返回前台</Link>
-            <button className="btn" onClick={logout}><LogOut />退出登录</button>
-          </div>
-        </aside>
-
-        <section className="main">
-          <div className="topbar">
-            <div><h1>{nav.find((item) => item.id === tab)?.label}</h1><p>中文后台管理，当前接入本地 SQLite 与 Next.js API。</p></div>
-            <div className="tools">
-              <span className={`realtime-state ${realtimeStatus}`} title={realtimeStatus === "polling" ? "Socket offline; polling admin summary" : "Admin realtime connection state"}><span />{realtimeLabel}</span>
-              <div className="bell-wrap" ref={bellWrapRef}>
-                <button
-                  type="button"
-                  className={`bell-btn${unreadNotifications > 0 ? " has-unread" : ""}`}
-                  aria-label={`通知${unreadNotifications > 0 ? ` (${unreadNotifications} 未读)` : ""}`}
-                  aria-haspopup="dialog"
-                  aria-expanded={bellOpen}
-                  onClick={() => setBellOpen((v) => !v)}
-                >
-                  <Bell />
-                  {unreadNotifications > 0 && <span className="bell-dot">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span>}
-                </button>
-                {bellOpen && (
-                  <div className="bell-panel" role="dialog" aria-label="通知">
-                    <div className="bell-panel-head">
-                      <strong>通知 {notifications.length ? `(${notifications.length})` : ""}</strong>
-                      <div className="bell-panel-actions">
-                        <button type="button" className="bell-link" disabled={unreadNotifications === 0} onClick={markAllNotificationsRead}>全部已读</button>
-                        <button type="button" className="bell-link" onClick={() => setBellOpen(false)}>关闭</button>
-                      </div>
-                    </div>
-                    <div className="bell-panel-body">
-                      {notifications.length === 0 ? (
-                        <div className="bell-empty">暂无通知</div>
-                      ) : (
-                        notifications.map((n) => (
-                          <button
-                            key={n.id}
-                            type="button"
-                            className={`bell-item${n.read ? " read" : ""}`}
-                            onClick={() => openNotification(n)}
-                          >
-                            <span className="bell-item-title">{n.title}</span>
-                            {n.meta && <span className="bell-item-meta">{n.meta}</span>}
-                            <span className="bell-item-time">{formatNotificationTime(n.ts)}</span>
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <Link href="/markets" className="btn">前台</Link>
-              <button className="btn primary" onClick={() => void load()}><RefreshCw />刷新</button>
-            </div>
-          </div>
-          <div className="content">
-            {error && <div className="error">{error}</div>}
-            {loading && <div className="loading">正在加载后台数据...</div>}
-            {!loading && data && (
-              <>
-                {tab === "dashboard" && <Dashboard data={data} setTab={setTab} />}
-                {tab === "depositAddresses" && <DepositAddressesTab />}
-                {tab === "deposits" && <DepositsTab deposits={deposits} all={data.deposits} status={depositStatus} setStatus={setDepositStatus} mutate={mutate} />}
-                {tab === "withdrawals" && <WithdrawalsTab withdrawals={withdrawals} all={data.withdrawals} status={withdrawStatus} setStatus={setWithdrawStatus} mutate={mutate} />}
-                {tab === "kyc" && <KycTab submissions={kycRows} all={data.kycSubmissions} status={kycStatusFilter} setStatus={setKycStatusFilter} mutate={mutate} />}
-                {tab === "users" && <UsersTab users={users} assets={data.assetRows} query={query} setQuery={setQuery} mutate={mutate} openModal={setModal} />}
-                {tab === "orders" && <ManualOrdersTab orders={orders} allOrders={data.orders} query={orderQuery} setQuery={setOrderQuery} status={orderStatus} setStatus={setOrderStatus} mutate={mutate} />}
-                {tab === "markets" && <MarketsTab markets={data.markets} newMarket={newMarket} setNewMarket={setNewMarket} mutate={mutate} />}
-                {tab === "settings" && <SettingsTab settings={settings} setSettings={updateSettingsDraft} markDirty={markSettingsDirty} saveSettings={saveSettingsDraft} />}
-              </>
-            )}
-          </div>
-        </section>
-      </div>
+      <AdminLayout
+        activeNavId={tab}
+        adminLabel="管理员"
+        description={pageMeta[tab].description}
+        headerActions={headerActions}
+        lastSync={lastSyncAt || "等待同步"}
+        navGroups={adminNavGroups}
+        notificationSlot={notificationSlot}
+        onNavigate={(id: AdminNavItem["id"]) => {
+          if (id === "notifications") {
+            setBellOpen(true);
+            return;
+          }
+          setTab(id as TabId);
+        }}
+        realtimeStatus={realtimeStatus}
+        title={pageMeta[tab].title}
+        unreadNotifications={unreadNotifications}
+      >
+        {error && <div className="error">{error}</div>}
+        {loading && <div className="loading">正在加载后台数据...</div>}
+        {!loading && data && (
+          <>
+            {tab === "dashboard" && <Dashboard data={data} lastSyncAt={lastSyncAt} realtimeStatus={realtimeStatus} setTab={setTab} unreadNotifications={unreadNotifications} />}
+            {tab === "depositAddresses" && <DepositAddressesTab />}
+            {tab === "deposits" && <DepositsTab deposits={deposits} all={data.deposits} status={depositStatus} setStatus={setDepositStatus} mutate={mutate} />}
+            {tab === "withdrawals" && <WithdrawalsTab withdrawals={withdrawals} all={data.withdrawals} status={withdrawStatus} setStatus={setWithdrawStatus} mutate={mutate} />}
+            {tab === "kyc" && <KycTab submissions={kycRows} all={data.kycSubmissions} status={kycStatusFilter} setStatus={setKycStatusFilter} mutate={mutate} />}
+            {tab === "users" && <UsersTab users={users} assets={data.assetRows} query={query} setQuery={setQuery} mutate={mutate} openModal={setModal} />}
+            {tab === "orders" && <ManualOrdersTab orders={orders} allOrders={data.orders} query={orderQuery} setQuery={setOrderQuery} status={orderStatus} setStatus={setOrderStatus} mutate={mutate} />}
+            {tab === "markets" && <MarketsTab markets={data.markets} newMarket={newMarket} setNewMarket={setNewMarket} mutate={mutate} />}
+            {tab === "settings" && <SettingsTab settings={settings} setSettings={updateSettingsDraft} markDirty={markSettingsDirty} saveSettings={saveSettingsDraft} />}
+          </>
+        )}
+      </AdminLayout>
       {modal && <UserModal modal={modal} assets={data?.assetRows ?? []} close={() => setModal(null)} mutate={mutate} />}
       {confirm && <ConfirmDialog confirm={confirm} close={() => setConfirm(null)} />}
     </main>
@@ -748,77 +793,306 @@ function ConfirmDialog({ confirm, close }: { confirm: NonNullable<ConfirmState>;
   );
 }
 
-function Dashboard({ data, setTab }: { data: AdminData; setTab: (tab: TabId) => void }) {
+function Dashboard({ data, setTab, realtimeStatus, lastSyncAt, unreadNotifications }: { data: AdminData; setTab: (tab: TabId) => void; realtimeStatus: RealtimeStatus; lastSyncAt: string; unreadNotifications: number }) {
+  const pendingDeposits = data.stats.pending_deposits ?? data.deposits.filter((row) => row.status === "pending").length;
+  const pendingWithdrawals = data.stats.pending_withdrawals ?? data.withdrawals.filter((row) => row.status === "pending").length;
+  const pendingKyc = data.stats.pending_kyc ?? data.kycSubmissions.filter((row) => row.status === "pending").length;
+  const openBinaryOrders = data.orders.filter((order) => order.status === "open").length;
+  const activeMarkets = data.markets.filter((market) => market.is_active).length;
+  const totalStableBalance = data.stats.total_stable_balance || 0;
+  const lockedStableBalance = data.assetRows.reduce((sum, row) => row.asset === "USDC" ? sum + Number(row.locked || 0) : sum, 0);
+  const realtimeTone: StatusChipTone = realtimeStatus === "connected" ? "success" : realtimeStatus === "polling" ? "warning" : "info";
+  const realtimeLabel = realtimeStatus === "connected" ? "正常" : realtimeStatus === "polling" ? "轮询中" : "连接中";
+  const todoItems: Array<{ label: string; value: number; tone: "warning" | "info"; tab: TabId; action: string }> = [
+    { label: "待审核充值", value: pendingDeposits, tone: "warning", tab: "deposits", action: "处理充值" },
+    { label: "待审核提现", value: pendingWithdrawals, tone: "warning", tab: "withdrawals", action: "处理提现" },
+    { label: "待审核KYC", value: pendingKyc, tone: "warning", tab: "kyc", action: "处理KYC" },
+    { label: "运行中订单", value: openBinaryOrders, tone: "info", tab: "orders", action: "查看订单" },
+  ];
+
   return (
-    <>
-      <div className="cards">
-        <Stat label="USDC 总余额" value={money(data.stats.total_stable_balance || 0, 8)} sub="用户 USDC 资产合计" icon={<CircleDollarSign />} />
-        <Stat label="用户数" value={data.stats.users} sub="平台注册账户" icon={<Users />} />
-        <Stat label="待审核充值" value={0} sub="充值 API 待接入" icon={<Check />} />
-        <Stat label="交易对数量" value={data.markets.length} sub={`${data.markets.filter((m) => m.is_active).length} 个已开启`} icon={<Landmark />} />
-      </div>
-      <div className="grid-2">
-        <div className="panel">
-          <div className="panel-head"><h2><WalletCards />近期账本流水</h2><button className="btn" onClick={() => setTab("users")}>查看用户</button></div>
-          <div className="panel-body ledger">
-            {data.ledger.length === 0 && <div className="empty">暂无账本流水</div>}
+    <div className="admin-dashboard-v2">
+      <section className="admin-dashboard-stats" aria-label="核心指标">
+        <StatCard title="平台总资产" value={`$${money(totalStableBalance, 2)}`} description="USDC 用户资产合计" tone="info" icon={<CircleDollarSign size={18} />} />
+        <StatCard title="冻结资金" value={`$${money(lockedStableBalance, 2)}`} description="当前锁定 USDC" tone={lockedStableBalance > 0 ? "warning" : "muted"} icon={<LockKeyhole size={18} />} />
+        <StatCard title="运行中订单" value={openBinaryOrders} description="Open binary orders" tone={openBinaryOrders > 0 ? "info" : "muted"} icon={<WalletCards size={18} />} />
+        <StatCard title="开放持仓" value={data.stats.open_positions} description="Perpetual positions" tone={data.stats.open_positions > 0 ? "info" : "muted"} icon={<Gauge size={18} />} />
+      </section>
+
+      <section className="admin-dashboard-todos" aria-label="运营待办">
+        {todoItems.map((item) => (
+          <button className={`admin-dashboard-todo is-${item.tone}`} key={item.label} onClick={() => setTab(item.tab)} type="button">
+            <span>{item.label}</span>
+            <strong className="tabular-nums">{item.value}</strong>
+            <em>{item.action} →</em>
+          </button>
+        ))}
+      </section>
+
+      <section className="admin-dashboard-status-card" aria-label="平台运行状态">
+        <div><span>Realtime</span><StatusChip label={realtimeLabel} tone={realtimeTone} /></div>
+        <div><span>最后同步</span><strong className="tabular-nums">{lastSyncAt || "等待同步"}</strong></div>
+        <div><span>通知</span><strong className="tabular-nums">{unreadNotifications} 未读</strong></div>
+        <div><span>市场</span><strong className="tabular-nums">{activeMarkets}/{data.markets.length} 开启</strong></div>
+      </section>
+
+      <section className="admin-dashboard-columns">
+        <div className="admin-dashboard-panel">
+          <div className="admin-dashboard-panel-head"><h2><WalletCards size={17} />最近资金流水</h2><button className="admin-inline-link" onClick={() => setTab("users")} type="button">查看用户</button></div>
+          <div className="admin-dashboard-ledger">
+            {data.ledger.length === 0 && <div className="admin-dashboard-empty">暂无资金流水</div>}
             {data.ledger.slice(0, 8).map((row) => (
-              <div className="ledger-row" key={row.id}>
-                <div><b>{actor(row)}</b> <span className="muted">{row.type}</span><br /><span className="muted">{row.asset} {money(row.amount, 2)} - {row.note || "-"}</span></div>
-                <span className="muted">{cnTime(row.created_at)}</span>
+              <div className="admin-dashboard-ledger-row" key={row.id}>
+                <div><b>{actor(row)}</b><span>{row.type}</span><small>{row.asset} {money(row.amount, 2)} · {row.note || "-"}</small></div>
+                <time>{cnTime(row.created_at)}</time>
               </div>
             ))}
           </div>
         </div>
-        <div className="panel">
-          <div className="panel-head"><h2><Gauge />风控概览</h2><button className="btn" onClick={() => setTab("orders")}>订单管理</button></div>
-          <div className="panel-body">
-            <div className="cards" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <Stat label="开放仓位" value={data.stats.open_positions} sub="当前未结算" icon={<Gauge />} />
-              <Stat label="累计手续费" value={`$${money(data.stats.fees)}`} sub={`用户已实现 PnL $${money(data.stats.trader_realized_pnl)}`} icon={<SlidersHorizontal />} />
-            </div>
+        <div className="admin-dashboard-panel">
+          <div className="admin-dashboard-panel-head"><h2><Gauge size={17} />风险概览</h2><button className="admin-inline-link" onClick={() => setTab("orders")} type="button">订单管理</button></div>
+          <div className="admin-dashboard-risk-grid">
+            <StatCard title="待审核充值" value={pendingDeposits} description="需要运营处理" tone={pendingDeposits > 0 ? "warning" : "muted"} />
+            <StatCard title="待审核提现" value={pendingWithdrawals} description="冻结资金相关" tone={pendingWithdrawals > 0 ? "warning" : "muted"} />
+            <StatCard title="累计手续费" value={`$${money(data.stats.fees)}`} description="平台收入" tone="success" />
+            <StatCard title="用户已实现PnL" value={`$${money(data.stats.trader_realized_pnl)}`} description="Realized PnL" tone={data.stats.trader_realized_pnl >= 0 ? "success" : "danger"} />
           </div>
         </div>
-      </div>
-    </>
+      </section>
+    </div>
   );
 }
 
+type UserFilterId = "all" | "normal" | "tradingDisabled" | "loginDisabled" | "admin";
+
+const userFilterIds: UserFilterId[] = ["all", "normal", "tradingDisabled", "loginDisabled", "admin"];
+
+function getUserStatus(user: User): { label: string; tone: StatusChipTone } {
+  if (user.login_enabled === 0) return { label: "登录关闭", tone: "danger" };
+  if (user.trading_enabled === 0) return { label: "交易关闭", tone: "warning" };
+  return { label: "正常", tone: "success" };
+}
+
+function userInitial(user: User) {
+  const text = user.email || user.username || String(displayUid(user));
+  return text.trim().slice(0, 1).toUpperCase();
+}
+
 function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users: User[]; assets: AssetRow[]; query: string; setQuery: (value: string) => void; mutate: (url: string, method: string, body: unknown) => Promise<void>; openModal: (modal: ModalState) => void }) {
+  const [activeFilter, setActiveFilter] = useState<UserFilterId>("all");
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const assetsByUser = useMemo(() => {
+    const map = new Map<number, AssetRow[]>();
+    assets.forEach((row) => {
+      const current = map.get(row.user_id) ?? [];
+      current.push(row);
+      map.set(row.user_id, current);
+    });
+    return map;
+  }, [assets]);
+  const filteredUsers = useMemo(() => users.filter((user) => {
+    if (activeFilter === "normal") return user.login_enabled !== 0 && user.trading_enabled !== 0 && user.role !== "admin";
+    if (activeFilter === "tradingDisabled") return user.trading_enabled === 0;
+    if (activeFilter === "loginDisabled") return user.login_enabled === 0;
+    if (activeFilter === "admin") return user.role === "admin";
+    return true;
+  }), [activeFilter, users]);
+  const selectedUser = selectedUserId == null ? null : users.find((user) => user.id === selectedUserId) ?? null;
+  const selectedAssets = selectedUser ? assetsByUser.get(selectedUser.id) ?? [] : [];
+  const selectedUsdc = selectedAssets.find((row) => row.asset === "USDC");
+  const toolbarFilters: AdminToolbarFilter[] = [
+    { id: "all", label: "全部", count: users.length, tone: "info" },
+    { id: "normal", label: "正常", count: users.filter((user) => user.login_enabled !== 0 && user.trading_enabled !== 0 && user.role !== "admin").length, tone: "success" },
+    { id: "tradingDisabled", label: "交易关闭", count: users.filter((user) => user.trading_enabled === 0).length, tone: "warning" },
+    { id: "loginDisabled", label: "登录关闭", count: users.filter((user) => user.login_enabled === 0).length, tone: "danger" },
+    { id: "admin", label: "系统用户", count: users.filter((user) => user.role === "admin").length, tone: "muted" },
+  ];
+
+  function userAssets(user: User) {
+    return assetsByUser.get(user.id) ?? [];
+  }
+
+  function userUsdc(user: User) {
+    return userAssets(user).find((row) => row.asset === "USDC");
+  }
+
+  function actionItems(user: User): ActionMenuItem[] {
+    return [
+      { id: "funds", label: "资金操作", onSelect: () => openModal({ type: "funds", user }) },
+      { id: "remark", label: "编辑备注", onSelect: () => openModal({ type: "remark", user }) },
+      { id: "loginPassword", label: "重置登录密码", tone: "danger", onSelect: () => openModal({ type: "loginPassword", user }) },
+      { id: "withdrawPassword", label: "重置提款密码", tone: "danger", onSelect: () => openModal({ type: "withdrawPassword", user }) },
+    ];
+  }
+
+  const columns: Array<AdminTableColumn<User>> = [
+    {
+      id: "user",
+      header: "用户",
+      cell: (user) => (
+        <div className="admin-user-identity">
+          <span className="admin-user-avatar">{userInitial(user)}</span>
+          <div>
+            <strong>{user.email || user.username}</strong>
+            <span>UID {displayUid(user)} · {user.username}</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "status",
+      header: "账户状态",
+      align: "center",
+      cell: (user) => {
+        const status = getUserStatus(user);
+        return <StatusChip label={status.label} tone={status.tone} />;
+      },
+    },
+    {
+      id: "asset",
+      header: "总资产",
+      numeric: true,
+      cell: (user) => <span className="admin-user-money">${money(user.total_assets ?? user.balance, 8)}</span>,
+    },
+    {
+      id: "available",
+      header: "USDC 可用",
+      numeric: true,
+      cell: (user) => <span className="admin-user-money">{money(userUsdc(user)?.balance ?? 0, 8)}</span>,
+    },
+    {
+      id: "locked",
+      header: "冻结",
+      numeric: true,
+      cell: (user) => <span className="admin-user-money">{money(userUsdc(user)?.locked ?? 0, 8)}</span>,
+    },
+    {
+      id: "remark",
+      header: "备注",
+      cell: (user) => user.role === "admin"
+        ? <StatusChip label="系统用户" tone="info" />
+        : <span className="admin-user-remark">{user.remark || "-"}</span>,
+    },
+    {
+      id: "created",
+      header: "注册时间",
+      cell: (user) => <span className="admin-user-time">{cnTime(user.created_at)}</span>,
+    },
+    {
+      id: "actions",
+      header: "操作",
+      align: "center",
+      cell: (user) => (
+        <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
+          <ActionMenu
+            items={actionItems(user)}
+            onPrimaryClick={() => setSelectedUserId(user.id)}
+            primaryLabel="查看"
+          />
+        </div>
+      ),
+    },
+  ];
+
+  const selectedStatus = selectedUser ? getUserStatus(selectedUser) : null;
+
   return (
-    <div className="panel">
-      <div className="panel-head">
-        <h2><Users />用户管理</h2>
-        <div className="tools"><Search size={16} /><input className="input" style={{ width: 280 }} placeholder="搜索 ID / 邮箱 / 用户名" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
-      </div>
-      <div className="table-wrap">
-        <table className="table">
-          <thead><tr><th>ID</th><th>用户名</th><th>资金</th><th>备注</th><th>交易</th><th>登录</th><th>操作</th></tr></thead>
-          <tbody>
-            {users.length === 0 && <tr><td colSpan={7} className="empty">没有匹配用户</td></tr>}
-            {users.map((u) => {
-              const rows = assets.filter((asset) => asset.user_id === u.id);
-              return (
-                <tr key={u.id}>
-                  <td className="mono">{displayUid(u)}</td>
-                  <td><span className="user-chip">{u.email || u.username}</span><div className="muted" style={{ marginTop: 6 }}>{u.username}</div></td>
-                  <td><span className="muted">USDC 总计</span><br /><span className="mono" style={{ fontSize: 18 }}>{money(u.total_assets ?? u.balance, 8)}</span><br /><button className="btn" style={{ padding: 0, border: 0, minHeight: 22 }} onClick={() => openModal({ type: "funds", user: u })}>查看资金</button></td>
-                  <td>{u.role === "admin" ? <span className="pill sys">系统用户</span> : <span className="muted">{u.remark || "-"}</span>}</td>
-                  <td><Toggle enabled={u.trading_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: u.id, tradingEnabled: enabled })} /></td>
-                  <td><Toggle enabled={u.login_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: u.id, loginEnabled: enabled })} /></td>
-                  <td><div className="actions">
-                    <button className="btn icon primary" title="编辑备注" onClick={() => openModal({ type: "remark", user: u })}><Edit3 /></button>
-                    <button className="btn icon warn" title="上下分" onClick={() => openModal({ type: "funds", user: u })}><SlidersHorizontal /></button>
-                    <button className="btn icon warn" title="资产明细" onClick={() => openModal({ type: "funds", user: u })}><UserCog /></button>
-                    <button className="btn icon danger" title="修改登录密码" onClick={() => openModal({ type: "loginPassword", user: u })}><KeyRound /></button>
-                    <button className="btn icon danger" title="修改提款密码" onClick={() => openModal({ type: "withdrawPassword", user: u })}><LockKeyhole /></button>
-                  </div><div className="muted" style={{ marginTop: 6 }}>{rows.length ? `${rows.length} 个币种资产` : "未初始化资产"}</div></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+    <div className="admin-users-page">
+      <AdminToolbar
+        activeFilterIds={[activeFilter]}
+        filters={toolbarFilters}
+        onFilterToggle={(id) => {
+          if (userFilterIds.includes(id as UserFilterId)) setActiveFilter(id as UserFilterId);
+        }}
+        onReset={() => {
+          setQuery("");
+          setActiveFilter("all");
+        }}
+        onSearch={() => undefined}
+        onSearchChange={setQuery}
+        searchPlaceholder="搜索 UID / 邮箱 / 用户名 / 备注"
+        searchValue={query}
+      />
+
+      <AdminTable
+        columns={columns}
+        emptyState={<EmptyState compact description="换个关键词或重置筛选条件后再试。" title="没有匹配用户" />}
+        getRowKey={(user) => user.id}
+        onRowClick={(user) => setSelectedUserId(user.id)}
+        rows={filteredUsers}
+        selectedRowKey={selectedUserId ?? undefined}
+      />
+
+      <AdminDrawer
+        description={selectedUser ? `UID ${displayUid(selectedUser)} · ${selectedUser.username}` : undefined}
+        onClose={() => setSelectedUserId(null)}
+        open={!!selectedUser}
+        statusLabel={selectedStatus?.label}
+        statusTone={selectedStatus?.tone}
+        title={selectedUser?.email || selectedUser?.username || "用户详情"}
+        width={460}
+        footer={selectedUser ? (
+          <>
+            <button className="admin-button admin-button-ghost" onClick={() => openModal({ type: "remark", user: selectedUser })} type="button">编辑备注</button>
+            <button className="admin-button admin-button-primary" onClick={() => openModal({ type: "funds", user: selectedUser })} type="button">资金操作</button>
+          </>
+        ) : undefined}
+      >
+        {selectedUser && (
+          <>
+            <SectionCard title="基本信息">
+              <div className="admin-user-detail-grid">
+                <div><span>UID</span><strong>{displayUid(selectedUser)}</strong></div>
+                <div><span>邮箱</span><strong>{selectedUser.email || "-"}</strong></div>
+                <div><span>用户名</span><strong>{selectedUser.username}</strong></div>
+                <div><span>角色</span><strong>{selectedUser.role === "admin" ? "系统用户" : "普通用户"}</strong></div>
+                <div><span>注册时间</span><strong>{cnTime(selectedUser.created_at)}</strong></div>
+                <div><span>备注</span><strong>{selectedUser.remark || "-"}</strong></div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="资金信息" description="冻结/解除冻结仍通过原资金操作弹窗处理。">
+              <div className="admin-user-balance-strip">
+                <div><span>总资产</span><strong>${money(selectedUser.total_assets ?? selectedUser.balance, 8)}</strong></div>
+                <div><span>USDC 可用</span><strong>{money(selectedUsdc?.balance ?? 0, 8)}</strong></div>
+                <div><span>USDC 冻结</span><strong>{money(selectedUsdc?.locked ?? 0, 8)}</strong></div>
+              </div>
+              <div className="admin-user-asset-list">
+                {selectedAssets.length === 0 ? (
+                  <div className="admin-user-empty-line">未初始化资产</div>
+                ) : selectedAssets.map((row) => (
+                  <div className="admin-user-asset-row" key={`${row.user_id}-${row.asset}`}>
+                    <b>{row.asset}</b>
+                    <span>可用 <em>{money(row.balance, 8)}</em></span>
+                    <span>冻结 <em>{money(row.locked, 8)}</em></span>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+
+            <SectionCard title="账户状态">
+              <div className="admin-user-switch-list">
+                <div>
+                  <div><strong>交易权限</strong><span>{selectedUser.trading_enabled !== 0 ? "允许用户交易" : "用户交易已关闭"}</span></div>
+                  <Toggle enabled={selectedUser.trading_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, tradingEnabled: enabled })} />
+                </div>
+                <div>
+                  <div><strong>登录权限</strong><span>{selectedUser.login_enabled !== 0 ? "允许用户登录" : "用户登录已关闭"}</span></div>
+                  <Toggle enabled={selectedUser.login_enabled !== 0} onChange={(enabled) => mutate("/api/admin/users", "PATCH", { userId: selectedUser.id, loginEnabled: enabled })} />
+                </div>
+              </div>
+            </SectionCard>
+
+            <SectionCard title="风险操作" description="密码重置和资金调整继续走原有后台接口。" tone="danger">
+              <div className="admin-user-danger-actions">
+                <button className="admin-button admin-button-ghost" onClick={() => openModal({ type: "funds", user: selectedUser })} type="button"><SlidersHorizontal size={15} />上下分 / 冻结</button>
+                <button className="admin-button admin-button-danger" onClick={() => openModal({ type: "loginPassword", user: selectedUser })} type="button"><KeyRound size={15} />登录密码</button>
+                <button className="admin-button admin-button-danger" onClick={() => openModal({ type: "withdrawPassword", user: selectedUser })} type="button"><LockKeyhole size={15} />提款密码</button>
+              </div>
+            </SectionCard>
+          </>
+        )}
+      </AdminDrawer>
     </div>
   );
 }
