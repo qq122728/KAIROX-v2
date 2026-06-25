@@ -8,7 +8,7 @@ import {
   LayoutGrid, BarChart3, User as UserIcon,
   Star, BookOpen, LogOut,
   MessageCircle, Send, Paperclip, MoreHorizontal,
-  Home, ClipboardList
+  Home, ClipboardList, Trophy, X
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MarketChartPanel } from "./MarketData";
@@ -1368,7 +1368,9 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
         </h2>
         <div className="sheet-handle" />
         {mode !== "place" && (
-          <button type="button" className="sheet-close" aria-label="Minimize" onClick={mode === "running" ? minimize : close}>×</button>
+          <button type="button" className="sheet-close" aria-label={mode === "running" ? "Minimize" : "Close"} onClick={mode === "running" ? minimize : close}>
+            <X size={15} strokeWidth={2.4} aria-hidden="true" />
+          </button>
         )}
         {mode === "place" && <PlaceModeBody direction={direction} setDirection={setDirection} market={market} price={price} change={change} availableBalance={availableBalance} stake={stake} setStake={setStake} duration={duration} durations={durations} setDuration={setDuration} submit={submit} submitting={submitting} />}
         {mode === "running" && activeOrder && <RunningModeBody order={activeOrder} now={now} currentPrice={price} />}
@@ -1469,72 +1471,114 @@ function RunningModeBody({ order, now, currentPrice }: { order: BinaryOrder; now
   const progress = Math.min(1, Math.max(0, elapsedMs / (totalSec * 1000)));
   const winAmount = order.stake * order.duration.odds;
   const payout = order.stake + winAmount;
-  const ringSize = 108;
-  const stroke = 7;
+  const ringSize = 86;
+  const stroke = 6;
   const r = (ringSize - stroke) / 2;
   const circumference = 2 * Math.PI * r;
-  const dirColor = order.direction === "call" ? "#16e68d" : "#ff4c5f";
+  const dirColor = order.direction === "call" ? "#16C784" : "#F6465D";
   const priceDelta = currentPrice - order.entry;
   const priceChangePct = order.entry ? (priceDelta / order.entry) * 100 : 0;
+  const isSettling = remainingSec === 0;
+  const lastThree = !isSettling && remainingSec <= 3;
+  /* Winning means current price moved in the favorable direction for this order. */
+  const isFlat = priceDelta === 0;
+  const isWinning = !isFlat && (order.direction === "call" ? priceDelta > 0 : priceDelta < 0);
+  const statusLabel = isFlat ? "Awaiting Movement" : isWinning ? "Currently Winning" : "Currently Losing";
   return (
     <>
       <div className="run-header">
-        <strong>{symbolName(order.symbol)}</strong>
-        <span className={`run-meta ${order.direction}`}>{order.direction.toUpperCase()} · {order.duration.label} · {money(order.stake)}</span>
+        <div className="run-title-line">
+          <span className={`run-direction-badge ${order.direction}`}>{order.direction.toUpperCase()}</span>
+          <h2 className="run-pair">{symbolName(order.symbol)}</h2>
+        </div>
+        <em className="run-sublabel">{isSettling ? "Settlement in Progress" : `Expires in ${remainingSec}s`}</em>
       </div>
 
-      <div className="run-ring-row">
-        <div className="run-side">
-          <small>Entry Price</small>
-          <b className="tabular-nums">{formatTradePrice(order.entry)}</b>
-          <em>USDC</em>
+      <div className="run-trade-panel">
+        <div className="run-timer-stack">
+          <div className="run-ring-wrap" style={{ width: ringSize, height: ringSize }}>
+            <svg width={ringSize} height={ringSize} className="run-ring">
+              <circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} fill="none" />
+              <circle
+                cx={ringSize / 2}
+                cy={ringSize / 2}
+                r={r}
+                stroke={dirColor}
+                strokeWidth={stroke}
+                fill="none"
+                strokeDasharray={circumference}
+                strokeDashoffset={circumference * progress}
+                strokeLinecap="round"
+                transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`}
+                style={{ transition: "stroke-dashoffset 0.9s linear" }}
+              />
+            </svg>
+            <div className={`run-ring-center${lastThree ? " emphasis" : ""}${isSettling ? " settling" : ""}`}>
+              {isSettling ? (
+                <b className="run-settling-label">SETTLING</b>
+              ) : (
+                <>
+                  <b className="tabular-nums" style={{ color: dirColor }}>{remainingSec}<small>s</small></b>
+                  <em>remaining</em>
+                </>
+              )}
+            </div>
+          </div>
+          {!isSettling && (
+            <div className={`run-status ${isFlat ? "flat" : isWinning ? "winning" : "losing"}`} aria-live="polite">
+              {statusLabel}
+            </div>
+          )}
         </div>
-        <div className="run-ring-wrap" style={{ width: ringSize, height: ringSize }}>
-          <svg width={ringSize} height={ringSize} className="run-ring">
-            <circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} fill="none" />
-            <circle
-              cx={ringSize / 2}
-              cy={ringSize / 2}
-              r={r}
-              stroke={dirColor}
-              strokeWidth={stroke}
-              fill="none"
-              strokeDasharray={circumference}
-              strokeDashoffset={circumference * progress}
-              strokeLinecap="round"
-              transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`}
-              style={{ filter: `drop-shadow(0 0 6px ${dirColor}88)`, transition: "stroke-dashoffset 0.9s linear" }}
-            />
-          </svg>
-          <div className="run-ring-center">
-            <b className="tabular-nums" style={{ color: dirColor }}>{remainingSec}s</b>
-            <em>remaining</em>
+
+        <div className="run-price-panel">
+          <div className="run-price-row">
+            <small>Entry</small>
+            <span>
+              <b className="tabular-nums">{formatTradePrice(order.entry)}</b>
+              <em>USDC</em>
+            </span>
+          </div>
+          <div className="run-price-row">
+            <small>Live</small>
+            <span>
+              <b className="tabular-nums">{formatTradePrice(currentPrice)}</b>
+              <em className={`tabular-nums ${priceChangePct >= 0 ? "good" : "bad"}`}>{priceChangePct >= 0 ? "+" : ""}{priceChangePct.toFixed(2)}%</em>
+            </span>
           </div>
         </div>
-        <div className="run-side run-side-right">
-          <small>Current Price</small>
-          <b className="tabular-nums">{formatTradePrice(currentPrice)}</b>
-          <em className={`tabular-nums ${priceChangePct >= 0 ? "good" : "bad"}`}>{priceChangePct >= 0 ? "+" : ""}{priceChangePct.toFixed(2)}%</em>
+      </div>
+
+      <Sparkline symbol={order.symbol} change={priceChangePct} className="run-sparkline" stretch />
+
+      <div className="run-summary-panel">
+        <div className="run-summary-row">
+          <span>Investment</span>
+          <b className="tabular-nums">{money(order.stake)}</b>
+        </div>
+        <div className="run-summary-row">
+          <span>Return</span>
+          <b className="tabular-nums">{money(payout)}</b>
+        </div>
+        <div className="run-summary-row">
+          <span className="good">Profit</span>
+          <b className="good tabular-nums">+{money(winAmount)}</b>
+        </div>
+        <div className="run-summary-row">
+          <span className="bad">Max Loss</span>
+          <b className="bad tabular-nums">-{money(order.stake)}</b>
         </div>
       </div>
 
-      <Sparkline symbol={order.symbol} change={priceChangePct} className="run-sparkline" />
-
-      <div className="order-summary-card run-summary">
-        <div className="order-summary-row"><span>Investment</span><b className="tabular-nums">{money(order.stake)}</b></div>
-        <div className="order-summary-row"><span className="good">Est. Profit</span><b className="good tabular-nums">+{money(winAmount)}</b></div>
-        <div className="order-summary-row"><span>Payout</span><b className="tabular-nums">{money(payout)}</b></div>
-        <div className="order-summary-row"><span className="bad">Max Loss</span><b className="bad tabular-nums">-{money(order.stake)}</b></div>
+      <div className="run-footer">
+        Settlement is automatic · Funds secured
       </div>
-
-      <div className="order-foot"><Clock size={14} /> Waiting for settlement...</div>
     </>
   );
 }
 
 function SettledModeBody({ order, tradeAgain }: { order: BinaryOrder; tradeAgain: () => void }) {
   const won = order.status === "win";
-  const profit = Number(order.profit || 0);
   const winAmount = order.stake * order.duration.odds;
   const closePrice = order.entry + (won ? (order.direction === "call" ? Math.abs(order.entry * 0.0005) : -Math.abs(order.entry * 0.0005)) : (order.direction === "call" ? -Math.abs(order.entry * 0.0005) : Math.abs(order.entry * 0.0005)));
   const totalReturn = won ? order.stake + winAmount : 0;
@@ -1542,37 +1586,38 @@ function SettledModeBody({ order, tradeAgain }: { order: BinaryOrder; tradeAgain
     <>
       <div className="settled-header">
         <strong>{symbolName(order.symbol)}</strong>
+        <em>{order.direction.toUpperCase()} · {order.duration.label}</em>
       </div>
 
       <div className="settled-hero">
         <div className={`settled-trophy ${won ? "win" : "loss"}`}>
-          {won ? "🏆" : "✕"}
+          {won ? <Trophy size={22} strokeWidth={2.1} aria-hidden="true" /> : <X size={22} strokeWidth={2.4} aria-hidden="true" />}
         </div>
         <b className={`settled-title ${won ? "win" : "loss"}`}>{won ? "You Won!" : "You Lost"}</b>
-        <em className="settled-sub">{order.direction.toUpperCase()} · {order.duration.label}</em>
       </div>
 
-      <div className="settled-prices">
+      <div className="settled-price-panel">
         <div className="settled-price-col">
-          <small>Entry Price</small>
+          <small>Entry</small>
           <b className="tabular-nums">{formatTradePrice(order.entry)}</b>
         </div>
+        <span className="settled-price-divider" aria-hidden="true" />
         <div className="settled-price-col right">
-          <small>Close Price</small>
+          <small>Close</small>
           <b className="tabular-nums">{formatTradePrice(closePrice)}</b>
         </div>
       </div>
 
-      <div className="order-summary-card">
-        <div className="order-summary-row"><span>Investment</span><b className="tabular-nums">{money(order.stake)}</b></div>
-        <div className="order-summary-row">
+      <div className="settled-summary-card">
+        <div className="settled-summary-row"><span>Investment</span><b className="tabular-nums">{money(order.stake)}</b></div>
+        <div className="settled-summary-row">
           <span className={won ? "good" : "bad"}>{won ? "Profit" : "Loss"}</span>
           <b className={`${won ? "good" : "bad"} tabular-nums`}>{won ? "+" : "-"}{money(won ? winAmount : order.stake)}</b>
         </div>
-        <div className="order-summary-row"><span>Total Return</span><b className="tabular-nums">{money(totalReturn)}</b></div>
+        <div className="settled-summary-row"><span>Total Return</span><b className="tabular-nums">{money(totalReturn)}</b></div>
       </div>
 
-      <button type="button" className="order-confirm call" onClick={tradeAgain}>Trade Again</button>
+      <button type="button" className="order-confirm call settled-trade-again" onClick={tradeAgain}>Trade Again</button>
     </>
   );
 }
@@ -1917,7 +1962,7 @@ function formatActivityTime(iso: string) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
-function Sparkline({ symbol, change, className }: { symbol: string; change: number; className?: string }) {
+function Sparkline({ symbol, change, className, stretch }: { symbol: string; change: number; className?: string; stretch?: boolean }) {
   const tone = change > 0 ? "up" : change < 0 ? "down" : "flat";
   const seed = baseAsset(symbol).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const points = Array.from({ length: 7 }, (_, index) => {
@@ -1926,7 +1971,7 @@ function Sparkline({ symbol, change, className }: { symbol: string; change: numb
     return `${index * 9},${Math.max(5, Math.min(31, trend + wave * 0.35)).toFixed(1)}`;
   }).join(" ");
   return (
-    <svg className={`sparkline ${tone}${className ? ` ${className}` : ""}`} viewBox="0 0 54 36" aria-hidden="true">
+    <svg className={`sparkline ${tone}${className ? ` ${className}` : ""}`} viewBox="0 0 54 36" preserveAspectRatio={stretch ? "none" : undefined} aria-hidden="true">
       <polyline points={points} />
     </svg>
   );
@@ -3044,12 +3089,20 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
   if (kycStatus === "approved") {
     return <div className="stack-page"><div className="profile-card"><h2>KYC Approved</h2><p>Your identity verification has been approved.</p><span className="kyc-chip approved">approved</span></div></div>;
   }
-  if (kycStatus === "rejected") {
-    return <div className="stack-page"><div className="profile-card"><h2>KYC Rejected</h2><p>{rejectedReason || "Please contact support or submit updated documents."}</p><span className="kyc-chip rejected">rejected</span></div></div>;
-  }
+  const isResubmit = kycStatus === "rejected";
   const formValid = legalName.trim().length > 1 && !!front && !!back;
   return (
     <div className="stack-page kyc-stack">
+      {isResubmit && (
+        <div className="kyc-reject-banner" role="alert">
+          <Info size={18} strokeWidth={2} aria-hidden="true" className="kyc-reject-banner-icon" />
+          <div className="kyc-reject-banner-body">
+            <strong>Previous Verification Not Approved</strong>
+            <em>Please review the rejection reason below and submit updated documents.</em>
+            {rejectedReason && <span className="kyc-reject-banner-reason">{rejectedReason}</span>}
+          </div>
+        </div>
+      )}
       <div className="kyc-field">
         <label className="kyc-label" htmlFor="kyc-legal-name">Legal Name</label>
         <div className="kyc-input-wrap">
@@ -3109,7 +3162,7 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
       {error && <div className="form-error">{error}</div>}
 
       <button type="button" className="kyc-submit" disabled={submitting || !formValid} onClick={submit}>
-        {submitting ? "Submitting..." : "Submit KYC"}
+        {submitting ? "Submitting..." : isResubmit ? "Resubmit Verification" : "Submit Verification"}
       </button>
     </div>
   );

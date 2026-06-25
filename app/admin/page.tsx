@@ -986,7 +986,7 @@ function KycTab({ submissions, all, status, setStatus, mutate }: { submissions: 
                     <div className="actions">
                       <input className="input" style={{ width: 140 }} placeholder={"拒绝原因"} value={reason[k.id] || ""} onChange={(e) => setReason({ ...reason, [k.id]: e.target.value })} />
                       <button type="button" className="btn good" onClick={(event) => { event.preventDefault(); mutate("/api/admin/kyc", "PATCH", { submissionId: k.id, status: "approved" }); }}>{"\u901a\u8fc7"}</button>
-                      <button type="button" className="btn danger" onClick={(event) => { event.preventDefault(); mutate("/api/admin/kyc", "PATCH", { submissionId: k.id, status: "rejected", reason: reason[k.id] || "\u8d44\u6599\u4e0d\u7b26\u5408\u8981\u6c42" }); }}>{"\u62d2\u7edd"}</button>
+                      <button type="button" className="btn danger" onClick={(event) => { event.preventDefault(); mutate("/api/admin/kyc", "PATCH", { submissionId: k.id, status: "rejected", reason: reason[k.id] || "Verification requirements not met." }); }}>{"\u62d2\u7edd"}</button>
                     </div>
                   ) : <span className="muted">已处理</span>}
                 </td>

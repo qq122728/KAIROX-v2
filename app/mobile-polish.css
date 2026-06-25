@@ -4362,64 +4362,69 @@ section.trade-ticket.settings-card {
   z-index: 2 !important;
 }
 .sheet-close:hover { color: #fff !important; border-color: rgba(255,255,255,0.30) !important; }
+.sheet-close svg { display: block !important; pointer-events: none !important; }
 
 /* Running mode */
+/* ============================================================
+   Binary Order — Running sheet (Binance/Hyperliquid/Apple style)
+   ============================================================ */
+
+/* Header: PUT/CALL badge + large pair + sublabel */
 .run-header {
   display: flex !important;
   flex-direction: column !important;
-  gap: 2px !important;
-  padding-right: 36px !important;
-}
-.run-header strong { color: #fff; font-size: clamp(14px, 2.1dvh, 17px); font-weight: 800; letter-spacing: -0.01em; }
-.run-meta {
-  font-size: clamp(11px, 1.5dvh, 13px);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-.run-meta.call { color: #16e68d; }
-.run-meta.put { color: #ff4c5f; }
-
-.run-ring-row {
-  display: grid !important;
-  grid-template-columns: 1fr auto 1fr !important;
-  align-items: center !important;
-  gap: 10px !important;
-  padding: 2px 0 !important;
-}
-.run-side {
-  display: flex !important;
-  flex-direction: column !important;
+  align-items: flex-start !important;
   gap: 4px !important;
+  padding-right: 28px !important;
+  margin-top: -4px !important;
 }
-.run-side small {
-  color: rgba(255,255,255,0.55);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+.run-direction-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 20px !important;
+  padding: 0 8px !important;
+  border-radius: 999px !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.10em !important;
+  text-transform: uppercase !important;
 }
-.run-side b {
-  color: #fff;
-  font-size: 15px;
-  font-weight: 800;
+.run-direction-badge.call {
+  background: rgba(22, 199, 132, 0.14) !important;
+  color: #16C784 !important;
+  border: 1px solid rgba(22, 199, 132, 0.28) !important;
 }
-.run-side em {
-  color: rgba(255,255,255,0.50);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 600;
+.run-direction-badge.put {
+  background: rgba(246, 70, 93, 0.14) !important;
+  color: #F6465D !important;
+  border: 1px solid rgba(246, 70, 93, 0.28) !important;
 }
-.run-side-right { align-items: flex-end !important; text-align: right !important; }
+.run-pair {
+  margin: 0 !important;
+  color: #F4F7FB !important;
+  font-size: clamp(17px, 2.4dvh, 20px) !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+  line-height: 1.1 !important;
+}
+.run-sublabel {
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 13px !important;
+  font-style: normal !important;
+  font-weight: 500 !important;
+}
 
+/* Countdown ring — same size, larger digit, last-3s scale-up, settling state */
 .run-ring-wrap {
   position: relative !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  transform: scale(clamp(0.82, calc(100dvh / 880), 1.12)) !important;
+  margin: 8px auto 4px !important;
+  transform: scale(clamp(0.86, calc(100dvh / 880), 1.10)) !important;
   transform-origin: center !important;
-  margin: clamp(-12px, 0px, 4px) 0 !important;
 }
-.run-ring { display: block; }
+.run-ring { display: block !important; }
 .run-ring-center {
   position: absolute !important;
   inset: 0 !important;
@@ -4429,33 +4434,176 @@ section.trade-ticket.settings-card {
   justify-content: center !important;
   gap: 0 !important;
   pointer-events: none !important;
+  transition: transform 0.25s ease-out !important;
 }
 .run-ring-center b {
-  font-size: clamp(22px, 3.6dvh, 32px);
-  font-weight: 800;
-  line-height: 1;
-  letter-spacing: -0.02em;
+  font-size: clamp(32px, 4.6dvh, 40px) !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  letter-spacing: -0.03em !important;
+  display: inline-flex !important;
+  align-items: baseline !important;
+  gap: 2px !important;
+}
+.run-ring-center b small {
+  font-size: 0.45em !important;
+  font-weight: 700 !important;
+  color: rgba(255,255,255,0.55) !important;
+  letter-spacing: 0 !important;
 }
 .run-ring-center em {
-  color: rgba(255,255,255,0.55);
-  font-size: clamp(9.5px, 1.2dvh, 11px);
-  font-style: normal;
-  font-weight: 600;
-  margin-top: 2px;
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 11px !important;
+  font-style: normal !important;
+  font-weight: 600 !important;
+  margin-top: 6px !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+.run-ring-center.emphasis { transform: scale(1.08) !important; }
+.run-ring-center.emphasis b { letter-spacing: -0.04em !important; }
+.run-ring-center.settling { animation: run-settling-pulse 1.2s ease-in-out infinite !important; }
+.run-settling-label {
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.16em !important;
+  color: rgba(255,255,255,0.78) !important;
+}
+@keyframes run-settling-pulse {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
 }
 
+/* Winning / Losing status — single centered row below ring */
+.run-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin: 4px auto 8px !important;
+  padding: 5px 12px !important;
+  border-radius: 999px !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+  align-self: center !important;
+}
+.run-status.winning { color: #16C784 !important; background: rgba(22, 199, 132, 0.10) !important; }
+.run-status.losing  { color: #F6465D !important; background: rgba(246, 70, 93, 0.10) !important; }
+.run-status.flat    { color: rgba(255,255,255,0.50) !important; background: rgba(255,255,255,0.04) !important; }
+.run-status-arrow { font-size: 10px !important; line-height: 1 !important; }
+
+/* Price cards — Entry | Live, equal width, glass surface */
+.run-price-cards {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+  margin-top: 4px !important;
+}
+.run-price-card {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  padding: 12px 14px !important;
+  border-radius: 12px !important;
+  background: rgba(255,255,255,0.025) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.run-price-card small {
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+.run-price-card b {
+  color: #F4F7FB !important;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+}
+.run-price-card em {
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 11px !important;
+  font-style: normal !important;
+  font-weight: 600 !important;
+}
+.run-price-card em.good { color: #16C784 !important; }
+.run-price-card em.bad  { color: #F6465D !important; }
+
+/* Sparkline — subdued, assistive only. Stretches full row width thanks to
+   preserveAspectRatio="none" on the SVG; non-scaling-stroke keeps the line crisp. */
 .run-sparkline {
+  display: block !important;
   width: 100% !important;
-  height: clamp(24px, 4dvh, 40px) !important;
-  opacity: 0.85 !important;
+  height: 28px !important;
+  opacity: 0.40 !important;
+  margin-top: 4px !important;
+  color: rgba(255,255,255,0.55);
 }
+.run-sparkline.up { color: #16C784; }
+.run-sparkline.down { color: #F6465D; }
+.run-sparkline.flat { color: rgba(255,255,255,0.55); }
 
-.run-summary { margin-top: 0 !important; }
-.run-summary.order-summary-card {
-  padding: clamp(8px, 1.3dvh, 12px) clamp(12px, 2vw, 16px) !important;
-  gap: clamp(4px, 0.7dvh, 8px) !important;
+/* Result grid — 2×2 equal cells, hero cell for Net Profit */
+.run-result-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+  margin-top: 4px !important;
 }
-.run-summary .order-summary-row { font-size: clamp(12px, 1.6dvh, 14px) !important; }
+.run-result-cell {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  padding: 12px 14px !important;
+  border-radius: 12px !important;
+  background: rgba(255,255,255,0.025) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.run-result-cell small {
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+}
+.run-result-cell b {
+  color: #F4F7FB !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+}
+.run-result-cell.hero {
+  background: rgba(22, 199, 132, 0.10) !important;
+  border-color: rgba(22, 199, 132, 0.26) !important;
+}
+.run-result-cell.hero b {
+  color: #16C784 !important;
+  font-size: 18px !important;
+}
+.run-result-cell.loss b { color: #F6465D !important; }
+
+/* Footer — two-line, muted, trust-y */
+.run-footer {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 2px !important;
+  margin-top: 8px !important;
+  padding: 6px 0 !important;
+}
+.run-footer strong {
+  color: rgba(255,255,255,0.62) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+}
+.run-footer em {
+  color: rgba(255,255,255,0.34) !important;
+  font-size: 11.5px !important;
+  font-style: normal !important;
+  font-weight: 500 !important;
+}
 
 /* Settled mode */
 .settled-header {
@@ -4524,6 +4672,279 @@ section.trade-ticket.settings-card {
   font-weight: 800;
 }
 
+/* Selected modal redesign: compact running + settled hierarchy */
+.run-header {
+  gap: 5px !important;
+  margin-top: -2px !important;
+}
+.run-title-line {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+.run-direction-badge {
+  flex: 0 0 auto !important;
+  height: 19px !important;
+  font-size: 10.5px !important;
+  letter-spacing: 0.08em !important;
+}
+.run-pair {
+  font-size: 18px !important;
+  letter-spacing: 0 !important;
+  line-height: 1.1 !important;
+  min-width: 0 !important;
+}
+.run-sublabel {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+}
+.run-trade-panel {
+  display: grid !important;
+  grid-template-columns: 112px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 14px !important;
+  margin-top: 2px !important;
+}
+.run-timer-stack {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 7px !important;
+  min-width: 0 !important;
+}
+.run-ring-wrap {
+  margin: 0 !important;
+  transform: none !important;
+}
+.run-ring-center b {
+  font-size: 32px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+}
+.run-ring-center em {
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  margin-top: 4px !important;
+  letter-spacing: 0.07em !important;
+}
+.run-ring-center.emphasis { transform: scale(1.06) !important; }
+.run-ring-center.emphasis b { letter-spacing: 0 !important; }
+.run-settling-label {
+  font-size: 11px !important;
+  letter-spacing: 0.10em !important;
+}
+.run-status {
+  justify-content: center !important;
+  max-width: 112px !important;
+  min-height: 22px !important;
+  margin: 0 !important;
+  padding: 4px 8px !important;
+  font-size: 10.5px !important;
+  letter-spacing: 0 !important;
+  line-height: 1.15 !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+.run-price-panel {
+  display: grid !important;
+  min-width: 0 !important;
+  padding: 8px 12px !important;
+  border-radius: 12px !important;
+  background: rgba(255,255,255,0.026) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.run-price-row {
+  display: grid !important;
+  grid-template-columns: 52px minmax(0, 1fr) !important;
+  align-items: baseline !important;
+  min-height: 31px !important;
+  gap: 10px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.055) !important;
+}
+.run-price-row:last-child { border-bottom: 0 !important; }
+.run-price-row small,
+.run-summary-row span,
+.settled-price-col small {
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+}
+.run-price-row span {
+  display: inline-flex !important;
+  align-items: baseline !important;
+  justify-content: flex-end !important;
+  gap: 6px !important;
+  min-width: 0 !important;
+}
+.run-price-row b,
+.run-summary-row b,
+.settled-price-col b,
+.settled-summary-row b {
+  color: #F4F7FB !important;
+  font-size: 16px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+}
+.run-price-row em {
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 10.5px !important;
+  font-style: normal !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+}
+.run-price-row em.good,
+.run-summary-row .good,
+.run-summary-row b.good,
+.settled-summary-row .good,
+.settled-summary-row b.good { color: #16C784 !important; }
+.run-price-row em.bad,
+.run-summary-row .bad,
+.run-summary-row b.bad,
+.settled-summary-row .bad,
+.settled-summary-row b.bad { color: #F6465D !important; }
+.run-sparkline {
+  display: block !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: 28px !important;
+  opacity: 0.42 !important;
+  margin: 0 !important;
+  color: rgba(255,255,255,0.55) !important;
+}
+.run-sparkline.up { color: #16C784 !important; }
+.run-sparkline.down { color: #F6465D !important; }
+.run-sparkline.flat { color: rgba(255,255,255,0.55) !important; }
+.sparkline.run-sparkline polyline {
+  fill: none !important;
+  stroke: currentColor !important;
+  stroke-width: 1.8 !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+.run-summary-panel {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  overflow: hidden !important;
+  border-radius: 12px !important;
+  background: rgba(255,255,255,0.026) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.run-summary-row {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  padding: 10px 12px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.055) !important;
+}
+.run-summary-row:nth-child(odd) { border-right: 1px solid rgba(255,255,255,0.055) !important; }
+.run-summary-row:nth-last-child(-n + 2) { border-bottom: 0 !important; }
+.run-footer {
+  color: rgba(255,255,255,0.38) !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+  margin-top: -2px !important;
+  text-align: center !important;
+}
+.settled-header {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  gap: 4px !important;
+}
+.settled-header strong {
+  color: #F4F7FB !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.1 !important;
+}
+.settled-header em {
+  color: rgba(255,255,255,0.50) !important;
+  font-size: 12px !important;
+  font-style: normal !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+}
+.settled-hero {
+  gap: 7px !important;
+  padding: 2px 0 4px !important;
+}
+.settled-trophy {
+  width: 42px !important;
+  height: 42px !important;
+  border: 1px solid !important;
+}
+.bottom-sheet.order-sheet .settled-trophy.win {
+  background: rgba(22, 199, 132, 0.11) !important;
+  border-color: rgba(22, 199, 132, 0.45) !important;
+  box-shadow: 0 0 18px rgba(22, 199, 132, 0.20) !important;
+  color: #16C784 !important;
+}
+.bottom-sheet.order-sheet .settled-trophy.loss {
+  background: rgba(246, 70, 93, 0.11) !important;
+  border-color: rgba(246, 70, 93, 0.45) !important;
+  box-shadow: 0 0 18px rgba(246, 70, 93, 0.18) !important;
+  color: #F6465D !important;
+}
+.settled-title {
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.1 !important;
+}
+.bottom-sheet.order-sheet .settled-title.win { color: #16C784 !important; }
+.bottom-sheet.order-sheet .settled-title.loss { color: #F6465D !important; }
+.settled-price-panel {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) !important;
+  align-items: center !important;
+  gap: 12px !important;
+  padding: 11px 12px !important;
+  border-radius: 12px !important;
+  background: rgba(255,255,255,0.026) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.settled-price-divider {
+  display: block !important;
+  width: 1px !important;
+  height: 34px !important;
+  background: rgba(255,255,255,0.08) !important;
+}
+.settled-summary-card {
+  display: grid !important;
+  gap: 0 !important;
+  padding: 4px 12px !important;
+  border-radius: 12px !important;
+  background: rgba(255,255,255,0.026) !important;
+  border: 1px solid rgba(255,255,255,0.06) !important;
+}
+.settled-summary-row {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  min-height: 36px !important;
+  border-bottom: 1px solid rgba(255,255,255,0.055) !important;
+}
+.settled-summary-row:last-child { border-bottom: 0 !important; }
+.settled-summary-row span {
+  color: rgba(255,255,255,0.56) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+}
+.settled-trade-again {
+  height: 54px !important;
+  margin-top: 4px !important;
+  border-radius: 14px !important;
+  box-shadow: 0 10px 24px -12px rgba(22, 199, 132, 0.42), inset 0 1px 0 rgba(255,255,255,0.25) !important;
+}
+
 /* Clickable open-order card (reopens the running countdown sheet) */
 .order-card.order-card-clickable {
   cursor: pointer !important;
@@ -4568,14 +4989,6 @@ section.trade-ticket.settings-card {
   }
   .bottom-sheet.order-sheet .order-summary-card { padding: 16px 18px !important; }
   .bottom-sheet.order-sheet .order-confirm { height: 60px !important; font-size: 16.5px !important; }
-}
-
-/* Width tier: very narrow phones (< 360 width) — keep ring + sides from crashing */
-@media (max-width: 359px) {
-  .run-ring-row { gap: 6px !important; }
-  .run-side small { font-size: 10px !important; }
-  .run-side b { font-size: 13px !important; }
-  .run-side em { font-size: 10px !important; }
 }
 
 /* Inner scroll: hide scrollbar but keep functionality */
@@ -5527,6 +5940,10 @@ button.promo-banner .promo-icon svg {
 .order-card .tag.call { background: var(--green-soft) !important; color: var(--green) !important; }
 .order-card .tag.put { background: var(--red-soft) !important; color: var(--red) !important; }
 .order-card b { color: var(--text-main) !important; }
+.order-card > strong.tabular-nums:not(.good):not(.bad) {
+  color: var(--text-main) !important;
+  font-weight: 700 !important;
+}
 .order-card small { color: var(--text-sub) !important; }
 .order-card.order-card-clickable:hover {
   background: rgba(22,199,132,0.05) !important;
@@ -5563,8 +5980,6 @@ button.promo-banner .promo-icon svg {
 .order-confirm.call { background: linear-gradient(135deg, var(--green), #0E9F68) !important; color: #04140C !important; }
 .order-confirm.put  { background: linear-gradient(135deg, var(--red), #C73348) !important; color: #FFFFFF !important; }
 .order-foot svg { color: var(--green) !important; }
-.run-meta.call { color: var(--green) !important; }
-.run-meta.put { color: var(--red) !important; }
 .settled-trophy.win { background: var(--green-soft) !important; border-color: var(--green) !important; color: var(--green) !important; box-shadow: 0 0 24px rgba(22,199,132,0.30) !important; }
 .settled-trophy.loss { background: var(--red-soft) !important; border-color: var(--red) !important; color: var(--red) !important; box-shadow: 0 0 24px rgba(246,70,93,0.25) !important; }
 .settled-title.win { color: var(--green) !important; }
@@ -7555,6 +7970,51 @@ html.keyboard-open .chat-stack { grid-template-rows: minmax(0, 1fr) auto !import
    KYC form — soft-dark compliance card style
    ============================================================ */
 .kyc-stack { padding: 16px 16px 32px !important; display: flex !important; flex-direction: column !important; gap: 16px !important; }
+/* Rejected-resubmit banner: muted amber/red tone, sits above the form. */
+.kyc-reject-banner {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+  padding: 14px 16px !important;
+  border-radius: 12px !important;
+  background: rgba(246, 70, 93, 0.08) !important;
+  border: 1px solid rgba(246, 70, 93, 0.22) !important;
+}
+.kyc-reject-banner-icon {
+  flex: 0 0 auto !important;
+  color: #F6465D !important;
+  margin-top: 1px !important;
+}
+.kyc-reject-banner-body {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+}
+.kyc-reject-banner-body strong {
+  color: #FFB4BE !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.01em !important;
+}
+.kyc-reject-banner-body em {
+  color: rgba(255,255,255,0.62) !important;
+  font-size: 12.5px !important;
+  font-style: normal !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+}
+.kyc-reject-banner-reason {
+  margin-top: 4px !important;
+  padding: 8px 10px !important;
+  border-radius: 8px !important;
+  background: rgba(0,0,0,0.30) !important;
+  color: #F4F7FB !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
+  line-height: 1.45 !important;
+  word-break: break-word !important;
+}
 .kyc-field { display: flex !important; flex-direction: column !important; gap: 8px !important; }
 .kyc-label {
   color: var(--text-sub) !important;
@@ -8059,4 +8519,168 @@ a:focus-visible,
 }
 .mobile-shell.auth-only .auth-card {
   margin-bottom: 0 !important;
+}
+
+.bottom-sheet.order-sheet > .sheet-close {
+  position: absolute !important;
+  top: 14px !important;
+  right: 16px !important;
+  left: auto !important;
+  margin: 0 !important;
+}
+
+.bottom-sheet.order-sheet .run-ring-center .run-settling-label {
+  display: block !important;
+  color: rgba(255,255,255,0.72) !important;
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  line-height: 1 !important;
+  max-width: 74px !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+/* Running order typography pass */
+.bottom-sheet.order-sheet .run-ring-center {
+  gap: 2px !important;
+}
+.bottom-sheet.order-sheet .run-ring-center b:not(.run-settling-label) {
+  font-family: Inter, "DM Sans", Arial, sans-serif !important;
+  font-size: 30px !important;
+  font-weight: 760 !important;
+  letter-spacing: 0 !important;
+  line-height: 0.95 !important;
+}
+.bottom-sheet.order-sheet .run-ring-center b:not(.run-settling-label) small {
+  font-size: 0.42em !important;
+  font-weight: 760 !important;
+  margin-left: 1px !important;
+}
+.bottom-sheet.order-sheet .run-ring-center em {
+  font-family: Inter, "DM Sans", Arial, sans-serif !important;
+  font-size: 9.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.055em !important;
+  line-height: 1 !important;
+  margin-top: 2px !important;
+}
+.bottom-sheet.order-sheet .run-price-panel {
+  padding: 9px 12px !important;
+}
+.bottom-sheet.order-sheet .run-price-row {
+  grid-template-columns: 48px minmax(0, 1fr) !important;
+  min-height: 35px !important;
+}
+.bottom-sheet.order-sheet .run-price-row small,
+.bottom-sheet.order-sheet .run-summary-row span {
+  font-family: Inter, "DM Sans", Arial, sans-serif !important;
+  color: rgba(244,247,251,0.52) !important;
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.045em !important;
+  line-height: 1 !important;
+}
+.bottom-sheet.order-sheet .run-price-row span {
+  display: grid !important;
+  grid-template-columns: minmax(0, max-content) 46px !important;
+  align-items: baseline !important;
+  justify-content: end !important;
+  gap: 7px !important;
+}
+.bottom-sheet.order-sheet .run-price-row b {
+  font-family: Inter, "DM Sans", Arial, sans-serif !important;
+  color: #F4F7FB !important;
+  font-size: 17px !important;
+  font-weight: 760 !important;
+  line-height: 1 !important;
+  text-align: right !important;
+}
+.bottom-sheet.order-sheet .run-price-row em {
+  font-family: Inter, "DM Sans", Arial, sans-serif !important;
+  color: rgba(244,247,251,0.48) !important;
+  font-size: 10px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+  text-align: left !important;
+}
+.bottom-sheet.order-sheet .run-summary-row {
+  gap: 6px !important;
+  padding: 11px 13px !important;
+}
+.bottom-sheet.order-sheet .run-summary-row b {
+  font-family: Inter, "DM Sans", Arial, sans-serif !important;
+  color: #F4F7FB !important;
+  font-size: 16.5px !important;
+  font-weight: 760 !important;
+  letter-spacing: 0 !important;
+  line-height: 1.05 !important;
+}
+.bottom-sheet.order-sheet .run-price-row em.good,
+.bottom-sheet.order-sheet .run-summary-row span.good,
+.bottom-sheet.order-sheet .run-summary-row b.good {
+  color: #16C784 !important;
+}
+.bottom-sheet.order-sheet .run-price-row em.bad,
+.bottom-sheet.order-sheet .run-summary-row span.bad,
+.bottom-sheet.order-sheet .run-summary-row b.bad {
+  color: #F6465D !important;
+}
+
+@media (max-width: 380px) {
+  .bottom-sheet.order-sheet.sheet-mode-running .run-trade-panel {
+    grid-template-columns: 96px minmax(0, 1fr) !important;
+    gap: 9px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-panel,
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-card,
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row,
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row span {
+    min-width: 0 !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-panel {
+    padding: 8px 9px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-cards {
+    gap: 7px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-card {
+    gap: 3px !important;
+    padding: 10px 9px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row {
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+    gap: 7px !important;
+    min-height: 33px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row span {
+    grid-template-columns: minmax(0, 1fr) 34px !important;
+    gap: 5px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row b,
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-card b {
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row b {
+    font-size: 16px !important;
+  }
+
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row em {
+    font-size: 9px !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+  }
 }
