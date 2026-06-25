@@ -1734,7 +1734,265 @@ function LegacyWithdrawalsTab({ withdrawals, all, status, setStatus, mutate }: {
   );
 }
 
+type DepositAddressScope = "default" | "user";
+type AddressStatusFilter = "all" | "active" | "inactive";
+
+const addressStatusIds: AddressStatusFilter[] = ["all", "active", "inactive"];
+
+function addressStatusLabel(enabled: number) {
+  return enabled ? "启用" : "停用";
+}
+
+function addressStatusTone(enabled: number): StatusChipTone {
+  return enabled ? "success" : "muted";
+}
+
 function DepositAddressesTab() {
+  const [rows, setRows] = useState<{ defaultAddresses: DepositAddress[]; userAddresses: UserDepositAddress[] }>({ defaultAddresses: [], userAddresses: [] });
+  const [form, setForm] = useState<{ scope: DepositAddressScope; userId: string; asset: string; network: string; address: string }>({ scope: "default", userId: "", asset: "USDC", network: "TRC20", address: "" });
+  const [editing, setEditing] = useState<{ scope: DepositAddressScope; id: number } | null>(null);
+  const [drawerMode, setDrawerMode] = useState<"create" | "edit" | null>(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<AddressStatusFilter>("all");
+  const [error, setError] = useState("");
+
+  async function loadAddresses() {
+    const res = await fetch("/api/admin/deposit-addresses", { cache: "no-store" });
+    if (res.ok) setRows(await res.json());
+  }
+  useEffect(() => {
+    loadAddresses();
+  }, []);
+
+  function resetForm(scope: DepositAddressScope = "default") {
+    setForm({ scope, userId: "", asset: "USDC", network: "TRC20", address: "" });
+    setEditing(null);
+    setError("");
+  }
+
+  function openCreate(scope: DepositAddressScope = "default") {
+    resetForm(scope);
+    setDrawerMode("create");
+  }
+
+  function closeDrawer() {
+    setDrawerMode(null);
+    resetForm();
+  }
+
+  async function saveAddress() {
+    setError("");
+    const res = await fetch("/api/admin/deposit-addresses", {
+      method: editing ? "PATCH" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...form, id: editing?.id, scope: editing?.scope || form.scope, userId: form.userId.trim() })
+    });
+    if (!res.ok) return setError((await res.json()).error || "保存失败");
+    setForm({ ...form, address: "" });
+    setEditing(null);
+    setDrawerMode(null);
+    await loadAddresses();
+  }
+
+  async function toggleAddress(scope: DepositAddressScope, id: number, enabled: boolean) {
+    const res = await fetch("/api/admin/deposit-addresses", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, id, isActive: enabled })
+    });
+    if (!res.ok) return setError((await res.json()).error || "操作失败");
+    await loadAddresses();
+  }
+
+  async function deleteAddress(scope: DepositAddressScope, id: number) {
+    const res = await fetch("/api/admin/deposit-addresses", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, id })
+    });
+    if (!res.ok) return setError((await res.json()).error || "删除失败");
+    await loadAddresses();
+  }
+
+  function editDefault(row: DepositAddress) {
+    setEditing({ scope: "default", id: row.id });
+    setForm({ scope: "default", userId: "", asset: row.asset, network: row.network, address: row.address });
+    setError("");
+    setDrawerMode("edit");
+  }
+
+  function editUser(row: UserDepositAddress) {
+    setEditing({ scope: "user", id: row.id });
+    setForm({ scope: "user", userId: displayUid(row), asset: row.asset, network: row.network, address: row.address });
+    setError("");
+    setDrawerMode("edit");
+  }
+
+  function matchesStatus(row: { is_active: number }) {
+    if (statusFilter === "active") return !!row.is_active;
+    if (statusFilter === "inactive") return !row.is_active;
+    return true;
+  }
+
+  function matchesQuery(text: string) {
+    const q = query.trim().toLowerCase();
+    return !q || text.toLowerCase().includes(q);
+  }
+
+  const defaultRows = useMemo(() => rows.defaultAddresses.filter((row) =>
+    matchesStatus(row) && matchesQuery(`${row.id} ${row.asset} ${row.network} ${row.address}`),
+  ), [query, rows.defaultAddresses, statusFilter]);
+  const userRows = useMemo(() => rows.userAddresses.filter((row) =>
+    matchesStatus(row) && matchesQuery(`${row.id} ${displayUid(row)} ${row.username} ${row.email ?? ""} ${row.asset} ${row.network} ${row.address}`),
+  ), [query, rows.userAddresses, statusFilter]);
+  const allCount = rows.defaultAddresses.length + rows.userAddresses.length;
+  const activeCount = rows.defaultAddresses.filter((row) => row.is_active).length + rows.userAddresses.filter((row) => row.is_active).length;
+  const inactiveCount = allCount - activeCount;
+  const filters: AdminToolbarFilter[] = [
+    { id: "all", label: "全部", count: allCount, tone: "info" },
+    { id: "active", label: "启用", count: activeCount, tone: "success" },
+    { id: "inactive", label: "停用", count: inactiveCount, tone: "muted" },
+  ];
+
+  const defaultColumns: Array<AdminTableColumn<DepositAddress>> = [
+    { id: "id", header: "ID", cell: (row) => <span className="admin-review-mono">{row.id}</span> },
+    { id: "asset", header: "币种", cell: (row) => <strong className="admin-review-strong">{row.asset}</strong> },
+    { id: "network", header: "网络", cell: (row) => row.network },
+    { id: "address", header: "地址", cell: (row) => <span className="admin-address-code">{row.address}</span> },
+    { id: "status", header: "状态", align: "center", cell: (row) => <StatusChip label={addressStatusLabel(row.is_active)} tone={addressStatusTone(row.is_active)} /> },
+    {
+      id: "actions",
+      header: "操作",
+      align: "center",
+      cell: (row) => (
+        <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
+          <ActionMenu
+            items={[
+              { id: "toggle", label: row.is_active ? "停用" : "启用", onSelect: () => toggleAddress("default", row.id, !row.is_active) },
+              { id: "delete", label: "删除", tone: "danger", onSelect: () => deleteAddress("default", row.id) },
+            ]}
+            onPrimaryClick={() => editDefault(row)}
+            primaryLabel="编辑"
+          />
+        </div>
+      ),
+    },
+  ];
+  const userColumns: Array<AdminTableColumn<UserDepositAddress>> = [
+    { id: "id", header: "ID", cell: (row) => <span className="admin-review-mono">{row.id}</span> },
+    { id: "user", header: "用户", cell: (row) => <div className="admin-review-user"><strong>{row.email || row.username}</strong><span>UID {displayUid(row)}</span></div> },
+    { id: "asset", header: "币种", cell: (row) => <strong className="admin-review-strong">{row.asset}</strong> },
+    { id: "network", header: "网络", cell: (row) => row.network },
+    { id: "address", header: "地址", cell: (row) => <span className="admin-address-code">{row.address}</span> },
+    { id: "status", header: "状态", align: "center", cell: (row) => <StatusChip label={addressStatusLabel(row.is_active)} tone={addressStatusTone(row.is_active)} /> },
+    {
+      id: "actions",
+      header: "操作",
+      align: "center",
+      cell: (row) => (
+        <div className="admin-row-actions" onClick={(event) => event.stopPropagation()}>
+          <ActionMenu
+            items={[
+              { id: "toggle", label: row.is_active ? "停用" : "启用", onSelect: () => toggleAddress("user", row.id, !row.is_active) },
+              { id: "delete", label: "删除", tone: "danger", onSelect: () => deleteAddress("user", row.id) },
+            ]}
+            onPrimaryClick={() => editUser(row)}
+            primaryLabel="编辑"
+          />
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <div className="admin-address-page">
+      <AdminToolbar
+        activeFilterIds={[statusFilter]}
+        filters={filters}
+        onFilterToggle={(id) => {
+          if (addressStatusIds.includes(id as AddressStatusFilter)) setStatusFilter(id as AddressStatusFilter);
+        }}
+        onReset={() => {
+          setQuery("");
+          setStatusFilter("all");
+        }}
+        onSearch={() => undefined}
+        onSearchChange={setQuery}
+        searchPlaceholder="搜索 UID / 邮箱 / 币种 / 网络 / 地址"
+        searchValue={query}
+      >
+        <button className="admin-button admin-button-ghost" onClick={() => openCreate("user")} type="button">新增用户地址</button>
+        <button className="admin-button admin-button-primary" onClick={() => openCreate("default")} type="button">新增默认地址</button>
+      </AdminToolbar>
+
+      {error && <div className="error">{error}</div>}
+
+      <SectionCard title="平台默认充值地址" description="用户没有自定义地址时使用平台默认地址。">
+        <AdminTable
+          columns={defaultColumns}
+          emptyState={<EmptyState compact description="可新增默认充值地址，或调整搜索筛选条件。" title="暂无默认地址" />}
+          getRowKey={(row) => row.id}
+          rows={defaultRows}
+        />
+      </SectionCard>
+
+      <SectionCard title="用户自定义充值地址" description="优先级高于平台默认地址。">
+        <AdminTable
+          columns={userColumns}
+          emptyState={<EmptyState compact description="可新增用户自定义地址，或调整搜索筛选条件。" title="暂无用户自定义地址" />}
+          getRowKey={(row) => row.id}
+          rows={userRows}
+        />
+      </SectionCard>
+
+      <AdminDrawer
+        description={editing ? `${editing.scope === "default" ? "平台默认地址" : "用户自定义地址"} #${editing.id}` : "保存后会立即重新加载地址列表"}
+        footer={(
+          <>
+            <button className="admin-button admin-button-ghost" onClick={closeDrawer} type="button">取消</button>
+            <button className="admin-button admin-button-primary" onClick={saveAddress} type="button">{editing ? "保存修改" : "保存地址"}</button>
+          </>
+        )}
+        onClose={closeDrawer}
+        open={drawerMode !== null}
+        title={editing ? "编辑充值地址" : "新增充值地址"}
+        width={440}
+      >
+        <SectionCard title="地址信息">
+          <div className="admin-address-form">
+            <label>
+              <span>地址类型</span>
+              <select disabled={!!editing} onChange={(event) => setForm({ ...form, scope: event.target.value as DepositAddressScope })} value={form.scope}>
+                <option value="default">平台默认充值地址</option>
+                <option value="user">用户自定义充值地址</option>
+              </select>
+            </label>
+            {form.scope === "user" && (
+              <label>
+                <span>用户 ID</span>
+                <input disabled={!!editing} onChange={(event) => setForm({ ...form, userId: event.target.value })} placeholder="例如 123456" value={form.userId} />
+              </label>
+            )}
+            <label>
+              <span>币种</span>
+              <input disabled={!!editing} onChange={(event) => setForm({ ...form, asset: event.target.value.toUpperCase() })} value={form.asset} />
+            </label>
+            <label>
+              <span>网络</span>
+              <input disabled={!!editing} onChange={(event) => setForm({ ...form, network: event.target.value })} value={form.network} />
+            </label>
+            <label>
+              <span>充值地址</span>
+              <textarea onChange={(event) => setForm({ ...form, address: event.target.value })} value={form.address} />
+            </label>
+          </div>
+        </SectionCard>
+      </AdminDrawer>
+    </div>
+  );
+}
+
+function LegacyDepositAddressesTab() {
   const [rows, setRows] = useState<{ defaultAddresses: DepositAddress[]; userAddresses: UserDepositAddress[] }>({ defaultAddresses: [], userAddresses: [] });
   const [form, setForm] = useState({ scope: "default", userId: "", asset: "USDC", network: "TRC20", address: "" });
   const [editing, setEditing] = useState<{ scope: "default" | "user"; id: number } | null>(null);

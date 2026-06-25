@@ -1324,11 +1324,20 @@
   gap: 16px;
 }
 
+.admin-address-page {
+  display: grid;
+  gap: 16px;
+}
+
 .admin-review-page .admin-table-shell {
   overflow-x: auto;
 }
 
 .admin-orders-page .admin-table-shell {
+  overflow-x: auto;
+}
+
+.admin-address-page .admin-table-shell {
   overflow-x: auto;
 }
 
@@ -1338,6 +1347,10 @@
 
 .admin-orders-page .admin-table {
   min-width: 1420px;
+}
+
+.admin-address-page .admin-table {
+  min-width: 920px;
 }
 
 .admin-review-user,
@@ -1390,6 +1403,16 @@
   max-width: 220px;
   overflow: hidden;
   color: var(--admin-text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-address-code {
+  display: inline-block;
+  max-width: 360px;
+  overflow: hidden;
+  color: var(--admin-text-soft);
+  font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1517,6 +1540,53 @@
 }
 
 .admin-order-manual-grid input:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.admin-address-form {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-address-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.admin-address-form span {
+  color: var(--admin-muted);
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.admin-address-form input,
+.admin-address-form select,
+.admin-address-form textarea {
+  width: 100%;
+  border: 1px solid var(--admin-line);
+  border-radius: 10px;
+  outline: 0;
+  background: rgba(8, 13, 22, 0.62);
+  color: var(--admin-text);
+  padding: 0 11px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.admin-address-form input,
+.admin-address-form select {
+  min-height: 38px;
+}
+
+.admin-address-form textarea {
+  min-height: 98px;
+  resize: vertical;
+  padding: 11px;
+}
+
+.admin-address-form input:disabled,
+.admin-address-form select:disabled {
   cursor: not-allowed;
   opacity: 0.58;
 }
