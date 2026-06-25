@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getDb, inTransaction } from "./db";
-import { debitAvailableAssetBalance, ensureUserAssetRow, normalizeAsset, syncUserStableBalance } from "./balances";
-import { fetchBinanceTicker, fetchOkxTicker } from "./market-data-sources";
+import { debitAvailableAssetBalance, ensureUserAssetRow, syncUserStableBalance } from "./balances";
+import { fetchBinanceTicker, fetchBinanceUsdcTicker, fetchOkxTicker, type ProviderTicker } from "./market-data-sources";
 
 export const SWAP_FEE_RATE = 0.0025;
 export const SWAP_SUPPORTED_ASSETS = ["USDC", "BTC", "ETH", "SOL"] as const;
@@ -20,32 +20,74 @@ const ASSET_TO_PERP_SYMBOL: Record<string, string> = {
   SOL: "SOL-PERP"
 };
 
+type PriceOptions = {
+  allowFallback?: boolean;
+  requireUsdcQuote?: boolean;
+};
+
 function assetUsdDecimals(asset: string) {
   return asset === "USDC" ? 2 : 6;
 }
 
-export function isSwapAsset(asset: string): asset is SwapAsset {
-  return (SWAP_SUPPORTED_ASSETS as readonly string[]).includes(normalizeAsset(asset));
+function normalizeSwapAsset(asset: string) {
+  return String(asset || "").trim().toUpperCase();
 }
 
-export async function getAssetUsdPrice(asset: string): Promise<{ price: number; source: string }> {
-  const target = normalizeAsset(asset);
+export function isSwapAsset(asset: string): asset is SwapAsset {
+  return (SWAP_SUPPORTED_ASSETS as readonly string[]).includes(normalizeSwapAsset(asset));
+}
+
+function quoteAssetFromProviderSymbol(providerSymbol: string) {
+  const symbol = providerSymbol.toUpperCase();
+  if (symbol.endsWith("-SWAP")) return symbol.split("-")[1] || "";
+  if (symbol.endsWith("USDC")) return "USDC";
+  if (symbol.endsWith("USDT")) return "USDT";
+  return "";
+}
+
+function safeProviderPrice(ticker: ProviderTicker, options: PriceOptions) {
+  if (!Number.isFinite(ticker.price) || ticker.price <= 0) return null;
+  const quoteAsset = quoteAssetFromProviderSymbol(ticker.providerSymbol);
+  if (options.requireUsdcQuote && quoteAsset !== "USDC") return null;
+  return { price: ticker.price, source: ticker.source, quoteAsset };
+}
+
+export async function getAssetUsdPrice(asset: string, options: PriceOptions = {}): Promise<{ price: number; source: string; quoteAsset?: string }> {
+  const allowFallback = options.allowFallback ?? true;
+  const target = normalizeSwapAsset(asset);
   if (target === "USDC") return { price: 1, source: "stable" };
   const perpSymbol = ASSET_TO_PERP_SYMBOL[target];
-  if (!perpSymbol) return { price: FALLBACK_USD_PRICE[target] || 0, source: "fallback" };
+  if (!perpSymbol) {
+    if (allowFallback) return { price: FALLBACK_USD_PRICE[target] || 0, source: "fallback" };
+    throw new Error("Price unavailable");
+  }
+  let sawUsdtQuote = false;
   try {
     const ticker = await fetchOkxTicker(perpSymbol);
-    if (Number.isFinite(ticker.price) && ticker.price > 0) return { price: ticker.price, source: "okx" };
+    if (quoteAssetFromProviderSymbol(ticker.providerSymbol) === "USDT") sawUsdtQuote = true;
+    const price = safeProviderPrice(ticker, options);
+    if (price) return price;
   } catch {
     /* swallow and try Binance next */
   }
   try {
-    const ticker = await fetchBinanceTicker(perpSymbol);
-    if (Number.isFinite(ticker.price) && ticker.price > 0) return { price: ticker.price, source: "binance" };
+    const ticker = await fetchBinanceUsdcTicker(perpSymbol);
+    const price = safeProviderPrice(ticker, options);
+    if (price) return price;
   } catch {
-    /* swallow and use fallback */
+    /* swallow and check whether only a USDT quote is available */
   }
-  return { price: FALLBACK_USD_PRICE[target] || 0, source: "fallback" };
+  try {
+    const ticker = await fetchBinanceTicker(perpSymbol);
+    if (quoteAssetFromProviderSymbol(ticker.providerSymbol) === "USDT" && Number.isFinite(ticker.price) && ticker.price > 0) sawUsdtQuote = true;
+    const price = safeProviderPrice(ticker, options);
+    if (price) return price;
+  } catch {
+    /* swallow and reject below */
+  }
+  if (allowFallback) return { price: FALLBACK_USD_PRICE[target] || 0, source: "fallback" };
+  if (sawUsdtQuote) throw new Error("USDT quoted price requires USDT/USDC conversion");
+  throw new Error("Price unavailable");
 }
 
 export function generateSwapTxHash(): string {
@@ -80,8 +122,8 @@ export type SwapQuote = {
 };
 
 export async function buildSwapQuote(fromAsset: string, toAsset: string, fromAmount: number): Promise<SwapQuote> {
-  const from = normalizeAsset(fromAsset);
-  const to = normalizeAsset(toAsset);
+  const from = normalizeSwapAsset(fromAsset);
+  const to = normalizeSwapAsset(toAsset);
   if (!isSwapAsset(from)) throw new Error("Unsupported source asset");
   if (!isSwapAsset(to)) throw new Error("Unsupported target asset");
   if (from === to) throw new Error("From and to assets must differ");
@@ -89,9 +131,10 @@ export async function buildSwapQuote(fromAsset: string, toAsset: string, fromAmo
   const normalizedFromAmount = normalizeInputAmount(fromAmount, assetUsdDecimals(from));
   if (normalizedFromAmount <= 0) throw new Error("Amount too small");
 
-  const fromPrice = await getAssetUsdPrice(from);
-  const toPrice = await getAssetUsdPrice(to);
+  const fromPrice = await getAssetUsdPrice(from, { allowFallback: false, requireUsdcQuote: true });
+  const toPrice = await getAssetUsdPrice(to, { allowFallback: false, requireUsdcQuote: true });
   if (!fromPrice.price || !toPrice.price) throw new Error("Price unavailable");
+  if (fromPrice.source === "fallback" || toPrice.source === "fallback") throw new Error("Price unavailable");
 
   const fromUsdValue = normalizedFromAmount * fromPrice.price;
   const toAmountGross = fromUsdValue / toPrice.price;

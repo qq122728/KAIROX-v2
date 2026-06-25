@@ -41,7 +41,7 @@ type Market = { id: number; symbol: string; price: number; max_leverage?: number
 type User = { id?: number; public_uid?: string | null; email: string | null; balance: number; kyc_status?: "none" | "pending" | "approved" | "rejected"; kyc_rejected_reason?: string | null; created_at?: string };
 type ApiBinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; odds: number; risk_amount?: number | null; duration_seconds: number; entry_price: number; expires_at: string; status: "open" | "won" | "lost"; profit?: number | null };
 type Summary = { user: User; markets: Market[]; orders?: ApiBinaryOrder[] };
-type AssetRow = { asset: string; balance: number; locked: number; updated_at?: string };
+type AssetRow = { asset: string; balance: number; locked: number; updated_at?: string; usdPrice?: number | null; usdValue?: number | null; lockedUsdValue?: number | null; totalUsdValue?: number | null };
 type DepositRecord = { id: number; asset: string; network: string; amount: number; status: string; tx_hash?: string | null; note?: string | null; admin_note?: string | null; created_at: string; processed_at?: string | null };
 type WithdrawalRecord = { id: number; asset: string; network?: string | null; amount: number; address?: string | null; status: string; note?: string | null; created_at: string; processed_at?: string | null };
 type AssetTransaction = { id: number; asset: string; type: string; amount: number; status: string; note?: string | null; created_at: string };
@@ -49,7 +49,7 @@ type PublicSettings = { withdrawals_enabled: string; withdrawal_notice: string; 
 type AssetData = {
   user: User;
   settings: PublicSettings;
-  summary: { availableBalance: number; marginUsed: number; unrealizedPnl: number; totalEquity: number };
+  summary: { availableBalance: number; marginUsed: number; unrealizedPnl: number; totalEquity: number; valuationStatus?: "complete" | "partial"; valuationWarnings?: string[] };
   assets: AssetRow[];
   depositAddresses?: { asset: string; network: string; address: string; source: "default" | "custom" }[];
   deposits?: DepositRecord[];
@@ -129,6 +129,9 @@ const compactDateTime = (value?: string | null) => {
 const mergedAssetRows = (assets: AssetData | null): AssetRow[] => {
   const rows = assets?.assets?.length ? assets.assets : [{ asset: "USDC", balance: assets?.user.balance || 0, locked: 0 }];
   const map = new Map<string, AssetRow>();
+  const addNullable = (left?: number | null, right?: number | null) => (
+    left == null || right == null ? null : Number(left || 0) + Number(right || 0)
+  );
   for (const item of rows) {
     const key = displayAsset(item.asset);
     if (!coinSet.has(key)) continue;
@@ -136,6 +139,9 @@ const mergedAssetRows = (assets: AssetData | null): AssetRow[] => {
     if (existing) {
       existing.balance += Number(item.balance || 0);
       existing.locked += Number(item.locked || 0);
+      existing.usdValue = addNullable(existing.usdValue, item.usdValue);
+      existing.lockedUsdValue = addNullable(existing.lockedUsdValue, item.lockedUsdValue);
+      existing.totalUsdValue = addNullable(existing.totalUsdValue, item.totalUsdValue);
     } else {
       map.set(key, { ...item, asset: key, balance: Number(item.balance || 0), locked: Number(item.locked || 0) });
     }
@@ -627,10 +633,11 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
             support={support}
             settings={publicSettings}
             logout={logout}
+            refreshData={load}
           />
         ) : (
           <>
-            {tab === "home" && <HomeTab rows={filteredMarkets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} sort={marketSort} setSort={setMarketSort} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} goTab={switchTab} push={push} kycStatus={kycStatus} totalEquity={assets?.summary.totalEquity ?? user.balance} availableBalance={assets?.summary.availableBalance ?? user.balance} pnl={assets?.summary.unrealizedPnl ?? 0} favorites={favorites} toggleFavorite={toggleFavorite} />}
+            {tab === "home" && <HomeTab rows={filteredMarkets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} sort={marketSort} setSort={setMarketSort} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} goTab={switchTab} push={push} kycStatus={kycStatus} totalEquity={assets?.summary.totalEquity ?? 0} availableBalance={assets?.summary.availableBalance ?? user.balance} pnl={assets?.summary.unrealizedPnl ?? 0} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "markets" && <MarketsListTab rows={markets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "trade" && currentMarket && <TradeTab market={currentMarket} tickers={tickers} setCurrentSymbol={(symbol) => { setCurrentSymbol(symbol); pushMobileUrl(tabPath("trade", symbol)); }} markets={markets} openSheet={(d) => { setActiveOrderId(null); setSheetMinimized(false); setOrderSheet(d); }} stake={stake} setStake={setStake} duration={duration} durations={durationOptions} setDuration={setDuration} availableBalance={assets?.summary.availableBalance ?? user.balance} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "orders" && <OrdersTab openOrders={openOrders} history={history} now={now} onOpenRunningOrder={(order) => { setActiveOrderId(order.id); setOrderSheet(order.direction); setSheetMinimized(false); setTab("trade"); }} />}
@@ -1772,8 +1779,9 @@ function OrdersTab({ openOrders, history, now, onOpenRunningOrder }: { openOrder
 
 function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: StackPage) => void }) {
   const rows = mergedAssetRows(assets);
-  const totalEquity = assets?.summary.totalEquity ?? rows.reduce((sum, item) => sum + Number(item.balance || 0), 0);
-  const available = assets?.summary.availableBalance ?? rows.reduce((sum, item) => sum + Number(item.balance || 0), 0);
+  const totalEquity = assets?.summary.totalEquity ?? 0;
+  const available = assets?.summary.availableBalance ?? 0;
+  const valuationPartial = assets?.summary.valuationStatus === "partial";
 
   type Activity = { id: string; kind: "deposit" | "withdraw" | "funding"; title: string; time: string; status: string; amount: number; asset: string };
   const activities: Activity[] = [
@@ -1795,7 +1803,7 @@ function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: Stack
           <small>Total Equity</small>
         </div>
         <strong className="equity-value tabular-nums">{money(totalEquity)}</strong>
-        <span className="equity-sub tabular-nums">≈ {Number(totalEquity).toFixed(2)} USDC · Available <b className="tabular-nums">{Number(available).toFixed(2)}</b></span>
+        <span className="equity-sub tabular-nums">≈ {Number(totalEquity).toFixed(2)} USDC · Available <b className="tabular-nums">{Number(available).toFixed(2)}</b>{valuationPartial ? " · Valuation partial" : ""}</span>
       </section>
 
       <div className="quick-actions">
@@ -1832,6 +1840,7 @@ function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: Stack
             </span>
             <span className="asset-row-value">
               <b className="tabular-nums">{Number(asset.balance || 0).toFixed(assetDigits(asset.asset))}</b>
+              <em className="tabular-nums">{asset.totalUsdValue == null ? "Price unavailable" : money(asset.totalUsdValue)}</em>
             </span>
             <ChevronRight className="asset-row-arrow" size={18} />
           </button>
@@ -2032,7 +2041,7 @@ function AccountTab({ user, kycStatus, push, logout }: { user: User; kycStatus: 
   );
 }
 
-function StackContent(props: { page: StackPage; user: User; assets: AssetData | null; selectedCoin: string; setSelectedCoin: (v: string) => void; selectedNetwork: string; setSelectedNetwork: (v: string) => void; push: (p: StackPage) => void; replaceStack: (p: StackPage) => void; clearStack: () => void; showToast: (type: "ok" | "err" | "info", text: string) => void; withdrawForm: { address: string; amount: string; password: string }; setWithdrawForm: (v: { address: string; amount: string; password: string }) => void; swap: { from: string; to: string; amount: string }; setSwap: (v: { from: string; to: string; amount: string }) => void; kycStatus: string; setKycStatus: (v: "none" | "pending" | "approved" | "rejected") => void; expandedSecurity: "login" | "withdraw" | null; setExpandedSecurity: (v: "login" | "withdraw" | null) => void; support: { telegram: string; whatsapp: string }; settings: Partial<PublicSettings>; logout: () => void }) {
+function StackContent(props: { page: StackPage; user: User; assets: AssetData | null; selectedCoin: string; setSelectedCoin: (v: string) => void; selectedNetwork: string; setSelectedNetwork: (v: string) => void; push: (p: StackPage) => void; replaceStack: (p: StackPage) => void; clearStack: () => void; showToast: (type: "ok" | "err" | "info", text: string) => void; withdrawForm: { address: string; amount: string; password: string }; setWithdrawForm: (v: { address: string; amount: string; password: string }) => void; swap: { from: string; to: string; amount: string }; setSwap: (v: { from: string; to: string; amount: string }) => void; kycStatus: string; setKycStatus: (v: "none" | "pending" | "approved" | "rejected") => void; expandedSecurity: "login" | "withdraw" | null; setExpandedSecurity: (v: "login" | "withdraw" | null) => void; support: { telegram: string; whatsapp: string }; settings: Partial<PublicSettings>; logout: () => void; refreshData: () => void | Promise<void> }) {
   const { page, selectedCoin, setSelectedCoin, selectedNetwork, setSelectedNetwork, push, replaceStack, clearStack, showToast } = props;
   if (page.id === "deposit-asset" || page.id === "withdraw-asset") {
     const mode = page.id.startsWith("deposit") ? "deposit" : "withdraw";
@@ -2046,7 +2055,7 @@ function StackContent(props: { page: StackPage; user: User; assets: AssetData | 
   if (page.id === "deposit-history") return <RecordList kind="deposits" assets={props.assets} />;
   if (page.id === "withdraw-history") return <RecordList kind="withdrawals" assets={props.assets} push={push} />;
   if (page.id === "funding-records") return <RecordList kind="transactions" assets={props.assets} />;
-  if (page.id === "swap") return <SwapPage assets={props.assets} swap={props.swap} setSwap={props.setSwap} showToast={showToast} />;
+  if (page.id === "swap") return <SwapPage assets={props.assets} swap={props.swap} setSwap={props.setSwap} showToast={showToast} refreshData={props.refreshData} />;
   if (page.id === "asset-overview") return <AssetsTab assets={props.assets} push={push} />;
   if (page.id === "security") return <SecurityPage expanded={props.expandedSecurity} setExpanded={props.setExpandedSecurity} showToast={showToast} />;
   if (page.id === "kyc") return <KycPage kycStatus={props.kycStatus} rejectedReason={props.user.kyc_rejected_reason} setKycStatus={props.setKycStatus} done={() => { showToast("ok", "KYC submitted"); clearStack(); }} />;
@@ -2481,7 +2490,7 @@ function formatTimestamp(iso: string) {
   return d.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
-function SwapPage({ assets, swap, setSwap, showToast }: { assets: AssetData | null; swap: { from: string; to: string; amount: string }; setSwap: (v: { from: string; to: string; amount: string }) => void; showToast: (type: "ok" | "err" | "info", text: string) => void }) {
+function SwapPage({ assets, swap, setSwap, showToast, refreshData }: { assets: AssetData | null; swap: { from: string; to: string; amount: string }; setSwap: (v: { from: string; to: string; amount: string }) => void; showToast: (type: "ok" | "err" | "info", text: string) => void; refreshData: () => void | Promise<void> }) {
   const [pickerOpen, setPickerOpen] = useState<"from" | "to" | null>(null);
   const [quote, setQuote] = useState<SwapQuoteData | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
@@ -2697,7 +2706,7 @@ function SwapPage({ assets, swap, setSwap, showToast }: { assets: AssetData | nu
       )}
 
       {receipt && (
-        <SwapSuccessModal receipt={receipt} onClose={() => { setReceipt(null); setSwap({ ...swap, amount: "" }); }} showToast={showToast} />
+        <SwapSuccessModal receipt={receipt} onClose={() => { setReceipt(null); setSwap({ ...swap, amount: "" }); void refreshData(); }} showToast={showToast} />
       )}
     </div>
   );

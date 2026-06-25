@@ -58,6 +58,14 @@ export async function POST(request: Request) {
              VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)`
           )
           .run(user.id, market.id, positionId, body.side, entryPrice, body.margin, body.leverage, notional, fee, `User opened position via ${execution.source}`);
+        getDb()
+          .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, 'USDC', 'perp_open_margin', ?, 'completed', ?)")
+          .run(user.id, -body.margin, `Opened ${body.side} ${market.symbol} position #${positionId}; margin ${body.margin.toFixed(2)}; entry ${entryPrice}`);
+        if (fee > 0) {
+          getDb()
+            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, 'USDC', 'perp_open_fee', ?, 'completed', ?)")
+            .run(user.id, -fee, `Opened ${body.side} ${market.symbol} position #${positionId}; fee ${fee.toFixed(8)}; notional ${notional.toFixed(2)}`);
+        }
       });
     } catch (error) {
       if (insufficientBalance) return badRequest("Insufficient balance");
@@ -110,6 +118,9 @@ export async function PATCH(request: Request) {
             .prepare("UPDATE user_assets SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND asset = 'USDC'")
             .run(payout, user.id);
           syncUserStableBalance(user.id);
+          getDb()
+            .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, 'USDC', 'perp_close', ?, 'completed', ?)")
+            .run(user.id, payout, `Closed ${position.side} ${position.symbol} position #${position.id}; payout ${payout.toFixed(8)}; pnl ${(pnl - fee).toFixed(8)}; fee ${fee.toFixed(8)}; close ${closePrice}`);
         }
 
         getDb()

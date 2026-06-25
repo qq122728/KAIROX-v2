@@ -4,8 +4,13 @@ import { getDb } from "@/lib/db";
 import { listOpenPositions } from "@/lib/trading";
 import { getSettings } from "@/lib/settings";
 import { sanitizePublicRecords, type PublicRecordRow } from "@/lib/public-records";
+import { getAssetUsdPrice } from "@/lib/swap";
 
 const supportedAssets = ["USDC", "BTC", "ETH", "SOL"];
+
+function roundUsd(value: number) {
+  return Number(value.toFixed(2));
+}
 
 export async function GET() {
   try {
@@ -32,9 +37,52 @@ export async function GET() {
       locked: 0,
       updated_at: null
     });
+    const valuationWarnings: string[] = [];
+    let valuationStatus: "complete" | "partial" = "complete";
+    const assetsWithValuation = await Promise.all(assets.map(async (item) => {
+      const balance = Number(item.balance || 0);
+      const locked = Number(item.locked || 0);
+      const totalAmount = balance + locked;
+      if (item.asset === "USDC") {
+        return {
+          ...item,
+          usdPrice: 1,
+          usdValue: roundUsd(balance),
+          lockedUsdValue: roundUsd(locked),
+          totalUsdValue: roundUsd(totalAmount)
+        };
+      }
+
+      try {
+        const { price } = await getAssetUsdPrice(item.asset, { allowFallback: false, requireUsdcQuote: true });
+        const usdPrice = Number(price);
+        if (!Number.isFinite(usdPrice) || usdPrice <= 0) throw new Error("Price unavailable");
+        return {
+          ...item,
+          usdPrice,
+          usdValue: roundUsd(balance * usdPrice),
+          lockedUsdValue: roundUsd(locked * usdPrice),
+          totalUsdValue: roundUsd(totalAmount * usdPrice)
+        };
+      } catch {
+        if (totalAmount > 0) {
+          valuationStatus = "partial";
+          valuationWarnings.push(`${item.asset} price unavailable`);
+        }
+        return {
+          ...item,
+          usdPrice: null,
+          usdValue: null,
+          lockedUsdValue: null,
+          totalUsdValue: null
+        };
+      }
+    }));
     const stable = assets.find((item) => item.asset === "USDC");
     const availableBalance = Number(stable?.balance ?? user.balance);
-    const lockedBalance = Number(stable?.locked || 0);
+    const portfolioUsdValue = assetsWithValuation.reduce((sum, item) => {
+      return sum + (typeof item.totalUsdValue === "number" ? item.totalUsdValue : 0);
+    }, 0);
     const depositAddresses = getDb()
       .prepare(
         `SELECT d.asset, UPPER(TRIM(d.network)) AS network,
@@ -60,13 +108,15 @@ export async function GET() {
     return json({
       user,
       settings: getSettings(),
-      assets,
+      assets: assetsWithValuation,
       depositAddresses,
       summary: {
         availableBalance,
         marginUsed,
         unrealizedPnl,
-        totalEquity: availableBalance + lockedBalance + marginUsed + unrealizedPnl
+        totalEquity: roundUsd(portfolioUsdValue + marginUsed + unrealizedPnl),
+        valuationStatus,
+        valuationWarnings
       },
       transactions,
       withdrawals,

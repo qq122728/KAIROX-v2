@@ -54,7 +54,12 @@ export function toBinanceSymbol(symbol: string) {
   return symbol.replace("-PERP", "USDT").replace("/", "").toUpperCase();
 }
 
+export function toBinanceUsdcSymbol(symbol: string) {
+  return symbol.replace("-PERP", "USDC").replace("/", "").toUpperCase();
+}
+
 export function fromBinanceSymbol(symbol: string) {
+  if (symbol.endsWith("USDC")) return `${symbol.slice(0, -4)}-PERP`;
   if (symbol.endsWith("USDT")) return `${symbol.slice(0, -4)}-PERP`;
   return symbol;
 }
@@ -178,6 +183,12 @@ export async function fetchOkxCandles(symbol: string, interval: string, limit: n
 export async function fetchBinanceTicker(symbol: string) {
   const endpoint = new URL("/fapi/v1/ticker/24hr", BINANCE_BASE_URL);
   endpoint.searchParams.set("symbol", toBinanceSymbol(symbol));
+  return normalizeBinanceTicker(await fetchJson<BinanceTicker>(endpoint));
+}
+
+export async function fetchBinanceUsdcTicker(symbol: string) {
+  const endpoint = new URL("/fapi/v1/ticker/24hr", BINANCE_BASE_URL);
+  endpoint.searchParams.set("symbol", toBinanceUsdcSymbol(symbol));
   return normalizeBinanceTicker(await fetchJson<BinanceTicker>(endpoint));
 }
 
