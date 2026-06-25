@@ -49,6 +49,12 @@ NEXT_HOSTNAME=0.0.0.0
 
 Production startup refuses to run if `PERP_SIM_DB_PATH`, `NEXT_PUBLIC_APP_URL`, or a non-default realtime secret is missing.
 
+`PERP_SIM_DB_PATH` must point to a persistent server path, not a release/build directory that may be replaced during deployment. For example:
+
+```env
+PERP_SIM_DB_PATH=/var/lib/vorx/vorx-beta.sqlite
+```
+
 ## First-Run Admin Setup
 
 Optional first-run variables:
@@ -108,6 +114,32 @@ HAVING COUNT(*) > 1;
 ```
 
 Expected result: no rows.
+
+## Beta Image Storage
+
+For the current Beta release, deposit proof images and KYC images are still stored inside SQLite:
+
+- `deposits.proof_data`
+- `kyc_submissions.front_data`
+- `kyc_submissions.back_data`
+
+Admin review lists do not return these base64 image fields. They only return lightweight `has_proof`, `has_front`, and `has_back` flags. The admin console loads one image on demand only when an admin clicks the preview action.
+
+This keeps review lists fast enough for Beta, but it also means the SQLite database can grow as users upload images. Treat the database file as both application data and uploaded-image storage.
+
+Before every deployment:
+
+- Back up the SQLite file at `PERP_SIM_DB_PATH`.
+- Confirm the backup file exists and is readable.
+- Confirm `PERP_SIM_DB_PATH` is outside any directory that deployment scripts replace or clean.
+
+After deployment:
+
+- Confirm admin deposit proof preview works.
+- Confirm admin KYC front/back preview works.
+- Confirm the review lists still load without returning large base64 payloads.
+
+Future production hardening should move uploaded images to `uploads/` or object storage such as S3, R2, or OSS. In that model, SQLite should keep only metadata such as `storage_key`, `mime`, `size`, and `hash`.
 
 ## Beta Smoke Test
 
