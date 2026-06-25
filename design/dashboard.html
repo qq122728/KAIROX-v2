@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VORX 运营控制中心</title>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root{--bg:#090f19;--side:#0d1726;--panel:#111c2c;--panel2:#142234;--row:#101a2a;--row2:#142238;--line:#18263a;--line2:#253854;--text:#eef5ff;--muted:#7f90aa;--blue:#4f8cff;--blue2:#7aa7ff;--green:#25c99a;--orange:#f5a524;--red:#f46f76;--gray:#94a3b8}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Arial,sans-serif;font-variant-numeric:tabular-nums}
+    .console{min-height:100vh;display:grid;grid-template-columns:268px 1fr;background:radial-gradient(circle at 28% -10%,rgba(79,140,255,.15),transparent 34%),linear-gradient(180deg,#0a111d,#090f19)}
+    .sidebar{background:linear-gradient(180deg,#101b2c,#0b1320);border-right:1px solid var(--line);padding:22px 18px;display:flex;flex-direction:column;gap:22px}.brand{display:flex;align-items:center;gap:12px;padding:2px 4px 18px;border-bottom:1px solid var(--line)}.mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:linear-gradient(135deg,#fff,#a8c7ff);color:#07101b;font-weight:900}.brand b{display:block;font-size:17px;letter-spacing:.08em}.brand span{display:block;margin-top:3px;font-size:12px;color:var(--muted)}
+    .nav{display:grid;gap:18px}.nav-group{display:grid;gap:8px}.nav-title{padding:0 10px;font-size:11px;color:#63728b;font-weight:800;letter-spacing:.14em}.nav a{height:40px;border-radius:11px;padding:0 11px;display:flex;align-items:center;gap:10px;color:#a9b7cc;text-decoration:none;font-size:14px;font-weight:650}.nav a svg{width:17px;color:#7d8da6}.nav a.active{background:#182842;color:#fff;box-shadow:inset 0 0 0 1px #2b4164}.nav a.active svg{color:var(--blue2)}
+    .header{height:88px;padding:0 32px;border-bottom:1px solid var(--line);background:rgba(10,17,29,.88);display:flex;align-items:center;justify-content:space-between}.header h1{margin:0;font-size:20px;font-weight:830}.header p{margin:5px 0 0;color:var(--muted);font-size:12px}.health-strip{display:flex;align-items:center;gap:8px}.health{height:36px;border-radius:999px;border:1px solid var(--line2);background:#101b2c;padding:0 11px;display:inline-flex;align-items:center;gap:7px;color:#c9d6e8;font-size:12px;font-weight:760}.dot{width:7px;height:7px;border-radius:99px;background:var(--green);box-shadow:0 0 0 4px rgba(37,201,154,.11)}.icon-btn,.avatar{width:38px;height:38px;border-radius:12px;border:1px solid var(--line2);background:#101b2c;color:#dce8fa;display:grid;place-items:center}.avatar{border-radius:999px;background:#203250;font-weight:850}
+    .content{padding:30px 32px 36px;display:grid;gap:20px}.hero{display:grid;grid-template-columns:minmax(0,1.38fr) 360px;gap:18px}.panel{background:linear-gradient(180deg,var(--panel),#0f1928);border:1px solid var(--line);border-radius:18px;overflow:hidden}.metrics{padding:24px;min-height:224px;display:grid;grid-template-columns:1.2fr 1fr;gap:22px}.primary{display:flex;flex-direction:column;justify-content:space-between;padding-right:18px;border-right:1px solid var(--line)}.eyebrow{font-size:12px;color:var(--muted);font-weight:800}.primary .num{margin-top:20px;font-size:54px;line-height:.98;font-weight:860;letter-spacing:-.04em}.desc{margin-top:12px;color:var(--muted);font-size:13px}.mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.mini{padding:15px;border-radius:14px;background:#142234;border:1px solid #1d2d45}.mini span{display:block;color:var(--muted);font-size:12px;font-weight:760}.mini strong{display:block;margin-top:12px;font-size:28px;line-height:1;font-weight:850}.mini small{display:block;margin-top:8px;color:#7f90aa;font-size:12px}
+    .command{padding:20px;display:grid;gap:14px}.command-head{display:flex;align-items:center;justify-content:space-between}.command-head h2{margin:0;font-size:15px}.todo-list{display:grid;gap:10px}.todo{min-height:66px;padding:13px;border-radius:14px;background:#142234;border:1px solid #1d2d45;display:grid;grid-template-columns:36px 1fr auto;align-items:center;gap:12px;color:inherit;text-decoration:none}.todo-icon{width:36px;height:36px;border-radius:12px;display:grid;place-items:center;background:#182a42;color:var(--blue2)}.todo b{display:block;font-size:13px}.todo span{display:block;margin-top:4px;font-size:12px;color:var(--muted)}.todo strong{font-size:28px;font-weight:860}.link-action{font-size:12px;color:var(--blue2);font-weight:850}
+    .status-grid{padding:18px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.service{min-height:118px;padding:16px;border-radius:14px;background:#142234;border:1px solid #1d2d45;display:flex;flex-direction:column;justify-content:space-between}.service-top{display:flex;justify-content:space-between}.service-name{display:flex;gap:9px;align-items:center;font-size:13px;font-weight:800}.service-name svg{width:17px;color:#8fa6c8}.section-head{height:58px;padding:0 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}.section-head h3{margin:0;font-size:15px}.section-head span{font-size:12px;color:var(--muted)}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:18px}table{width:100%;border-collapse:collapse}th{height:38px;padding:0 18px;color:#72829b;font-size:11px;text-align:left;font-weight:850;background:#0f1928}td{height:58px;padding:0 18px;border-top:1px solid var(--line);color:#dbe7f8;font-size:13px}.risk-list{padding:8px 0}.risk-row{min-height:72px;padding:0 18px;border-top:1px solid var(--line);display:grid;grid-template-columns:38px 1fr auto;align-items:center;gap:13px}.risk-row:first-child{border-top:0}.risk-icon{width:38px;height:38px;border-radius:13px;display:grid;place-items:center;background:#17263a;color:#9eb2d0}.risk-row b{display:block;font-size:13px}.risk-row span{display:block;margin-top:5px;font-size:12px;color:var(--muted)}.chip{height:24px;padding:0 9px;border-radius:999px;display:inline-flex;align-items:center;font-size:11px;font-weight:850}.chip.green{background:rgba(37,201,154,.12);color:var(--green)}.chip.orange{background:rgba(245,165,36,.14);color:var(--orange)}.chip.red{background:rgba(244,111,118,.14);color:var(--red)}.mono{font-family:"SF Mono",Consolas,ui-monospace,monospace}.green{color:var(--green)!important}.orange{color:var(--orange)!important}.red{color:var(--red)!important}
+  </style>
+</head>
+<body>
+  <div class="console">
+    <aside class="sidebar">
+      <div class="brand"><div class="mark">VX</div><div><b>VORX</b><span>运营控制中心</span></div></div>
+      <nav class="nav">
+        <div class="nav-group"><div class="nav-title">运营中心</div><a class="active"><i data-lucide="layout-dashboard"></i>首页</a><a><i data-lucide="bell"></i>通知中心</a></div>
+        <div class="nav-group"><div class="nav-title">用户管理</div><a><i data-lucide="users"></i>用户</a><a><i data-lucide="wallet"></i>资金</a></div>
+        <div class="nav-group"><div class="nav-title">审核中心</div><a><i data-lucide="circle-dollar-sign"></i>充值审核</a><a><i data-lucide="arrow-down-to-line"></i>提现审核</a><a><i data-lucide="shield-check"></i>KYC审核</a></div>
+        <div class="nav-group"><div class="nav-title">交易中心</div><a><i data-lucide="wallet-cards"></i>二元订单</a><a><i data-lucide="activity"></i>永续持仓</a></div>
+        <div class="nav-group"><div class="nav-title">系统</div><a><i data-lucide="landmark"></i>市场管理</a><a><i data-lucide="settings-2"></i>系统设置</a></div>
+      </nav>
+    </aside>
+    <main>
+      <header class="header">
+        <div><h1>运营控制中心</h1><p>今日待办、平台健康、资金流水与风险事件</p></div>
+        <div class="health-strip"><span class="health"><span class="dot"></span>实时连接</span><span class="health"><span class="dot"></span>Socket</span><span class="health"><span class="dot"></span>结算服务</span><span class="health"><span class="dot"></span>API</span><span class="health">最后同步 14:26:39</span><button class="icon-btn"><i data-lucide="bell"></i></button><div class="avatar">管</div></div>
+      </header>
+      <section class="content">
+        <div class="hero">
+          <section class="panel metrics">
+            <div class="primary"><div><div class="eyebrow">平台总资产</div><div class="num mono">$147,435.03</div><div class="desc">USDC 资产合计，含可用与冻结资金</div></div><div class="desc">今日资金净变化 <span class="green mono">+$1,248.20</span></div></div>
+            <div class="mini-grid"><div class="mini"><span>总用户</span><strong class="mono">14</strong><small>今日新增 2</small></div><div class="mini"><span>在线用户</span><strong class="mono">6</strong><small>5 分钟内活跃</small></div><div class="mini"><span>今日交易额</span><strong class="mono">$8,420</strong><small>二元与永续合计</small></div><div class="mini"><span>开放风险</span><strong class="mono orange">4</strong><small>需要运营关注</small></div></div>
+          </section>
+          <section class="panel command">
+            <div class="command-head"><h2>运营待办</h2><div class="desc">按优先级排序</div></div>
+            <div class="todo-list">
+              <a class="todo"><div class="todo-icon"><i data-lucide="circle-dollar-sign"></i></div><div><b>待审核充值</b><span>资金入账前需要确认</span></div><div><strong class="mono orange">0</strong><div class="link-action">立即处理 →</div></div></a>
+              <a class="todo"><div class="todo-icon"><i data-lucide="arrow-down-to-line"></i></div><div><b>待审核提现</b><span>涉及冻结资金释放或扣除</span></div><div><strong class="mono orange">0</strong><div class="link-action">立即处理 →</div></div></a>
+              <a class="todo"><div class="todo-icon"><i data-lucide="shield-check"></i></div><div><b>待审核 KYC</b><span>影响用户交易与提现权限</span></div><div><strong class="mono orange">0</strong><div class="link-action">立即处理 →</div></div></a>
+              <a class="todo"><div class="todo-icon"><i data-lucide="alert-triangle"></i></div><div><b>大额订单</b><span>超过风控阈值，需要复核</span></div><div><strong class="mono red">2</strong><div class="link-action">立即处理 →</div></div></a>
+            </div>
+          </section>
+        </div>
+        <section class="panel"><div class="section-head"><h3>平台运行状态</h3><span>监控核心服务是否正常运行</span></div><div class="status-grid"><div class="service"><div class="service-top"><div class="service-name"><i data-lucide="radio"></i>Socket</div><b class="green">正常</b></div><div class="desc">最后心跳 14:26:39</div></div><div class="service"><div class="service-top"><div class="service-name"><i data-lucide="timer-reset"></i>结算服务</div><b class="green">正常</b></div><div class="desc">最近结算 14:26:12</div></div><div class="service"><div class="service-top"><div class="service-name"><i data-lucide="server"></i>API</div><b class="green">正常</b></div><div class="desc">响应延迟 42ms</div></div><div class="service"><div class="service-top"><div class="service-name"><i data-lucide="database"></i>数据库</div><b class="green">正常</b></div><div class="desc">连接稳定</div></div></div></section>
+        <div class="two-col">
+          <section class="panel"><div class="section-head"><h3>最近资金流水</h3><span>查看全部</span></div><table><thead><tr><th>用户</th><th>类型</th><th>金额</th><th>时间</th></tr></thead><tbody><tr><td>2233@qq.com</td><td><span class="chip green">订单结算</span></td><td class="mono green">+$15.50</td><td>02:39:39</td></tr><tr><td>2233@qq.com</td><td><span class="chip orange">风险冻结</span></td><td class="mono orange">-$15.50</td><td>02:39:07</td></tr><tr><td>test@test.com</td><td><span class="chip green">充值通过</span></td><td class="mono green">+$111,111.00</td><td>08:11:33</td></tr></tbody></table></section>
+          <section class="panel"><div class="section-head"><h3>风险事件</h3><span>进入风控</span></div><div class="risk-list"><div class="risk-row"><div class="risk-icon"><i data-lucide="alert-triangle"></i></div><div><b>大额二元订单</b><span>BTC-PERP · CALL · 500.00 USDC</span></div><span class="chip red">高风险</span></div><div class="risk-row"><div class="risk-icon"><i data-lucide="circle-alert"></i></div><div><b>订单到期待处理</b><span>订单 #40 已到期，等待人工确认</span></div><span class="chip orange">待处理</span></div><div class="risk-row"><div class="risk-icon"><i data-lucide="activity"></i></div><div><b>新永续持仓</b><span>BTC-PERP 多单 · 名义额 1,200 USDC</span></div><span class="chip orange">关注</span></div></div></section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script>lucide.createIcons();</script>
+</body>
+</html>
+
