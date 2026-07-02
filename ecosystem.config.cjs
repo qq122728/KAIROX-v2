@@ -39,10 +39,11 @@ module.exports = {
       name: "vorx-next",
       cwd: root,
       script: "npm",
-      args: "run start",
+      args: "run start -- -H 127.0.0.1",
+      interpreter: "/root/.nvm/versions/node/v24.18.0/bin/node",
       env: {
         ...productionEnv,
-        PORT: "3000"
+        PORT: "3020"
       },
       autorestart: true,
       max_restarts: 10,
@@ -57,6 +58,7 @@ module.exports = {
       cwd: root,
       script: "npm",
       args: "run socket",
+      interpreter: "/root/.nvm/versions/node/v24.18.0/bin/node",
       env: productionEnv,
       autorestart: true,
       max_restarts: 10,
@@ -71,6 +73,7 @@ module.exports = {
       cwd: root,
       script: "npm",
       args: "run settlement",
+      interpreter: "/root/.nvm/versions/node/v24.18.0/bin/node",
       env: productionEnv,
       autorestart: true,
       max_restarts: 10,

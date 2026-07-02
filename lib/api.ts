@@ -36,7 +36,17 @@ function allowedOrigins(request: Request) {
     "http://localhost:3000",
     ...(process.env.PERP_SIM_ALLOWED_ORIGINS || "").split(",").map((item) => item.trim())
   ];
-  return new Set(values.map(normalizeOrigin).filter(Boolean));
+  const set = new Set(values.map(normalizeOrigin).filter(Boolean));
+  // Cloudflare Flexible SSL: referer may arrive as http:// while origin is https://
+  // Add protocol variants so both http:// and https:// are accepted for every host
+  for (const o of [...set]) {
+    try {
+      const u = new URL(o);
+      u.protocol = u.protocol === "https:" ? "http:" : "https:";
+      set.add(u.origin);
+    } catch { /* skip malformed */ }
+  }
+  return set;
 }
 
 export function requireSameOrigin(request: Request) {
