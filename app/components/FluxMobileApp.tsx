@@ -3578,31 +3578,11 @@ function SupportPage({ support, push }: { support: { telegram: string; whatsapp:
   );
 }
 
-type ChatMessage = { id: string; role: "agent" | "user"; text: string; time: string };
-type ChatProvider = {
-  initial(): ChatMessage[];
-  reply(userText: string): Promise<ChatMessage>;
-};
+type ChatMessage = { id: number | string; role: "agent" | "user"; text: string; time: string };
 
 function formatChatTime(date: Date = new Date()) {
   return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
-
-const mockChatProvider: ChatProvider = {
-  initial() {
-    return [{ id: `seed-${Date.now()}`, role: "agent", text: "Hello! 👋 How can we help you today?", time: formatChatTime() }];
-  },
-  async reply(userText: string) {
-    await new Promise((res) => setTimeout(res, 900 + Math.random() * 600));
-    const lower = userText.toLowerCase();
-    let text = "Thanks. Please share your UID, order ID, or transaction hash and our support team will look into it.";
-    if (lower.includes("order") || lower.includes("trade")) text = "Sure! Please provide your order ID and the symbol so we can check it for you.";
-    else if (lower.includes("deposit") || lower.includes("withdraw")) text = "Please share the network and transaction hash. We'll trace the on-chain status for you.";
-    else if (lower.includes("kyc")) text = "KYC reviews usually take under 30 minutes. If yours is taking longer, send us your UID and we'll follow up.";
-    else if (lower.includes("hi") || lower.includes("hello") || lower.includes("hey")) text = "Hi! 😊 What can we help you with today?";
-    return { id: `agent-${Date.now()}`, role: "agent", text, time: formatChatTime() };
-  }
-};
 
 function useVisualViewport() {
   useEffect(() => {
@@ -3636,41 +3616,113 @@ function useVisualViewport() {
   }, []);
 }
 
-function SupportChatPage({ provider = mockChatProvider }: { provider?: ChatProvider }) {
+function SupportChatPage() {
   useVisualViewport();
-  const [messages, setMessages] = useState<ChatMessage[]>(() => provider.initial());
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
-  const [typing, setTyping] = useState(false);
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastMsgIdRef = useRef<number>(0);
+
+  // Load history
+  useEffect(() => {
+    let active = true;
+    fetch("/api/support/messages")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!active) return;
+        if (data.messages?.length) {
+          const msgs: ChatMessage[] = data.messages.map((m: { id: number; role: string; text: string; createdAt: string }) => ({
+            id: m.id,
+            role: m.role as "agent" | "user",
+            text: m.text,
+            time: formatChatTime(new Date(m.createdAt.replace(" ", "T") + "Z")),
+          }));
+          setMessages(msgs);
+          const last = msgs[msgs.length - 1];
+          if (last) lastMsgIdRef.current = typeof last.id === "number" ? last.id : 0;
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (active) setLoaded(true); });
+
+    // Poll every 5 seconds
+    pollRef.current = setInterval(() => {
+      fetch("/api/support/messages")
+        .then((r) => r.json())
+        .then((data) => {
+          if (!data.messages) return;
+          const newMsgs: ChatMessage[] = data.messages.map((m: { id: number; role: string; text: string; createdAt: string }) => ({
+            id: m.id,
+            role: m.role as "agent" | "user",
+            text: m.text,
+            time: formatChatTime(new Date(m.createdAt.replace(" ", "T") + "Z")),
+          }));
+          setMessages(newMsgs);
+          const last = newMsgs[newMsgs.length - 1];
+          if (last && typeof last.id === "number") lastMsgIdRef.current = last.id;
+        })
+        .catch(() => {});
+    }, 5000);
+
+    return () => {
+      active = false;
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    };
+  }, []);
 
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages, typing]);
+  }, [messages]);
 
-  async function send() {
+  async function doSend() {
     const text = draft.trim();
     if (!text || sending) return;
     setSending(true);
-    const userMsg: ChatMessage = { id: `user-${Date.now()}`, role: "user", text, time: formatChatTime() };
-    setMessages((prev) => [...prev, userMsg]);
-    setDraft("");
-    setTyping(true);
+    setError("");
     try {
-      const reply = await provider.reply(text);
-      setMessages((prev) => [...prev, reply]);
+      const res = await fetch("/api/support/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to send message");
+        return;
+      }
+      setDraft("");
+      // Optimistic: add to messages immediately
+      if (data.message) {
+        setMessages((prev) => [
+          ...prev,
+          { id: data.message.id, role: "user", text: data.message.text, time: formatChatTime() },
+        ]);
+      }
+    } catch {
+      setError("Network error. Please try again.");
     } finally {
-      setTyping(false);
       setSending(false);
     }
   }
 
   return (
     <div className="stack-page chat-stack">
+      {error && <div className="auth-alert" role="alert" style={{ margin: "8px 16px 0" }}><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
       <div className="chat-scroller" ref={scrollerRef}>
+        {!loaded && <div style={{ textAlign: "center", padding: 32, color: "#6e88a4" }}>Loading messages...</div>}
+        {loaded && messages.length === 0 && (
+          <div style={{ textAlign: "center", padding: 32 }}>
+            <div style={{ color: "#e0eaf5", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Hello! How can we help you today?</div>
+            <div style={{ color: "#6e88a4", fontSize: 13 }}>Send a message and our support team will respond shortly.</div>
+          </div>
+        )}
         <div className="chat-day-pill">Today</div>
         {messages.map((msg) => (
           <div key={msg.id} className={`chat-row chat-row-${msg.role}`}>
@@ -3682,18 +3734,10 @@ function SupportChatPage({ provider = mockChatProvider }: { provider?: ChatProvi
             </div>
           </div>
         ))}
-        {typing && (
-          <div className="chat-row chat-row-agent">
-            <div className="chat-avatar"><Headphones size={16} strokeWidth={1.8} /></div>
-            <div className="chat-bubble-wrap">
-              <div className="chat-bubble chat-bubble-typing"><span /><span /><span /></div>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="chat-input-bar">
-        <button type="button" className="chat-attach" aria-label="Attach">
+        <button type="button" className="chat-attach" disabled aria-label="Attachments coming soon">
           <Paperclip size={18} strokeWidth={1.8} />
         </button>
         <textarea
@@ -3701,17 +3745,19 @@ function SupportChatPage({ provider = mockChatProvider }: { provider?: ChatProvi
           className="chat-input"
           placeholder="Type your message..."
           rows={1}
+          maxLength={2000}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doSend(); } }}
           autoComplete="off"
           autoCorrect="off"
           autoCapitalize="sentences"
           spellCheck={false}
           enterKeyHint="send"
           aria-label="Message"
+          disabled={sending}
         />
-        <button type="button" className="chat-send" onClick={send} disabled={!draft.trim() || sending} aria-label="Send">
+        <button type="button" className="chat-send" onClick={doSend} disabled={!draft.trim() || sending} aria-label="Send">
           <Send size={18} strokeWidth={2} />
         </button>
       </div>

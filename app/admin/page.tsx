@@ -16,8 +16,10 @@ import {
   Landmark,
   LockKeyhole,
   LogOut,
+  MessageSquare,
   RefreshCw,
   Save,
+  Send,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
@@ -91,7 +93,7 @@ type AdminData = {
   orders: Order[];
   withdrawals: Withdrawal[];
 };
-type TabId = "dashboard" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "admins" | "orders" | "markets" | "settings";
+type TabId = "dashboard" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "admins" | "orders" | "markets" | "settings" | "support";
 type ModalState =
   | { type: "funds"; user: User }
   | { type: "loginPassword"; user: User }
@@ -648,6 +650,7 @@ export default function AdminPage() {
       items: [
         { id: "markets", label: "交易市场", icon: Activity },
         { id: "settings", label: "平台设置", icon: Settings2 },
+        { id: "support", label: "客服消息", icon: MessageSquare },
       ],
     },
   ];
@@ -662,6 +665,7 @@ export default function AdminPage() {
     orders: { title: "二元订单", description: "查看二元订单并处理人工结算预设。" },
     markets: { title: "交易市场", description: "管理交易对与市场参数。" },
     settings: { title: "平台设置", description: "配置平台开关、提现说明与前台内容。" },
+    support: { title: "客服消息", description: "查看用户咨询并回复。" },
   };
   const notificationSlot = (
     <div className="bell-wrap" ref={bellWrapRef}>
@@ -751,6 +755,7 @@ export default function AdminPage() {
             {tab === "orders" && <ManualOrdersTab orders={orders} allOrders={data.orders} query={orderQuery} setQuery={setOrderQuery} status={orderStatus} setStatus={setOrderStatus} mutate={mutate} />}
             {tab === "markets" && <MarketsTab markets={data.markets} newMarket={newMarket} setNewMarket={setNewMarket} mutate={mutate} />}
             {tab === "settings" && <SettingsTab settings={settings} setSettings={updateSettingsDraft} markDirty={markSettingsDirty} saveSettings={saveSettingsDraft} />}
+            {tab === "support" && <SupportChatAdmin />}
           </>
         )}
       </AdminLayout>
@@ -3103,4 +3108,167 @@ function Status({ status }: { status: string }) {
 function SettingSwitch({ label, value, onToggle }: { label: string; value?: string; onToggle: (enabled: boolean) => void }) {
   const enabled = value !== "false";
   return <div className="ledger-row"><div><b>{label}</b><br /><span className="muted">{enabled ? "当前开启" : "当前关闭"}</span></div><Toggle enabled={enabled} onChange={onToggle} /></div>;
+}
+
+function SupportChatAdmin() {
+  const [conversations, setConversations] = useState<Array<{ userId: number; username: string; email: string | null; lastMessage: string | null; lastMessageAt: string | null; unreadCount: number }>>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [messages, setMessages] = useState<Array<{ id: number; role: string; text: string; createdAt: string }>>([]);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  // Load conversations
+  useEffect(() => {
+    fetch("/api/admin/support/conversations")
+      .then((r) => r.json())
+      .then((d) => { if (d.conversations) setConversations(d.conversations); })
+      .catch(() => {});
+  }, []);
+
+  // Load messages when user selected
+  useEffect(() => {
+    if (!selectedUserId) { setMessages([]); return; }
+    setLoading(true);
+    fetch(`/api/admin/support/messages?userId=${selectedUserId}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.messages) setMessages(d.messages); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [selectedUserId]);
+
+  // Poll conversations + messages every 5s
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetch("/api/admin/support/conversations")
+        .then((r) => r.json())
+        .then((d) => { if (d.conversations) setConversations(d.conversations); })
+        .catch(() => {});
+      if (selectedUserId) {
+        fetch(`/api/admin/support/messages?userId=${selectedUserId}`)
+          .then((r) => r.json())
+          .then((d) => { if (d.messages) setMessages(d.messages); })
+          .catch(() => {});
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [selectedUserId]);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
+
+  async function doReply() {
+    const text = draft.trim();
+    if (!text || !selectedUserId || sending) return;
+    setSending(true);
+    try {
+      const res = await fetch("/api/admin/support/reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: selectedUserId, text }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || "Failed"); return; }
+      setDraft("");
+      // Refresh messages
+      fetch(`/api/admin/support/messages?userId=${selectedUserId}`)
+        .then((r) => r.json())
+        .then((d) => { if (d.messages) setMessages(d.messages); })
+        .catch(() => {});
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const formatTime = (t: string) => {
+    try { return new Date(t.replace(" ", "T") + "Z").toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }); }
+    catch { return t; }
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 0, height: "calc(100vh - 180px)", minHeight: 400 }}>
+      {/* Conversation list */}
+      <div style={{ width: 280, flexShrink: 0, borderRight: "1px solid var(--line, rgba(255,255,255,0.06))", overflowY: "auto" }}>
+        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line, rgba(255,255,255,0.06))", fontWeight: 700, fontSize: 14 }}>对话列表</div>
+        {conversations.length === 0 && <div style={{ padding: 20, color: "#6e88a4", fontSize: 13 }}>暂无用户消息</div>}
+        {conversations.map((c) => (
+          <button
+            key={c.userId}
+            type="button"
+            onClick={() => setSelectedUserId(c.userId)}
+            style={{
+              display: "block", width: "100%", textAlign: "left", padding: "10px 14px",
+              border: "none", borderBottom: "1px solid rgba(255,255,255,0.04)",
+              background: selectedUserId === c.userId ? "rgba(59,130,246,0.12)" : "transparent",
+              cursor: "pointer", color: "inherit",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2 }}>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>{c.username}</span>
+              {c.unreadCount > 0 && <span style={{ background: "#2563FF", color: "#fff", borderRadius: 999, padding: "1px 7px", fontSize: 11, fontWeight: 700 }}>{c.unreadCount}</span>}
+            </div>
+            <div style={{ color: "#6e88a4", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.lastMessage || ""}</div>
+            <div style={{ color: "#445566", fontSize: 11, marginTop: 2 }}>{c.lastMessageAt ? formatTime(c.lastMessageAt) : ""}</div>
+          </button>
+        ))}
+      </div>
+
+      {/* Chat area */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        {!selectedUserId ? (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#6e88a4" }}>选择左侧对话查看消息</div>
+        ) : (
+          <>
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line, rgba(255,255,255,0.06))", fontWeight: 700, fontSize: 14 }}>
+              {conversations.find((c) => c.userId === selectedUserId)?.username || `用户 #${selectedUserId}`}
+            </div>
+            <div ref={scrollerRef} style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+              {loading && <div style={{ textAlign: "center", color: "#6e88a4" }}>加载中...</div>}
+              {!loading && messages.length === 0 && <div style={{ textAlign: "center", color: "#6e88a4", padding: 20 }}>暂无消息</div>}
+              {messages.map((m) => (
+                <div key={m.id} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                  <div style={{
+                    maxWidth: "72%", padding: "8px 12px", borderRadius: 12,
+                    background: m.role === "user" ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.06)",
+                    color: m.role === "user" ? "#e0eaf5" : "#c0d0e0",
+                    fontSize: 13, lineHeight: 1.45, wordBreak: "break-word",
+                  }}>
+                    <div>{m.text}</div>
+                    <div style={{ fontSize: 10, color: "#556", marginTop: 3 }}>{formatTime(m.createdAt)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: "10px 14px", borderTop: "1px solid var(--line, rgba(255,255,255,0.06))", display: "flex", gap: 8 }}>
+              <input
+                type="text"
+                placeholder="输入回复..."
+                value={draft}
+                maxLength={2000}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); doReply(); } }}
+                style={{ flex: 1, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "8px 12px", color: "#e0eaf5", fontSize: 13, outline: "none" }}
+                disabled={sending}
+              />
+              <button
+                type="button"
+                onClick={doReply}
+                disabled={!draft.trim() || sending}
+                style={{
+                  background: "linear-gradient(135deg, #3B82F6, #2563EB)", border: "none", borderRadius: 8,
+                  color: "#fff", padding: "8px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer",
+                  opacity: (!draft.trim() || sending) ? 0.5 : 1,
+                }}
+              >
+                <Send size={16} strokeWidth={2} />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }

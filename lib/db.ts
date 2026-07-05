@@ -498,6 +498,17 @@ function initialize(database: DatabaseSync) {
     locked_until TEXT,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS support_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    role TEXT NOT NULL CHECK(role IN ('user', 'agent')),
+    text TEXT NOT NULL,
+    read_by_user INTEGER NOT NULL DEFAULT 0,
+    read_by_admin INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
   `);
 
   database.exec("CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_verification_codes(email, created_at);");
