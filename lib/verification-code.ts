@@ -38,12 +38,14 @@ export function canSendCode(email: string): { allowed: boolean; retryAfterMs?: n
   return { allowed: true };
 }
 
-export function storeCode(email: string, code: string, purpose: "register" | "login"): void {
+export type CodePurpose = "register" | "login" | "reset_password";
+
+export function storeCode(email: string, code: string, purpose: CodePurpose): void {
   const db = getDb();
   db.prepare("INSERT INTO email_verification_codes (email, code, purpose) VALUES (?, ?, ?)").run(email, code, purpose);
 }
 
-export function verifyCode(email: string, code: string, purpose: "register" | "login"): boolean {
+export function verifyCode(email: string, code: string, purpose: CodePurpose): boolean {
   const db = getDb();
   const row = db
     .prepare(
@@ -56,4 +58,48 @@ export function verifyCode(email: string, code: string, purpose: "register" | "l
   // Mark as used
   db.prepare("UPDATE email_verification_codes SET used = 1 WHERE id = ?").run(row.id);
   return true;
+}
+
+const RESET_MAX_ATTEMPTS = 5;
+const RESET_LOCK_MS = 10 * 60_000; // 10 minutes
+
+export function checkResetPasswordLocked(email: string): { locked: true; reason: string } | { locked: false } {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT attempts, locked_until FROM reset_password_attempts WHERE email = ?")
+    .get(email) as { attempts: number; locked_until: string | null } | undefined;
+
+  if (!row) return { locked: false };
+
+  // Check if lock is still active
+  if (row.locked_until) {
+    // Support both ISO format and SQLite CURRENT_TIMESTAMP format
+    const lockTime = new Date(row.locked_until.replace(" ", "T")).getTime();
+    if (Number.isFinite(lockTime) && lockTime > Date.now()) {
+      return { locked: true, reason: "Too many attempts. Please try again later." };
+    }
+    // Lock expired or invalid — clear it
+    db.prepare("UPDATE reset_password_attempts SET attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP WHERE email = ?").run(email);
+  }
+
+  return { locked: false };
+}
+
+export function recordResetPasswordFailure(email: string): void {
+  const db = getDb();
+  const lockedUntil = new Date(Date.now() + RESET_LOCK_MS).toISOString();
+
+  db.prepare(
+    `INSERT INTO reset_password_attempts (email, attempts, locked_until, updated_at)
+     VALUES (?, 1, CASE WHEN ? <= 1 THEN ? ELSE NULL END, CURRENT_TIMESTAMP)
+     ON CONFLICT(email) DO UPDATE SET
+       attempts = reset_password_attempts.attempts + 1,
+       locked_until = CASE WHEN reset_password_attempts.attempts + 1 >= ? THEN ? ELSE NULL END,
+       updated_at = CURRENT_TIMESTAMP`
+  ).run(email, RESET_MAX_ATTEMPTS, lockedUntil, RESET_MAX_ATTEMPTS, lockedUntil);
+}
+
+export function clearResetPasswordAttempts(email: string): void {
+  const db = getDb();
+  db.prepare("DELETE FROM reset_password_attempts WHERE email = ?").run(email);
 }

@@ -3415,6 +3415,7 @@ section.trade-ticket.settings-card {
   white-space: nowrap !important;
   background: transparent !important;
   border: 0 !important;
+  cursor: pointer !important;
 }
 .auth-card .forgot-link span { display: inline-block; transition: transform 0.18s ease; }
 .auth-card .forgot-link:hover { color: #2effb0 !important; }

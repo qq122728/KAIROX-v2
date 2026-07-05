@@ -256,6 +256,19 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [codeSending, setCodeSending] = useState(false);
   const [codeSent, setCodeSent] = useState(false);
   const [codeCountdown, setCodeCountdown] = useState(0);
+  const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
+  const [forgotStep, setForgotStep] = useState<1 | 2>(1);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotCode, setForgotCode] = useState("");
+  const [forgotNewPassword, setForgotNewPassword] = useState("");
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
+  const [forgotError, setForgotError] = useState("");
+  const [forgotFieldErrors, setForgotFieldErrors] = useState<{ email?: string; code?: string; newPassword?: string; confirmPassword?: string }>({});
+  const [forgotCodeSending, setForgotCodeSending] = useState(false);
+  const [forgotCodeSent, setForgotCodeSent] = useState(false);
+  const [forgotCodeCountdown, setForgotCodeCountdown] = useState(0);
+  const [forgotSuccess, setForgotSuccess] = useState(false);
+  const [forgotPwVisible, setForgotPwVisible] = useState<{ pw: boolean; confirm: boolean }>({ pw: false, confirm: false });
   const [authChecked, setAuthChecked] = useState(false);
   const loadingRef = useRef(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -595,6 +608,94 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
     router.push("/markets");
   }
 
+  async function sendResetCode() {
+    setForgotError("");
+    setForgotFieldErrors({});
+    const email = forgotEmail.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setForgotFieldErrors({ email: "Enter a valid email address" });
+      return;
+    }
+    setForgotCodeSending(true);
+    try {
+      const res = await fetch("/api/auth/send-reset-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        return setForgotError(data.error || "Failed to send code");
+      }
+      setForgotCodeSent(true);
+      setForgotCodeCountdown(60);
+      const timer = setInterval(() => {
+        setForgotCodeCountdown((prev) => {
+          if (prev <= 1) { clearInterval(timer); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+      // Auto-advance to step 2
+      setForgotStep(2);
+      // Always show the uniform message
+      setForgotError("");
+    } finally {
+      setForgotCodeSending(false);
+    }
+  }
+
+  function goForgotStep2() {
+    setForgotError("");
+    const errs: typeof forgotFieldErrors = {};
+    if (!forgotCode || forgotCode.length !== 6) errs.code = "Enter the 6-digit verification code";
+    if (!forgotNewPassword) errs.newPassword = "New password is required";
+    else if (forgotNewPassword.length < 6) errs.newPassword = "Password must be at least 6 characters";
+    if (!forgotConfirmPassword) errs.confirmPassword = "Confirm your password";
+    else if (forgotNewPassword !== forgotConfirmPassword) errs.confirmPassword = "Passwords do not match";
+    setForgotFieldErrors(errs);
+    if (Object.keys(errs).length) return setForgotError("Please check the highlighted fields.");
+    resetPassword();
+  }
+
+  async function resetPassword() {
+    setForgotError("");
+    setForgotFieldErrors({});
+    const res = await fetch("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: forgotEmail,
+        code: forgotCode,
+        newPassword: forgotNewPassword,
+        confirmPassword: forgotConfirmPassword
+      })
+    });
+    if (!res.ok) {
+      const message = (await res.json()).error || "Password reset failed";
+      if (/code/i.test(message)) setForgotFieldErrors({ code: message });
+      else if (/password/i.test(message)) setForgotFieldErrors({ newPassword: message });
+      else if (/match/i.test(message)) setForgotFieldErrors({ confirmPassword: message });
+      return setForgotError(message);
+    }
+    setForgotSuccess(true);
+  }
+
+  function exitForgotPassword() {
+    setForgotPasswordMode(false);
+    setForgotStep(1);
+    setForgotEmail("");
+    setForgotCode("");
+    setForgotNewPassword("");
+    setForgotConfirmPassword("");
+    setForgotError("");
+    setForgotFieldErrors({});
+    setForgotCodeSending(false);
+    setForgotCodeSent(false);
+    setForgotCodeCountdown(0);
+    setForgotSuccess(false);
+    setForgotPwVisible({ pw: false, confirm: false });
+  }
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
@@ -662,7 +763,33 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   }, [markets, marketQuery, marketSort, tickers]);
 
   if (!authChecked) return <BootScreen />;
-  if (!user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); setLoginMethod("password"); setCodeSent(false); setCodeCountdown(0); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} loginMethod={loginMethod} setLoginMethod={(m) => { setLoginMethod(m); setAuthError(""); setFieldErrors({}); }} sendCode={sendCode} codeSending={codeSending} codeSent={codeSent} codeCountdown={codeCountdown} />;
+  if (forgotPasswordMode) return (
+    <ForgotPasswordScreen
+      step={forgotStep}
+      email={forgotEmail}
+      setEmail={setForgotEmail}
+      code={forgotCode}
+      setCode={setForgotCode}
+      newPassword={forgotNewPassword}
+      setNewPassword={setForgotNewPassword}
+      confirmPassword={forgotConfirmPassword}
+      setConfirmPassword={setForgotConfirmPassword}
+      error={forgotError}
+      fieldErrors={forgotFieldErrors}
+      clearFieldError={(k) => setForgotFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })}
+      codeSending={forgotCodeSending}
+      codeSent={forgotCodeSent}
+      codeCountdown={forgotCodeCountdown}
+      sendCode={sendResetCode}
+      goStep2={goForgotStep2}
+      success={forgotSuccess}
+      onBack={() => exitForgotPassword()}
+      pwVisible={forgotPwVisible}
+      togglePw={(k) => setForgotPwVisible((p) => ({ ...p, [k]: !p[k] }))}
+      support={support}
+    />
+  );
+  if (!user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); setLoginMethod("password"); setCodeSent(false); setCodeCountdown(0); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} loginMethod={loginMethod} setLoginMethod={(m) => { setLoginMethod(m); setAuthError(""); setFieldErrors({}); }} sendCode={sendCode} codeSending={codeSending} codeSent={codeSent} codeCountdown={codeCountdown} onForgotPassword={() => setForgotPasswordMode(true)} />;
 
   return (
     <main className="mobile-shell">
@@ -735,7 +862,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
 
 type AuthFieldKey = "email" | "password" | "confirmPassword" | "withdrawPassword" | "confirmWithdrawPassword" | "emailCode";
 
-function AuthField({ id, label, type, value, onChange, icon, error, optional, placeholder, autoComplete, canToggle, visible, onToggleVisible }: {
+function AuthField({ id, label, type, value, onChange, icon, error, optional, placeholder, autoComplete, canToggle, visible, onToggleVisible, right }: {
   id: string;
   label: string;
   type: "text" | "email" | "password";
@@ -766,12 +893,13 @@ function AuthField({ id, label, type, value, onChange, icon, error, optional, pl
         )}
         {hasError && !canToggle && <span className="auth-input-error-icon" aria-hidden="true">✕</span>}
       </div>
+      {right && <div style={{ marginTop: 8 }}>{right}</div>}
       {hasError && <p className="auth-field-error">{error}</p>}
     </div>
   );
 }
 
-function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError, pwVisible, togglePw, error, login, register, registerStep, goNextStep, goPrevStep, support, loginMethod, setLoginMethod, sendCode, codeSending, codeSent, codeCountdown }: {
+function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError, pwVisible, togglePw, error, login, register, registerStep, goNextStep, goPrevStep, support, loginMethod, setLoginMethod, sendCode, codeSending, codeSent, codeCountdown, onForgotPassword }: {
   mode: "login" | "register";
   setMode: (mode: "login" | "register") => void;
   form: { email: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string; emailCode: string };
@@ -793,6 +921,7 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
   codeSending: boolean;
   codeSent: boolean;
   codeCountdown: number;
+  onForgotPassword: () => void;
 }) {
   const updateField = <K extends keyof typeof form>(key: K, value: typeof form[K], errKey?: AuthFieldKey) => {
     setForm({ ...form, [key]: value });
@@ -874,9 +1003,9 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
             <div className={`auth-field${fieldErrors.password ? " has-error" : ""}`}>
               <div className="auth-field-label">
                 <label htmlFor="auth-password">Password</label>
-                {mode === "login" && (support.whatsapp
-                  ? <a className="forgot-link" href={support.whatsapp} target="_blank" rel="noreferrer">Forgot password? <span aria-hidden="true">→</span></a>
-                  : <span className="forgot-link disabled">Forgot password? <span aria-hidden="true">→</span></span>)}
+                {mode === "login" && (
+                  <button type="button" className="forgot-link" onClick={onForgotPassword}>Forgot password? <span aria-hidden="true">→</span></button>
+                )}
               </div>
               <div className={`auth-input-wrap${fieldErrors.password ? " error" : ""}`}>
                 <span className="auth-input-icon" aria-hidden="true"><LockKeyhole size={18} /></span>
@@ -963,6 +1092,137 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
 
 function BootScreen() {
   return <main className="mobile-shell auth-only"><section className="auth-center boot-center"><BrandLogo variant="auth" /><p>Loading account</p></section></main>;
+}
+
+function ForgotPasswordScreen({ step, email, setEmail, code, setCode, newPassword, setNewPassword, confirmPassword, setConfirmPassword, error, fieldErrors, clearFieldError, codeSending, codeSent, codeCountdown, sendCode, goStep2, success, onBack, pwVisible, togglePw, support }: {
+  step: 1 | 2;
+  email: string;
+  setEmail: (v: string) => void;
+  code: string;
+  setCode: (v: string) => void;
+  newPassword: string;
+  setNewPassword: (v: string) => void;
+  confirmPassword: string;
+  setConfirmPassword: (v: string) => void;
+  error: string;
+  fieldErrors: { email?: string; code?: string; newPassword?: string; confirmPassword?: string };
+  clearFieldError: (k: "email" | "code" | "newPassword" | "confirmPassword") => void;
+  codeSending: boolean;
+  codeSent: boolean;
+  codeCountdown: number;
+  sendCode: () => void;
+  goStep2: () => void;
+  success: boolean;
+  onBack: () => void;
+  pwVisible: { pw: boolean; confirm: boolean };
+  togglePw: (k: "pw" | "confirm") => void;
+  support: { telegram: string; whatsapp: string };
+}) {
+  if (success) {
+    return (
+      <main className="mobile-shell auth-only">
+        <section className="auth-center">
+          <BrandLogo variant="auth-full" />
+          <div className="auth-headline">
+            <h1>Password Reset Successful</h1>
+            <p>Your password has been updated. Please log in again.</p>
+          </div>
+          <div className="auth-card">
+            <button type="button" className="mobile-primary auth-submit" onClick={onBack}>Back to Log In</button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (step === 1) sendCode();
+    else goStep2();
+  };
+
+  return (
+    <main className="mobile-shell auth-only">
+      <section className="auth-center">
+        <BrandLogo variant="auth-full" />
+        <div className="auth-headline">
+          <h1>Reset Password</h1>
+          <p>Enter your account email. We&rsquo;ll send a verification code to reset your password.</p>
+        </div>
+        <form className="auth-card" onSubmit={handleSubmit}>
+          {error && <div className="auth-alert" role="alert"><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
+          {step === 1 ? (
+            <>
+              <AuthField
+                id="forgot-email"
+                label="Email"
+                type="email"
+                value={email}
+                onChange={(v) => { setEmail(v); clearFieldError("email"); }}
+                icon={<Mail size={18} />}
+                error={fieldErrors.email}
+                placeholder="Enter your email"
+                autoComplete="email"
+              />
+              <button type="button" className="mobile-primary auth-submit" style={{ marginTop: 16 }} disabled={codeSending || !email} onClick={sendCode}>
+                {codeSending ? "Sending..." : "Send Code"}
+              </button>
+            </>
+          ) : (
+            <>
+              {codeSent && (
+                <div style={{ color: "#2effb0", fontSize: 13, margin: "0 0 16px", textAlign: "center" }}>
+                  If this email is registered, a verification code has been sent.
+                </div>
+              )}
+              <AuthField
+                id="forgot-code"
+                label="Verification Code"
+                type="text"
+                value={code}
+                onChange={(v) => { setCode(v.replace(/\D/g, "")); clearFieldError("code"); }}
+                icon={<ShieldCheck size={18} />}
+                error={fieldErrors.code}
+                placeholder="Enter 6-digit code"
+                autoComplete="one-time-code"
+                right={
+                  <button type="button" className="auth-code-send-btn" disabled={codeSending || codeCountdown > 0} onClick={sendCode}>
+                    {codeSending ? "Sending..." : codeCountdown > 0 ? `${codeCountdown}s` : codeSent ? "Resend" : "Send Code"}
+                  </button>
+                }
+              />
+              <div className={`auth-field${fieldErrors.newPassword ? " has-error" : ""}`}>
+                <div className="auth-field-label"><label htmlFor="forgot-new-pw">New Password</label></div>
+                <div className={`auth-input-wrap${fieldErrors.newPassword ? " error" : ""}`}>
+                  <span className="auth-input-icon" aria-hidden="true"><LockKeyhole size={18} /></span>
+                  <input id="forgot-new-pw" type={pwVisible.pw ? "text" : "password"} autoComplete="new-password" placeholder="Enter new password" value={newPassword} onChange={(e) => { setNewPassword(e.target.value); clearFieldError("newPassword"); }} />
+                  <button type="button" className="auth-input-eye" aria-label={pwVisible.pw ? "Hide password" : "Show password"} onClick={() => togglePw("pw")}><Eye size={18} style={{ opacity: pwVisible.pw ? 1 : 0.55 }} /></button>
+                </div>
+                {fieldErrors.newPassword && <p className="auth-field-error">{fieldErrors.newPassword}</p>}
+              </div>
+              <div className={`auth-field${fieldErrors.confirmPassword ? " has-error" : ""}`}>
+                <div className="auth-field-label"><label htmlFor="forgot-confirm-pw">Confirm Password</label></div>
+                <div className={`auth-input-wrap${fieldErrors.confirmPassword ? " error" : ""}`}>
+                  <span className="auth-input-icon" aria-hidden="true"><LockKeyhole size={18} /></span>
+                  <input id="forgot-confirm-pw" type={pwVisible.confirm ? "text" : "password"} autoComplete="new-password" placeholder="Confirm your new password" value={confirmPassword} onChange={(e) => { setConfirmPassword(e.target.value); clearFieldError("confirmPassword"); }} />
+                  <button type="button" className="auth-input-eye" aria-label={pwVisible.confirm ? "Hide password" : "Show password"} onClick={() => togglePw("confirm")}><Eye size={18} style={{ opacity: pwVisible.confirm ? 1 : 0.55 }} /></button>
+                </div>
+                {fieldErrors.confirmPassword && <p className="auth-field-error">{fieldErrors.confirmPassword}</p>}
+              </div>
+              <button type="submit" className="mobile-primary auth-submit">Reset Password</button>
+            </>
+          )}
+          <button type="button" className="link-button auth-switch" onClick={onBack}>← Back to Log In</button>
+          {support.whatsapp && (
+            <div style={{ textAlign: "center", marginTop: 8 }}>
+              <span style={{ color: "#6e88a4", fontSize: 12 }}>Can&rsquo;t access your email? </span>
+              <a href={support.whatsapp} target="_blank" rel="noreferrer" style={{ color: "#2effb0", fontSize: 12, textDecoration: "underline" }}>Contact Support</a>
+            </div>
+          )}
+        </form>
+      </section>
+    </main>
+  );
 }
 
 function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goTab, showToast }: { activeStack?: StackPage; pop: () => void; currentMarket?: Market; tickers: Tickers; support: { telegram: string; whatsapp: string }; activeTab: Tab; goTab?: (tab: Tab) => void; showToast?: (type: "ok" | "err" | "info", text: string) => void }) {
