@@ -91,6 +91,11 @@ export function handleError(error: unknown) {
   if (error instanceof Response) {
     return json({ error: error.statusText || "Request failed" }, error.status);
   }
+  // Log the real error but never leak details in production responses
+  console.error("[api]", error instanceof Error ? error.message : error);
+  if (process.env.NODE_ENV === "production") {
+    return json({ error: "Internal server error" }, 500);
+  }
   const message = error instanceof Error ? error.message : "Unexpected error";
   return json({ error: message }, 500);
 }

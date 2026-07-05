@@ -1,6 +1,10 @@
-import { handleError, json } from "@/lib/api";
+import { handleError, json, tooManyRequests } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { fetchBinanceTicker, fetchBinanceTickers, fetchOkxTicker, fetchOkxTickers } from "@/lib/market-data-sources";
+import { consumeIpRate } from "@/lib/rate-limit";
+
+const tickerLimit = Math.max(1, Number(process.env.PERP_SIM_TICKER_LIMIT || 30));
+const tickerWindowMs = Math.max(1000, Number(process.env.PERP_SIM_TICKER_WINDOW_MS || 60_000));
 
 type LocalTicker = {
   symbol: string;
@@ -52,6 +56,9 @@ function fallbackTicker(symbol?: string) {
 
 export async function GET(request: Request) {
   try {
+    const limit = consumeIpRate(request, "ticker", tickerLimit, tickerWindowMs);
+    if (!limit.allowed) return tooManyRequests("Too many ticker requests. Please slow down.", limit.retryAfterMs);
+
     const url = new URL(request.url);
     const symbol = url.searchParams.get("symbol")?.toUpperCase();
 

@@ -1,6 +1,10 @@
-import { handleError, json } from "@/lib/api";
+import { handleError, json, tooManyRequests } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { fetchBinanceCandles, fetchOkxCandles, toBinanceSymbol, toOkxInstId, type Candle } from "@/lib/market-data-sources";
+import { consumeIpRate } from "@/lib/rate-limit";
+
+const klinesLimit = Math.max(1, Number(process.env.PERP_SIM_KLINES_LIMIT || 30));
+const klinesWindowMs = Math.max(1000, Number(process.env.PERP_SIM_KLINES_WINDOW_MS || 60_000));
 
 function fallbackCandles(symbol: string): Candle[] {
   const market = getDb().prepare("SELECT id, price FROM markets WHERE symbol = ?").get(symbol) as { id: number; price: number } | undefined;
@@ -37,16 +41,19 @@ function fallbackCandles(symbol: string): Candle[] {
 
 export async function GET(request: Request) {
   try {
+    const limit = consumeIpRate(request, "klines", klinesLimit, klinesWindowMs);
+    if (!limit.allowed) return tooManyRequests("Too many kline requests. Please slow down.", limit.retryAfterMs);
+
     const url = new URL(request.url);
     const symbol = (url.searchParams.get("symbol") || "BTC-PERP").toUpperCase();
     const interval = url.searchParams.get("interval") || "1m";
-    const limit = Math.min(Number(url.searchParams.get("limit") || 200), 500);
+    const candleLimit = Math.min(Number(url.searchParams.get("limit") || 200), 500);
     try {
-      const data = await fetchOkxCandles(symbol, interval, limit);
+      const data = await fetchOkxCandles(symbol, interval, candleLimit);
       return json({ ...data, okxInstId: data.providerSymbol });
     } catch {
       try {
-        const data = await fetchBinanceCandles(symbol, interval, limit);
+        const data = await fetchBinanceCandles(symbol, interval, candleLimit);
         return json({ ...data, binanceSymbol: data.providerSymbol });
       } catch {
         return json({

@@ -1,7 +1,11 @@
-import { handleError, json } from "@/lib/api";
+import { handleError, json, tooManyRequests } from "@/lib/api";
 import { listMarkets } from "@/lib/trading";
 import { getDb } from "@/lib/db";
 import { fetchBinanceTickers, fetchOkxTickers, type ProviderTicker } from "@/lib/market-data-sources";
+import { consumeIpRate } from "@/lib/rate-limit";
+
+const tickersLimit = Math.max(1, Number(process.env.PERP_SIM_TICKERS_LIMIT || 20));
+const tickersWindowMs = Math.max(1000, Number(process.env.PERP_SIM_TICKERS_WINDOW_MS || 60_000));
 
 type MarketTicker = { price: number; change: number; source: string };
 
@@ -48,8 +52,11 @@ async function fetchProviderTickers() {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const limit = consumeIpRate(request, "tickers", tickersLimit, tickersWindowMs);
+    if (!limit.allowed) return tooManyRequests("Too many ticker requests. Please slow down.", limit.retryAfterMs);
+
     const markets = listMarkets();
     const result: Record<string, MarketTicker> = {};
     try {

@@ -17,9 +17,9 @@ if (process.env.NODE_ENV === "production" && (!configuredInternalSecret || confi
   process.exit(1);
 }
 const internalSecret = configuredInternalSecret || defaultInternalSecret;
-const legacySessionCookie = "perp_lab_session";
-const userSessionCookie = "perp_lab_user_session";
-const adminSessionCookie = "perp_lab_admin_session";
+const legacySessionCookie = "__Host-perp_lab_session";
+const userSessionCookie = "__Host-perp_lab_user_session";
+const adminSessionCookie = "__Host-perp_lab_admin_session";
 const dbPath = path.resolve(process.env.PERP_SIM_DB_PATH?.trim() || path.join(process.cwd(), "data", "perp-lab.sqlite"));
 const sqliteBusyTimeoutMs = positiveInteger(process.env.SOCKET_SQLITE_BUSY_TIMEOUT_MS || process.env.PERP_SIM_SQLITE_BUSY_TIMEOUT_MS, 1000);
 if (!existsSync(path.dirname(dbPath))) mkdirSync(path.dirname(dbPath), { recursive: true });

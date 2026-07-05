@@ -2,9 +2,9 @@ import crypto from "node:crypto";
 import { cookies } from "next/headers";
 import { getDb, type User } from "./db";
 
-export const LEGACY_SESSION_COOKIE = "perp_lab_session";
-export const USER_SESSION_COOKIE = "perp_lab_user_session";
-export const ADMIN_SESSION_COOKIE = "perp_lab_admin_session";
+export const LEGACY_SESSION_COOKIE = "__Host-perp_lab_session";
+export const USER_SESSION_COOKIE = "__Host-perp_lab_user_session";
+export const ADMIN_SESSION_COOKIE = "__Host-perp_lab_admin_session";
 type SessionScope = "user" | "admin";
 type SessionUser = User & { login_enabled: number };
 

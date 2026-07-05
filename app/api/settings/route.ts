@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireUser } from "@/lib/auth";
 import { badRequest, handleError, json, readJson } from "@/lib/api";
 import { getSettings } from "@/lib/settings";
 import { setSettings, type AppSettings } from "@/lib/settings";
@@ -6,6 +6,7 @@ import { sanitizeBinaryOptionsConfig } from "@/lib/binary-options";
 
 export async function GET() {
   try {
+    const user = await requireUser();
     return json({ settings: getSettings() });
   } catch (error) {
     return handleError(error);
