@@ -482,7 +482,18 @@ function initialize(database: DatabaseSync) {
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS email_verification_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    code TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
   `);
+
+  database.exec("CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_verification_codes(email, created_at);");
 
   addColumn(database, "users", "email", "TEXT");
   addColumn(database, "users", "public_uid", "TEXT");

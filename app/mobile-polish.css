@@ -6617,6 +6617,58 @@ input, select, textarea { color-scheme: dark; }
 .link-button.auth-back { color: var(--text-muted) !important; }
 .link-button.auth-back:hover { color: var(--text-main) !important; }
 
+/* Auth method tabs (Password | Email Code) */
+.auth-method-tabs {
+  display: flex !important;
+  gap: 0 !important;
+  background: var(--card-bg, rgba(255,255,255,0.06)) !important;
+  border-radius: 10px !important;
+  padding: 3px !important;
+  margin-bottom: 4px !important;
+}
+.auth-method-tab {
+  flex: 1 !important;
+  padding: 8px 0 !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--text-sub, #888) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  font-family: inherit !important;
+  cursor: pointer !important;
+  transition: all 0.2s !important;
+}
+.auth-method-tab.active {
+  background: var(--brand-accent-blue, #5B8DFF) !important;
+  color: #fff !important;
+}
+
+/* Send code button */
+.auth-code-send-btn {
+  flex-shrink: 0 !important;
+  padding: 0 12px !important;
+  height: 38px !important;
+  border: 1px solid var(--brand-accent-blue, #5B8DFF) !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  color: var(--brand-accent-blue, #5B8DFF) !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  font-family: inherit !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: all 0.2s !important;
+}
+.auth-code-send-btn:hover:not(:disabled) {
+  background: var(--brand-accent-blue, #5B8DFF) !important;
+  color: #fff !important;
+}
+.auth-code-send-btn:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
 /* ============================================================
    5-Tab Bottom Nav (Home / Markets / Trade / Orders / Account)
    ============================================================ */

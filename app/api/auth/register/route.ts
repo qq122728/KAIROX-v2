@@ -4,6 +4,7 @@ import { createPublicUid, getDb } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
 import { getSettings, settingBool } from "@/lib/settings";
 import { consumeIpRate } from "@/lib/rate-limit";
+import { verifyCode } from "@/lib/verification-code";
 import { emitRealtime } from "@/lib/realtime";
 
 const startingBalance = 0;
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
       confirmWithdrawalPassword: string;
       nickname?: string;
       inviteCode?: string;
+      emailCode?: string;
     }>(request);
     const email = body.email?.trim().toLowerCase();
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return badRequest("Enter a valid email address");
@@ -40,6 +42,12 @@ export async function POST(request: Request) {
     const nickname = nicknameRaw ? nicknameRaw.slice(0, 64) : null;
     const inviteRaw = String(body.inviteCode || "").trim();
     const inviteCode = inviteRaw ? inviteRaw.slice(0, 64) : null;
+
+    // Verify email code
+    const emailCode = String(body.emailCode || "").trim();
+    if (!emailCode || !verifyCode(email, emailCode, "register")) {
+      return badRequest("Invalid or expired verification code");
+    }
 
     const database = getDb();
     const result = database

@@ -247,11 +247,15 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [swap, setSwap] = useState({ from: "USDC", to: "BTC", amount: "100" });
   const [kycStatus, setKycStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
   const [expandedSecurity, setExpandedSecurity] = useState<"login" | "withdraw" | null>("login");
-  const [authForm, setAuthForm] = useState({ email: "", password: "", confirmPassword: "", name: "", withdrawPassword: "", confirmWithdrawPassword: "", invite: "" });
+  const [authForm, setAuthForm] = useState({ email: "", password: "", confirmPassword: "", name: "", withdrawPassword: "", confirmWithdrawPassword: "", invite: "", emailCode: "" });
   const [authError, setAuthError] = useState("");
-  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"email" | "password" | "confirmPassword" | "withdrawPassword" | "confirmWithdrawPassword", string>>>({});
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<"email" | "password" | "confirmPassword" | "withdrawPassword" | "confirmWithdrawPassword" | "emailCode", string>>>({});
   const [pwVisible, setPwVisible] = useState<Record<string, boolean>>({});
   const [registerStep, setRegisterStep] = useState<1 | 2>(1);
+  const [loginMethod, setLoginMethod] = useState<"password" | "code">("password");
+  const [codeSending, setCodeSending] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [codeCountdown, setCodeCountdown] = useState(0);
   const [authChecked, setAuthChecked] = useState(false);
   const loadingRef = useRef(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -447,18 +451,25 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
     pushMobileUrl(tabPath(next, currentSymbol));
   }
 
-  function validateAuth(stage: "login" | "register-1" | "register-2") {
+  function validateAuth(stage: "login-password" | "login-code" | "register-1" | "register-2") {
     const errs: typeof fieldErrors = {};
-    if (stage === "login" || stage === "register-1") {
+    if (stage === "login-password" || stage === "register-1") {
       const email = authForm.email.trim();
       if (!email) errs.email = "Email is required";
       else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = "Invalid email format";
       if (!authForm.password) errs.password = "Password is required";
       else if (authForm.password.length < 6) errs.password = "Password must be at least 6 characters";
     }
+    if (stage === "login-code") {
+      const email = authForm.email.trim();
+      if (!email) errs.email = "Email is required";
+      else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = "Invalid email format";
+      if (!authForm.emailCode || authForm.emailCode.length !== 6) errs.emailCode = "Enter the 6-digit verification code";
+    }
     if (stage === "register-1") {
       if (!authForm.confirmPassword) errs.confirmPassword = "Please confirm your password";
       else if (authForm.password !== authForm.confirmPassword) errs.confirmPassword = "Passwords do not match";
+      if (!authForm.emailCode || authForm.emailCode.length !== 6) errs.emailCode = "Enter the 6-digit verification code";
     }
     if (stage === "register-2") {
       if (!authForm.withdrawPassword) errs.withdrawPassword = "Withdrawal password is required";
@@ -483,20 +494,68 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
     setRegisterStep(1);
   }
 
+  async function sendCode(purpose: "register" | "login") {
+    setAuthError("");
+    setFieldErrors({});
+    const email = authForm.email.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setFieldErrors({ email: "Enter a valid email address" });
+      return;
+    }
+    setCodeSending(true);
+    try {
+      const res = await fetch("/api/auth/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, purpose })
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        return setAuthError(data.error || "Failed to send code");
+      }
+      setCodeSent(true);
+      setCodeCountdown(60);
+      const timer = setInterval(() => {
+        setCodeCountdown((prev) => {
+          if (prev <= 1) { clearInterval(timer); return 0; }
+          return prev - 1;
+        });
+      }, 1000);
+    } finally {
+      setCodeSending(false);
+    }
+  }
+
   async function login() {
     setAuthError("");
-    const errs = validateAuth("login");
-    setFieldErrors(errs);
-    if (Object.keys(errs).length) return setAuthError("Please check the highlighted fields.");
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: authForm.email, password: authForm.password })
-    });
-    if (!res.ok) {
-      const message = (await res.json()).error || "Email or password is incorrect";
-      setFieldErrors({ email: " ", password: message });
-      return setAuthError(message);
+    if (loginMethod === "password") {
+      const errs = validateAuth("login-password");
+      setFieldErrors(errs);
+      if (Object.keys(errs).length) return setAuthError("Please check the highlighted fields.");
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authForm.email, password: authForm.password })
+      });
+      if (!res.ok) {
+        const message = (await res.json()).error || "Email or password is incorrect";
+        setFieldErrors({ email: " ", password: message });
+        return setAuthError(message);
+      }
+    } else {
+      const errs = validateAuth("login-code");
+      setFieldErrors(errs);
+      if (Object.keys(errs).length) return setAuthError("Please check the highlighted fields.");
+      const res = await fetch("/api/auth/email-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authForm.email, code: authForm.emailCode })
+      });
+      if (!res.ok) {
+        const message = (await res.json()).error || "Invalid or expired code";
+        setFieldErrors({ emailCode: message });
+        return setAuthError(message);
+      }
     }
     await load();
     router.push("/markets");
@@ -518,7 +577,8 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
         withdrawalPassword: authForm.withdrawPassword,
         confirmWithdrawalPassword: authForm.confirmWithdrawPassword,
         nickname: authForm.name,
-        inviteCode: authForm.invite
+        inviteCode: authForm.invite,
+        emailCode: authForm.emailCode
       })
     });
     if (!res.ok) {
@@ -602,7 +662,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   }, [markets, marketQuery, marketSort, tickers]);
 
   if (!authChecked) return <BootScreen />;
-  if (!user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} />;
+  if (!user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); setLoginMethod("password"); setCodeSent(false); setCodeCountdown(0); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} loginMethod={loginMethod} setLoginMethod={(m) => { setLoginMethod(m); setAuthError(""); setFieldErrors({}); }} sendCode={sendCode} codeSending={codeSending} codeSent={codeSent} codeCountdown={codeCountdown} />;
 
   return (
     <main className="mobile-shell">
@@ -673,7 +733,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   );
 }
 
-type AuthFieldKey = "email" | "password" | "confirmPassword" | "withdrawPassword" | "confirmWithdrawPassword";
+type AuthFieldKey = "email" | "password" | "confirmPassword" | "withdrawPassword" | "confirmWithdrawPassword" | "emailCode";
 
 function AuthField({ id, label, type, value, onChange, icon, error, optional, placeholder, autoComplete, canToggle, visible, onToggleVisible }: {
   id: string;
@@ -711,11 +771,11 @@ function AuthField({ id, label, type, value, onChange, icon, error, optional, pl
   );
 }
 
-function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError, pwVisible, togglePw, error, login, register, registerStep, goNextStep, goPrevStep, support }: {
+function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError, pwVisible, togglePw, error, login, register, registerStep, goNextStep, goPrevStep, support, loginMethod, setLoginMethod, sendCode, codeSending, codeSent, codeCountdown }: {
   mode: "login" | "register";
   setMode: (mode: "login" | "register") => void;
-  form: { email: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string };
-  setForm: (form: { email: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string }) => void;
+  form: { email: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string; emailCode: string };
+  setForm: (form: { email: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string; emailCode: string }) => void;
   fieldErrors: Partial<Record<AuthFieldKey, string>>;
   clearFieldError: (k: AuthFieldKey) => void;
   pwVisible: Record<string, boolean>;
@@ -727,6 +787,12 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
   goNextStep: () => void;
   goPrevStep: () => void;
   support: { telegram: string; whatsapp: string };
+  loginMethod: "password" | "code";
+  setLoginMethod: (m: "password" | "code") => void;
+  sendCode: (purpose: "register" | "login") => void;
+  codeSending: boolean;
+  codeSent: boolean;
+  codeCountdown: number;
 }) {
   const updateField = <K extends keyof typeof form>(key: K, value: typeof form[K], errKey?: AuthFieldKey) => {
     setForm({ ...form, [key]: value });
@@ -759,6 +825,12 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
         </div>
         <form className="auth-card" onSubmit={onSubmit}>
           {error && <div className="auth-alert" role="alert"><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
+          {mode === "login" && (
+            <div className="auth-method-tabs">
+              <button type="button" className={`auth-method-tab${loginMethod === "password" ? " active" : ""}`} onClick={() => setLoginMethod("password")}>Password</button>
+              <button type="button" className={`auth-method-tab${loginMethod === "code" ? " active" : ""}`} onClick={() => setLoginMethod("code")}>Email Code</button>
+            </div>
+          )}
           {(mode === "login" || (mode === "register" && registerStep === 1)) && (
             <AuthField
               id="auth-email"
@@ -784,7 +856,21 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
               placeholder="Enter your nickname"
             />
           )}
-          {(mode === "login" || (mode === "register" && registerStep === 1)) && (
+          {/* Email verification code — register step 1 or login code mode */}
+          {(mode === "login" && loginMethod === "code") || (mode === "register" && registerStep === 1) ? (
+            <div className={`auth-field${fieldErrors.emailCode ? " has-error" : ""}`}>
+              <div className="auth-field-label"><label htmlFor="auth-code">Verification Code</label></div>
+              <div className={`auth-input-wrap${fieldErrors.emailCode ? " error" : ""}`} style={{ display: "flex", gap: 8 }}>
+                <span className="auth-input-icon" aria-hidden="true"><ShieldCheck size={18} /></span>
+                <input id="auth-code" type="text" inputMode="numeric" maxLength={6} autoComplete="one-time-code" placeholder="Enter 6-digit code" value={form.emailCode} onChange={(e) => updateField("emailCode", e.target.value.replace(/\D/g, ""), "emailCode")} style={{ flex: 1 }} />
+                <button type="button" className="auth-code-send-btn" disabled={codeSending || codeCountdown > 0} onClick={() => sendCode(mode === "login" ? "login" : "register")}>
+                  {codeSending ? "Sending..." : codeCountdown > 0 ? `${codeCountdown}s` : codeSent ? "Resend" : "Send Code"}
+                </button>
+              </div>
+              {fieldErrors.emailCode && <p className="auth-field-error">{fieldErrors.emailCode}</p>}
+            </div>
+          ) : null}
+          {(mode === "login" && loginMethod === "password") || (mode === "register" && registerStep === 1) ? (
             <div className={`auth-field${fieldErrors.password ? " has-error" : ""}`}>
               <div className="auth-field-label">
                 <label htmlFor="auth-password">Password</label>
@@ -799,7 +885,7 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
               </div>
               {fieldErrors.password && <p className="auth-field-error">{fieldErrors.password}</p>}
             </div>
-          )}
+          ) : null}
           {mode === "register" && registerStep === 1 && (
             <AuthField
               id="auth-confirm-password"
