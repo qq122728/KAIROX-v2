@@ -512,6 +512,7 @@ function initialize(database: DatabaseSync) {
   `);
 
   database.exec("CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_verification_codes(email, created_at);");
+  database.exec("CREATE INDEX IF NOT EXISTS idx_support_messages_user_created ON support_messages(user_id, created_at);");
 
   addColumn(database, "users", "email", "TEXT");
   addColumn(database, "users", "public_uid", "TEXT");
