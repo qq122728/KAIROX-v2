@@ -3738,6 +3738,7 @@ function SupportChatPage() {
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastMsgIdRef = useRef<number>(0);
@@ -3812,10 +3813,18 @@ function SupportChatPage() {
   }, []);
 
   useEffect(() => {
+    if (!shouldStickRef.current) return;
     const el = scrollerRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  function scrollToBottom() {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    shouldStickRef.current = true;
+  }
 
   async function doSend() {
     const text = draft.trim();
@@ -3834,6 +3843,7 @@ function SupportChatPage() {
         return;
       }
       setDraft("");
+      scrollToBottom();
       if (data.message) {
         setMessages((prev) => [
           ...prev,
@@ -3961,99 +3971,18 @@ function SupportChatPage() {
   return (
     <div className="stack-page chat-stack">
       {error && <div className="auth-alert" role="alert" style={{ margin: "8px 16px 0" }}><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
-      <div className="chat-scroller" ref={scrollerRef}>
+      <div className="chat-scroller" ref={scrollerRef}
+        onScroll={() => {
+          const el = scrollerRef.current;
+          if (!el) return;
+          shouldStickRef.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80;
+        }}
+      >
         {!loaded && <div style={{ textAlign: "center", padding: 32, color: "#6e88a4" }}>Loading messages...</div>}
         {loaded && messages.length === 0 && (
           <div style={{ textAlign: "center", padding: 32 }}>
             <div style={{ color: "#e0eaf5", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Hello! How can we help you today?</div>
             <div style={{ color: "#6e88a4", fontSize: 13 }}>Send a message and our support team will respond shortly.</div>
-          </div>
-        )}
-        {fiatStatus && (
-          <div className="fiat-status-banner" style={{
-            margin: "8px 16px", padding: "10px 14px", borderRadius: 10,
-            background: `rgba(${fiatStatus.color === "#B8860B" ? "184,134,11" : fiatStatus.color === "#2563FF" ? "37,99,255" : fiatStatus.color === "#16A34A" ? "22,163,74" : "220,38,38"}, 0.1)`,
-            border: `1px solid ${fiatStatus.color}33`,
-            color: fiatStatus.color, fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 8,
-          }}>
-            <Banknote size={16} />
-            <span>{fiatStatus.text}</span>
-            {fiatDeposit?.status === "bank_sent" && !showSubmitForm && (
-              <button type="button" onClick={() => setShowSubmitForm(true)} style={{
-                marginLeft: "auto", padding: "6px 14px", borderRadius: 8, border: `1px solid ${fiatStatus.color}`,
-                background: "transparent", color: fiatStatus.color, fontSize: 12, cursor: "pointer", fontWeight: 600,
-              }}>
-                Submit Transfer Info
-              </button>
-            )}
-          </div>
-        )}
-        {showSubmitForm && fiatDeposit?.status === "bank_sent" && (
-          <div style={{ margin: "8px 16px", padding: "12px 14px", borderRadius: 10, background: "rgba(37,99,255,0.08)", border: "1px solid rgba(37,99,255,0.2)" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "#2563FF", marginBottom: 10 }}>Submit Transfer Info</div>
-            <input
-              type="number" placeholder={`Amount in ${fiatDeposit.currency}`}
-              value={submitForm.amountFiat}
-              onChange={(e) => setSubmitForm((s) => ({ ...s, amountFiat: e.target.value }))}
-              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 8 }}
-            />
-            {/* Locked rate + estimate */}
-            {fiatDeposit?.final_rate ? (
-              <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", fontSize: 11 }}>
-                <div style={{ color: "#6e88a4", marginBottom: 2 }}>Locked rate</div>
-                <div style={{ color: "#c0d0e0", fontWeight: 600, marginBottom: 4 }}>
-                  1 {fiatDeposit.currency || "?"} ≈ {Number(fiatDeposit.final_rate).toFixed(4)} USDT
-                </div>
-                {(() => {
-                  const amt = Number(submitForm.amountFiat);
-                  const fr = Number(fiatDeposit.final_rate);
-                  if (amt > 0 && fr > 0) {
-                    const est = (amt * fr).toFixed(2);
-                    return <div style={{ color: "#22C55E", fontWeight: 600, marginBottom: 3 }}>≈ {est} USDT estimated</div>;
-                  }
-                  return null;
-                })()}
-                <div style={{ color: "#445566", fontSize: 10 }}>Final credited amount may be adjusted by admin after review.</div>
-              </div>
-            ) : null}
-            <input
-              type="text" placeholder="Transfer reference (optional)"
-              value={submitForm.transferReference}
-              onChange={(e) => setSubmitForm((s) => ({ ...s, transferReference: e.target.value }))}
-              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 8 }}
-            />
-            <input
-              type="text" placeholder="Remark (optional)"
-              value={submitForm.remark}
-              onChange={(e) => setSubmitForm((s) => ({ ...s, remark: e.target.value }))}
-              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 10 }}
-            />
-            {/* Proof upload */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 11, color: "#8899B0", marginBottom: 4 }}>Upload transfer proof</div>
-              <input type="file" accept="image/jpeg,image/png,image/webp" id="fiat-proof-input" style={{ display: "none" }} onChange={(e) => handleProofPick(e.target.files?.[0])} />
-              {proof ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
-                  {proofPreview && <img src={proofPreview} alt="Proof preview" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} />}
-                  <span style={{ flex: 1, fontSize: 12, color: "#c0cde0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proof.name}</span>
-                  <button type="button" onClick={clearProof} style={{ padding: "2px 8px", borderRadius: 4, background: "rgba(239,68,68,0.15)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer", fontSize: 11 }}>Remove</button>
-                </div>
-              ) : (
-                <label htmlFor="fiat-proof-input" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "14px", borderRadius: 8, border: "1px dashed rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.02)", cursor: "pointer", color: "#6e88a4", fontSize: 12 }}>
-                  <Upload size={16} strokeWidth={1.6} />
-                  Tap to upload screenshot
-                </label>
-              )}
-              <div style={{ fontSize: 10, color: "#445566", marginTop: 3 }}>JPG, PNG or WEBP, max 5MB</div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button type="button" onClick={doSubmitTransfer} disabled={!submitForm.amountFiat || submitting} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#2563FF", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (!submitForm.amountFiat || submitting) ? 0.5 : 1 }}>
-                {submitting ? "Submitting..." : "Submit"}
-              </button>
-              <button type="button" onClick={() => { setShowSubmitForm(false); setSubmitForm({ amountFiat: "", transferReference: "", remark: "" }); }} style={{ padding: "8px 16px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", fontSize: 14, cursor: "pointer" }}>
-                Cancel
-              </button>
-            </div>
           </div>
         )}
         <div className="chat-day-pill">Today</div>
@@ -4068,6 +3997,93 @@ function SupportChatPage() {
           </div>
         ))}
       </div>
+
+      {/* Fiat deposit action panel */}
+      {fiatStatus && (
+        <div className="fiat-status-banner" style={{
+          margin: "8px 16px", padding: "10px 14px", borderRadius: 10,
+          background: `rgba(${fiatStatus.color === "#B8860B" ? "184,134,11" : fiatStatus.color === "#2563FF" ? "37,99,255" : fiatStatus.color === "#16A34A" ? "22,163,74" : "220,38,38"}, 0.1)`,
+          border: `1px solid ${fiatStatus.color}33`,
+          color: fiatStatus.color, fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <Banknote size={16} />
+          <span>{fiatStatus.text}</span>
+          {fiatDeposit?.status === "bank_sent" && !showSubmitForm && (
+            <button type="button" onClick={() => setShowSubmitForm(true)} style={{
+              marginLeft: "auto", padding: "6px 14px", borderRadius: 8, border: `1px solid ${fiatStatus.color}`,
+              background: "transparent", color: fiatStatus.color, fontSize: 12, cursor: "pointer", fontWeight: 600,
+            }}>
+              Submit Transfer Info
+            </button>
+          )}
+        </div>
+      )}
+      {showSubmitForm && fiatDeposit?.status === "bank_sent" && (
+        <div style={{ margin: "0 16px 8px", padding: "12px 14px", borderRadius: 10, background: "rgba(37,99,255,0.08)", border: "1px solid rgba(37,99,255,0.2)" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#2563FF", marginBottom: 10 }}>Submit Transfer Info</div>
+          <input
+            type="number" placeholder={`Amount in ${fiatDeposit.currency}`}
+            value={submitForm.amountFiat}
+            onChange={(e) => setSubmitForm((s) => ({ ...s, amountFiat: e.target.value }))}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 8 }}
+          />
+          {fiatDeposit?.final_rate ? (
+            <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", fontSize: 11 }}>
+              <div style={{ color: "#6e88a4", marginBottom: 2 }}>Locked rate</div>
+              <div style={{ color: "#c0d0e0", fontWeight: 600, marginBottom: 4 }}>
+                1 {fiatDeposit.currency || "?"} ≈ {Number(fiatDeposit.final_rate).toFixed(4)} USDT
+              </div>
+              {(() => {
+                const amt = Number(submitForm.amountFiat);
+                const fr = Number(fiatDeposit.final_rate);
+                if (amt > 0 && fr > 0) {
+                  const est = (amt * fr).toFixed(2);
+                  return <div style={{ color: "#22C55E", fontWeight: 600, marginBottom: 3 }}>≈ {est} USDT estimated</div>;
+                }
+                return null;
+              })()}
+              <div style={{ color: "#445566", fontSize: 10 }}>Final credited amount may be adjusted by admin after review.</div>
+            </div>
+          ) : null}
+          <input
+            type="text" placeholder="Transfer reference (optional)"
+            value={submitForm.transferReference}
+            onChange={(e) => setSubmitForm((s) => ({ ...s, transferReference: e.target.value }))}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 8 }}
+          />
+          <input
+            type="text" placeholder="Remark (optional)"
+            value={submitForm.remark}
+            onChange={(e) => setSubmitForm((s) => ({ ...s, remark: e.target.value }))}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 10 }}
+          />
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "#8899B0", marginBottom: 4 }}>Upload transfer proof</div>
+            <input type="file" accept="image/jpeg,image/png,image/webp" id="fiat-proof-input" style={{ display: "none" }} onChange={(e) => handleProofPick(e.target.files?.[0])} />
+            {proof ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                {proofPreview && <img src={proofPreview} alt="Proof preview" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} />}
+                <span style={{ flex: 1, fontSize: 12, color: "#c0cde0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proof.name}</span>
+                <button type="button" onClick={clearProof} style={{ padding: "2px 8px", borderRadius: 4, background: "rgba(239,68,68,0.15)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer", fontSize: 11 }}>Remove</button>
+              </div>
+            ) : (
+              <label htmlFor="fiat-proof-input" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "14px", borderRadius: 8, border: "1px dashed rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.02)", cursor: "pointer", color: "#6e88a4", fontSize: 12 }}>
+                <Upload size={16} strokeWidth={1.6} />
+                Tap to upload screenshot
+              </label>
+            )}
+            <div style={{ fontSize: 10, color: "#445566", marginTop: 3 }}>JPG, PNG or WEBP, max 5MB</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={doSubmitTransfer} disabled={!submitForm.amountFiat || submitting} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#2563FF", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (!submitForm.amountFiat || submitting) ? 0.5 : 1 }}>
+              {submitting ? "Submitting..." : "Submit"}
+            </button>
+            <button type="button" onClick={() => { setShowSubmitForm(false); setSubmitForm({ amountFiat: "", transferReference: "", remark: "" }); }} style={{ padding: "8px 16px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", fontSize: 14, cursor: "pointer" }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="chat-input-bar">
         <button type="button" className="chat-attach" disabled aria-label="Attachments coming soon">

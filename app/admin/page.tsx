@@ -3359,6 +3359,7 @@ function SupportChatAdmin() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickRef = useRef(true);
 
   // Fiat deposit state for selected user
   const [fiatDeposits, setFiatDeposits] = useState<Array<Record<string, unknown>>>([]);
@@ -3421,6 +3422,7 @@ function SupportChatAdmin() {
   }, [selectedUserId]);
 
   useEffect(() => {
+    if (!shouldStickRef.current) return;
     const el = scrollerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
@@ -3504,7 +3506,13 @@ function SupportChatAdmin() {
             <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line, rgba(255,255,255,0.06))", fontWeight: 700, fontSize: 14 }}>
               {conversations.find((c) => c.userId === selectedUserId)?.username || `用户 #${selectedUserId}`}
             </div>
-            <div ref={scrollerRef} style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div ref={scrollerRef}
+              onScroll={() => {
+                const el = scrollerRef.current;
+                if (!el) return;
+                shouldStickRef.current = (el.scrollHeight - el.scrollTop - el.clientHeight) < 80;
+              }}
+              style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
               {loading && <div style={{ textAlign: "center", color: "#6e88a4" }}>加载中...</div>}
               {!loading && messages.length === 0 && <div style={{ textAlign: "center", color: "#6e88a4", padding: 20 }}>暂无消息</div>}
               {/* Fiat Deposit Panel */}
