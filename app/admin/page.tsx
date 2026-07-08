@@ -3515,6 +3515,20 @@ function SupportChatAdmin() {
               style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
               {loading && <div style={{ textAlign: "center", color: "#6e88a4" }}>加载中...</div>}
               {!loading && messages.length === 0 && <div style={{ textAlign: "center", color: "#6e88a4", padding: 20 }}>暂无消息</div>}
+              {messages.map((m) => (
+                <div key={m.id} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                  <div style={{
+                    maxWidth: "72%", padding: "8px 12px", borderRadius: 12,
+                    background: m.role === "user" ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.06)",
+                    color: m.role === "user" ? "#e0eaf5" : "#c0d0e0",
+                    fontSize: 13, lineHeight: 1.45, wordBreak: "break-word",
+                  }}>
+                    <div>{m.text}</div>
+                    <div style={{ fontSize: 10, color: "#556", marginTop: 3 }}>{formatTime(m.createdAt)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
               {/* Fiat Deposit Panel */}
               {fiatDeposits.length > 0 && (
                 <div style={{ marginBottom: 8 }}>
@@ -3675,20 +3689,6 @@ function SupportChatAdmin() {
                   </div>
                 </div>
               )}
-              {messages.map((m) => (
-                <div key={m.id} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-                  <div style={{
-                    maxWidth: "72%", padding: "8px 12px", borderRadius: 12,
-                    background: m.role === "user" ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.06)",
-                    color: m.role === "user" ? "#e0eaf5" : "#c0d0e0",
-                    fontSize: 13, lineHeight: 1.45, wordBreak: "break-word",
-                  }}>
-                    <div>{m.text}</div>
-                    <div style={{ fontSize: 10, color: "#556", marginTop: 3 }}>{formatTime(m.createdAt)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
             <div style={{ padding: "10px 14px", borderTop: "1px solid var(--line, rgba(255,255,255,0.06))", display: "flex", gap: 8 }}>
               <input
                 type="text"
