@@ -8,12 +8,13 @@ import {
   LayoutGrid, BarChart3, User as UserIcon,
   Star, BookOpen, LogOut,
   MessageCircle, Send, Paperclip, MoreHorizontal,
-  Home, ClipboardList, Trophy, X
+  Home, ClipboardList, Trophy, X, Banknote, CheckCircle2
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MarketChartPanel } from "./MarketData";
 import { connectRealtime } from "./realtime-client";
 import { displayUid } from "@/lib/uid";
+import { compressImage } from "@/app/lib/compressImage";
 
 type Tab = "home" | "markets" | "trade" | "orders" | "account";
 type StackPage =
@@ -35,6 +36,7 @@ type StackPage =
   | { id: "privacy"; title: "Privacy Policy" }
   | { id: "support"; title: "Support" }
   | { id: "support-chat"; title: "Online Support" }
+  | { id: "fiat-deposit"; title: "Fiat Deposit" }
   | { id: "asset-overview"; title: "Assets" };
 
 type Market = { id: number; symbol: string; price: number; max_leverage?: number; is_active: number };
@@ -2221,6 +2223,15 @@ function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: Stack
         </button>
       </div>
 
+      <button type="button" className="fiat-entry-card" onClick={() => push({ id: "fiat-deposit", title: "Fiat Deposit" })}>
+        <span className="fiat-entry-icon"><Banknote size={20} strokeWidth={1.8} /></span>
+        <span className="fiat-entry-body">
+          <b>Fiat Deposit</b>
+          <em>Bank transfer · USD / MYR / GBP / EUR / JPY / TWD</em>
+        </span>
+        <ChevronRight size={18} className="fiat-entry-arrow" />
+      </button>
+
       <section className="asset-list-card">
         {rows.map((asset) => (
           <button type="button" className="asset-row" key={asset.asset}>
@@ -2452,6 +2463,7 @@ function StackContent(props: { page: StackPage; user: User; assets: AssetData | 
   if (page.id === "kyc") return <KycPage kycStatus={props.kycStatus} rejectedReason={props.user.kyc_rejected_reason} setKycStatus={props.setKycStatus} done={() => { showToast("ok", "KYC submitted"); clearStack(); }} />;
   if (page.id === "support") return <SupportPage support={props.support} push={push} />;
   if (page.id === "support-chat") return <SupportChatPage />;
+  if (page.id === "fiat-deposit") return <FiatDepositScreen push={push} showToast={showToast} />;
   return <StaticPage page={page} settings={props.settings} />;
 }
 
@@ -2732,12 +2744,12 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
       showToast("err", "Copy failed");
     }
   }
-  function pickProof(file: File | undefined) {
+  async function pickProof(file: File | undefined) {
     setError("");
     if (!file) return setProof(null);
     if (!file.type.startsWith("image/")) return setError("Proof must be an image file");
-    if (file.size > 2_000_000) return setError("Proof image must be smaller than 2MB");
-    setProof(file);
+    const compressed = await compressImage(file);
+    setProof(compressed);
   }
   async function submit() {
     setError("");
@@ -3480,7 +3492,10 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
       <div className="kyc-field">
         <label className="kyc-label">Front Image</label>
         <label className="kyc-upload">
-          <input type="file" accept="image/*" onChange={(e) => setFront(e.target.files?.[0] || null)} />
+          <input type="file" accept="image/*" onChange={async (e) => {
+            const f = e.target.files?.[0];
+            if (f) setFront(await compressImage(f));
+          }} />
           <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
           <span className="kyc-upload-main">{front ? front.name : "Tap to upload front image"}</span>
           <span className="kyc-upload-sub">JPG, PNG up to 10MB</span>
@@ -3490,7 +3505,10 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
       <div className="kyc-field">
         <label className="kyc-label">Back Image</label>
         <label className="kyc-upload">
-          <input type="file" accept="image/*" onChange={(e) => setBack(e.target.files?.[0] || null)} />
+          <input type="file" accept="image/*" onChange={async (e) => {
+            const f = e.target.files?.[0];
+            if (f) setBack(await compressImage(f));
+          }} />
           <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
           <span className="kyc-upload-main">{back ? back.name : "Tap to upload back image"}</span>
           <span className="kyc-upload-sub">JPG, PNG up to 10MB</span>
@@ -3578,7 +3596,7 @@ function SupportPage({ support, push }: { support: { telegram: string; whatsapp:
   );
 }
 
-type ChatMessage = { id: number | string; role: "agent" | "user"; text: string; time: string };
+type ChatMessage = { id: number | string; role: "agent" | "user"; text: string; time: string; messageType?: string; metadata?: Record<string, unknown> | null };
 
 function formatChatTime(date: Date = new Date()) {
   return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
@@ -3616,6 +3634,102 @@ function useVisualViewport() {
   }, []);
 }
 
+const FIAT_CURRENCIES = [
+  { code: "USD", name: "US Dollar", flag: "🇺🇸" },
+  { code: "MYR", name: "Malaysian Ringgit", flag: "🇲🇾" },
+  { code: "GBP", name: "British Pound", flag: "🇬🇧" },
+  { code: "EUR", name: "Euro", flag: "🇪🇺" },
+  { code: "JPY", name: "Japanese Yen", flag: "🇯🇵" },
+  { code: "TWD", name: "Taiwan Dollar", flag: "🇹🇼" },
+];
+
+function FiatDepositScreen({ push, showToast }: { push: (p: StackPage) => void; showToast?: (type: "ok" | "err" | "info", text: string) => void }) {
+  const [currency, setCurrency] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submitRequest() {
+    if (!currency) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/fiat-deposit/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currency }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Request failed");
+        return;
+      }
+      if (data.deposit?.id) {
+        showToast?.("info", "Fiat deposit request submitted");
+        push({ id: "support-chat", title: "Online Support" });
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="stack-page fiat-deposit-page">
+      <div className="fiat-deposit-container">
+        <div className="fiat-deposit-notice">
+          <Info size={14} strokeWidth={1.8} />
+          <span>Bank details are provided by support after review.</span>
+        </div>
+
+        {error && <div className="auth-alert" role="alert" style={{ marginBottom: 12 }}><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
+
+        {FIAT_CURRENCIES.map((c) => {
+          const selected = currency === c.code;
+          return (
+            <button
+              type="button"
+              key={c.code}
+              className={`fiat-currency-card${selected ? " fiat-currency-card--selected" : ""}`}
+              onClick={() => setCurrency(c.code)}
+            >
+              <span className="fiat-currency-flag">{c.flag}</span>
+              <span className="fiat-currency-body">
+                <b>{c.code}</b>
+                <em>{c.name}</em>
+              </span>
+              {selected ? <CheckCircle2 size={20} className="fiat-currency-check" /> : <ChevronRight size={18} className="fiat-currency-arrow" />}
+            </button>
+          );
+        })}
+
+        <button
+          type="button"
+          className={`fiat-submit-btn${currency && !loading ? " fiat-submit-btn--ready" : ""}`}
+          disabled={!currency || loading}
+          onClick={submitRequest}
+        >
+          {loading ? "Submitting..." : "Submit Request"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function safeJsonParse(value: string | null | undefined): Record<string, unknown> | null {
+  if (!value) return null;
+  try { return JSON.parse(value) as Record<string, unknown>; } catch { return null; }
+}
+
+type FiatDeposit = {
+  id: number; user_id: number; currency: string; status: string;
+  reference_code?: string | null; bank_snapshot_json?: string | null;
+  amount_fiat?: number | null; exchange_rate?: number | null;
+  rate_spread?: number | null; final_rate?: number | null;
+  estimated_usdt?: number | null; confirmed_usdt?: number | null;
+  admin_remark?: string | null; created_at?: string;
+};
+
 function SupportChatPage() {
   useVisualViewport();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -3628,19 +3742,36 @@ function SupportChatPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastMsgIdRef = useRef<number>(0);
 
+  // Fiat deposit state
+  const [fiatDeposit, setFiatDeposit] = useState<FiatDeposit | null>(null);
+  const [showSubmitForm, setShowSubmitForm] = useState(false);
+  const [submitForm, setSubmitForm] = useState({ amountFiat: "", transferReference: "", remark: "" });
+  const [submitting, setSubmitting] = useState(false);
+
+  // Load fiat deposit
+  const loadFiatDeposit = () => {
+    fetch("/api/fiat-deposit/current")
+      .then((r) => r.json())
+      .then((d) => { setFiatDeposit(d.deposit || null); })
+      .catch(() => {});
+  };
+
   // Load history
   useEffect(() => {
     let active = true;
+    loadFiatDeposit();
     fetch("/api/support/messages")
       .then((r) => r.json())
       .then((data) => {
         if (!active) return;
         if (data.messages?.length) {
-          const msgs: ChatMessage[] = data.messages.map((m: { id: number; role: string; text: string; createdAt: string }) => ({
+          const msgs: ChatMessage[] = data.messages.map((m: { id: number; role: string; text: string; createdAt: string; message_type?: string; metadata_json?: string | null }) => ({
             id: m.id,
             role: m.role as "agent" | "user",
             text: m.text,
             time: formatChatTime(new Date(m.createdAt.replace(" ", "T") + "Z")),
+            messageType: m.message_type || "text",
+            metadata: m.metadata_json ? safeJsonParse(m.metadata_json) : null,
           }));
           setMessages(msgs);
           const last = msgs[msgs.length - 1];
@@ -3652,15 +3783,18 @@ function SupportChatPage() {
 
     // Poll every 5 seconds
     pollRef.current = setInterval(() => {
+      loadFiatDeposit();
       fetch("/api/support/messages")
         .then((r) => r.json())
         .then((data) => {
           if (!data.messages) return;
-          const newMsgs: ChatMessage[] = data.messages.map((m: { id: number; role: string; text: string; createdAt: string }) => ({
+          const newMsgs: ChatMessage[] = data.messages.map((m: { id: number; role: string; text: string; createdAt: string; message_type?: string; metadata_json?: string | null }) => ({
             id: m.id,
             role: m.role as "agent" | "user",
             text: m.text,
             time: formatChatTime(new Date(m.createdAt.replace(" ", "T") + "Z")),
+            messageType: m.message_type || "text",
+            metadata: m.metadata_json ? safeJsonParse(m.metadata_json) : null,
           }));
           setMessages(newMsgs);
           const last = newMsgs[newMsgs.length - 1];
@@ -3698,7 +3832,6 @@ function SupportChatPage() {
         return;
       }
       setDraft("");
-      // Optimistic: add to messages immediately
       if (data.message) {
         setMessages((prev) => [
           ...prev,
@@ -3709,6 +3842,96 @@ function SupportChatPage() {
       setError("Network error. Please try again.");
     } finally {
       setSending(false);
+    }
+  }
+
+  async function doSubmitTransfer() {
+    const amountFiat = Number(submitForm.amountFiat);
+    if (!amountFiat || amountFiat <= 0 || !fiatDeposit) return;
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/fiat-deposit/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          depositId: fiatDeposit.id,
+          amountFiat,
+          transferReference: submitForm.transferReference || undefined,
+          remark: submitForm.remark || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to submit");
+        return;
+      }
+      setShowSubmitForm(false);
+      setSubmitForm({ amountFiat: "", transferReference: "", remark: "" });
+      loadFiatDeposit();
+    } catch {
+      setError("Network error");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const fiatStatusLabel = (status: string) => {
+    switch (status) {
+      case "requested": return { text: "Waiting for bank details...", color: "#B8860B" };
+      case "bank_sent": return { text: "Bank details sent. Please transfer and submit your info.", color: "#2563FF" };
+      case "submitted": return { text: "Transfer info submitted. Waiting for confirmation.", color: "#2563FF" };
+      case "confirmed": return { text: "Deposit confirmed!", color: "#16A34A" };
+      case "rejected": return { text: "Deposit rejected.", color: "#DC2626" };
+      default: return null;
+    }
+  };
+
+  const fiatStatus = fiatDeposit ? fiatStatusLabel(fiatDeposit.status) : null;
+
+  function renderFiatMessage(msg: ChatMessage) {
+    const meta = msg.metadata || {};
+    switch (msg.messageType) {
+      case "fiat_request":
+        return (
+          <div className="chat-bubble chat-bubble-user" style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.2)", color: "#e0eaf5" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🏦 Fiat Deposit Request</div>
+            <div style={{ fontSize: 12, color: "#8899B0" }}>Currency: {meta.currency as string || ""}</div>
+            <div style={{ fontSize: 12, color: "#8899B0" }}>Please wait for support to provide bank transfer details.</div>
+          </div>
+        );
+      case "fiat_bank":
+        return (
+          <div className="chat-bubble chat-bubble-agent" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.2)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#22C55E" }}>🏦 Bank Transfer Details</div>
+            <div style={{ fontSize: 12, lineHeight: 1.8, color: "#ccd6e0", whiteSpace: "pre-wrap" }}>{msg.text}</div>
+            {msg.text.indexOf("Bank:") >= 0 && (
+              <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(255,255,255,0.04)", borderRadius: 8, fontSize: 11, color: "#8899B0" }}>
+                Please include the reference code in your transfer remark. After payment, use Submit Transfer Info.
+              </div>
+            )}
+          </div>
+        );
+      case "fiat_transfer":
+        return (
+          <div className="chat-bubble chat-bubble-user" style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.2)", color: "#e0eaf5" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>📤 Transfer Info Submitted</div>
+            <div style={{ fontSize: 12, color: "#8899B0" }}>Amount: {meta.amountFiat as string || ""} {meta.currency as string || ""}</div>
+            {(() => { const v = Number(meta.estimatedUsdt); return v ? <div style={{ fontSize: 12, color: "#22C55E" }}>≈ {v.toFixed(2)} USDT</div> : null; })()}
+          </div>
+        );
+      case "fiat_status":
+        const isConfirmed = String(meta.status || "").toLowerCase() === "confirmed";
+        const isRejected = String(meta.status || "").toLowerCase() === "rejected";
+        return (
+          <div className="chat-bubble chat-bubble-agent" style={{
+            background: isConfirmed ? "rgba(34,197,94,0.08)" : isRejected ? "rgba(239,68,68,0.08)" : "rgba(100,116,139,0.08)",
+            border: `1px solid ${isConfirmed ? "rgba(34,197,94,0.2)" : isRejected ? "rgba(239,68,68,0.2)" : "rgba(100,116,139,0.2)"}`,
+          }}>
+            <div style={{ fontSize: 12, lineHeight: 1.7, color: "#ccd6e0", whiteSpace: "pre-wrap" }}>{msg.text}</div>
+          </div>
+        );
+      default:
+        return <div className={`chat-bubble chat-bubble-${msg.role}`}>{msg.text}</div>;
     }
   }
 
@@ -3723,6 +3946,56 @@ function SupportChatPage() {
             <div style={{ color: "#6e88a4", fontSize: 13 }}>Send a message and our support team will respond shortly.</div>
           </div>
         )}
+        {fiatStatus && (
+          <div className="fiat-status-banner" style={{
+            margin: "8px 16px", padding: "10px 14px", borderRadius: 10,
+            background: `rgba(${fiatStatus.color === "#B8860B" ? "184,134,11" : fiatStatus.color === "#2563FF" ? "37,99,255" : fiatStatus.color === "#16A34A" ? "22,163,74" : "220,38,38"}, 0.1)`,
+            border: `1px solid ${fiatStatus.color}33`,
+            color: fiatStatus.color, fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <Banknote size={16} />
+            <span>{fiatStatus.text}</span>
+            {fiatDeposit?.status === "bank_sent" && !showSubmitForm && (
+              <button type="button" onClick={() => setShowSubmitForm(true)} style={{
+                marginLeft: "auto", padding: "6px 14px", borderRadius: 8, border: `1px solid ${fiatStatus.color}`,
+                background: "transparent", color: fiatStatus.color, fontSize: 12, cursor: "pointer", fontWeight: 600,
+              }}>
+                Submit Transfer Info
+              </button>
+            )}
+          </div>
+        )}
+        {showSubmitForm && fiatDeposit?.status === "bank_sent" && (
+          <div style={{ margin: "8px 16px", padding: "12px 14px", borderRadius: 10, background: "rgba(37,99,255,0.08)", border: "1px solid rgba(37,99,255,0.2)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#2563FF", marginBottom: 10 }}>Submit Transfer Info</div>
+            <input
+              type="number" placeholder={`Amount in ${fiatDeposit.currency}`}
+              value={submitForm.amountFiat}
+              onChange={(e) => setSubmitForm((s) => ({ ...s, amountFiat: e.target.value }))}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 8 }}
+            />
+            <input
+              type="text" placeholder="Transfer reference (optional)"
+              value={submitForm.transferReference}
+              onChange={(e) => setSubmitForm((s) => ({ ...s, transferReference: e.target.value }))}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 8 }}
+            />
+            <input
+              type="text" placeholder="Remark (optional)"
+              value={submitForm.remark}
+              onChange={(e) => setSubmitForm((s) => ({ ...s, remark: e.target.value }))}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 10 }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button type="button" onClick={doSubmitTransfer} disabled={!submitForm.amountFiat || submitting} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#2563FF", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (!submitForm.amountFiat || submitting) ? 0.5 : 1 }}>
+                {submitting ? "Submitting..." : "Submit"}
+              </button>
+              <button type="button" onClick={() => { setShowSubmitForm(false); setSubmitForm({ amountFiat: "", transferReference: "", remark: "" }); }} style={{ padding: "8px 16px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", fontSize: 14, cursor: "pointer" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         <div className="chat-day-pill">Today</div>
         {messages.map((msg) => (
           <div key={msg.id} className={`chat-row chat-row-${msg.role}`}>
@@ -3730,7 +4003,7 @@ function SupportChatPage() {
             <div className="chat-bubble-wrap">
               {msg.role === "agent" && <div className="chat-bubble-meta"><b>Support Agent</b><small>{msg.time}</small></div>}
               {msg.role === "user" && <div className="chat-bubble-meta chat-bubble-meta-right"><small>{msg.time}</small></div>}
-              <div className={`chat-bubble chat-bubble-${msg.role}`}>{msg.text}</div>
+              {renderFiatMessage(msg)}
             </div>
           </div>
         ))}

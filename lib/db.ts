@@ -514,6 +514,83 @@ function initialize(database: DatabaseSync) {
   database.exec("CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_verification_codes(email, created_at);");
   database.exec("CREATE INDEX IF NOT EXISTS idx_support_messages_user_created ON support_messages(user_id, created_at);");
 
+  // Fiat deposit tables
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fiat_bank_accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      currency TEXT NOT NULL,
+      country_region TEXT,
+      bank_name TEXT NOT NULL,
+      account_holder TEXT NOT NULL,
+      account_number TEXT,
+      branch_name TEXT,
+      swift_code TEXT,
+      iban TEXT,
+      routing_number TEXT,
+      sort_code TEXT,
+      ach_routing_number TEXT,
+      wire_routing_number TEXT,
+      bank_code TEXT,
+      branch_code TEXT,
+      institution_number TEXT,
+      transit_number TEXT,
+      bsb_code TEXT,
+      fps_id TEXT,
+      paynow_id TEXT,
+      extra_json TEXT,
+      min_amount REAL,
+      max_amount REAL,
+      default_exchange_rate REAL,
+      default_rate_spread REAL,
+      is_active INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS fiat_deposits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      currency TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'requested' CHECK(status IN ('requested','bank_sent','submitted','confirmed','rejected')),
+      reference_code TEXT UNIQUE,
+      bank_account_id INTEGER,
+      bank_snapshot_json TEXT,
+      amount_fiat REAL,
+      exchange_rate REAL,
+      rate_spread REAL DEFAULT 0,
+      final_rate REAL,
+      estimated_usdt REAL,
+      confirmed_usdt REAL,
+      transfer_reference TEXT,
+      user_remark TEXT,
+      admin_remark TEXT,
+      request_message_id INTEGER,
+      bank_message_id INTEGER,
+      bank_admin_id INTEGER,
+      confirm_admin_id INTEGER,
+      reject_admin_id INTEGER,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      bank_sent_at TEXT,
+      submitted_at TEXT,
+      confirmed_at TEXT,
+      rejected_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (bank_account_id) REFERENCES fiat_bank_accounts(id),
+      FOREIGN KEY (bank_admin_id) REFERENCES users(id),
+      FOREIGN KEY (confirm_admin_id) REFERENCES users(id),
+      FOREIGN KEY (reject_admin_id) REFERENCES users(id)
+    )
+  `);
+  database.exec("CREATE INDEX IF NOT EXISTS idx_fiat_deposits_user_created ON fiat_deposits(user_id, created_at)");
+  database.exec("CREATE INDEX IF NOT EXISTS idx_fiat_deposits_status_created ON fiat_deposits(status, created_at)");
+  database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_fiat_deposits_ref_code ON fiat_deposits(reference_code) WHERE reference_code IS NOT NULL");
+  database.exec("CREATE INDEX IF NOT EXISTS idx_fiat_bank_accounts_currency_active ON fiat_bank_accounts(currency, is_active)");
+
+  addColumn(database, "support_messages", "message_type", "TEXT DEFAULT 'text'");
+  addColumn(database, "support_messages", "metadata_json", "TEXT");
   addColumn(database, "users", "email", "TEXT");
   addColumn(database, "users", "public_uid", "TEXT");
   addColumn(database, "users", "withdrawal_password_hash", "TEXT");

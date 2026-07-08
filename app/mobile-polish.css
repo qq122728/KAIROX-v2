@@ -8979,3 +8979,177 @@ a:focus-visible,
     font-size: 8.8px !important;
   }
 }
+
+/* ===== Fiat Deposit Entry Card (Assets page) ===== */
+.fiat-entry-card {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  width: calc(100% - 32px) !important;
+  margin: 12px auto 0 !important;
+  padding: 14px 16px !important;
+  height: 62px !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(255,255,255,0.075) !important;
+  background: rgba(255,255,255,0.035) !important;
+  cursor: pointer !important;
+  transition: border-color 0.2s, background 0.2s !important;
+}
+.fiat-entry-card:hover {
+  border-color: rgba(22,199,132,0.3) !important;
+  background: rgba(22,199,132,0.04) !important;
+}
+.fiat-entry-icon {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 10px !important;
+  background: rgba(22,199,132,0.1) !important;
+  color: #16C784 !important;
+  flex-shrink: 0 !important;
+}
+.fiat-entry-body {
+  flex: 1 !important;
+  text-align: left !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+.fiat-entry-body b {
+  color: var(--text-main) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+.fiat-entry-body em {
+  color: #8899B0 !important;
+  font-size: 12px !important;
+  font-style: normal !important;
+}
+.fiat-entry-arrow {
+  color: #556 !important;
+  flex-shrink: 0 !important;
+}
+
+/* ===== Fiat Deposit Page ===== */
+.fiat-deposit-page {
+  background: var(--bg) !important;
+}
+.fiat-deposit-container {
+  width: calc(100% - 32px) !important;
+  margin: 0 auto !important;
+  padding: 16px 0 !important;
+}
+
+/* Notice banner */
+.fiat-deposit-notice {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 10px 14px !important;
+  border-radius: 12px !important;
+  background: rgba(240,185,11,0.08) !important;
+  border: 1px solid rgba(240,185,11,0.16) !important;
+  color: #EAB308 !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+  margin-bottom: 14px !important;
+}
+.fiat-deposit-notice span {
+  flex: 1 !important;
+}
+
+/* Currency cards */
+.fiat-currency-card {
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+  width: 100% !important;
+  height: 74px !important;
+  padding: 0 16px !important;
+  border-radius: 16px !important;
+  border: 1px solid rgba(255,255,255,0.075) !important;
+  background: rgba(255,255,255,0.035) !important;
+  cursor: pointer !important;
+  margin-bottom: 10px !important;
+  transition: all 0.2s !important;
+  text-align: left !important;
+}
+.fiat-currency-card:hover {
+  border-color: rgba(22,199,132,0.25) !important;
+  background: rgba(22,199,132,0.04) !important;
+}
+.fiat-currency-card--selected {
+  border: 1px solid rgba(22,199,132,0.55) !important;
+  background: rgba(22,199,132,0.08) !important;
+}
+.fiat-currency-flag {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 50% !important;
+  background: rgba(255,255,255,0.06) !important;
+  font-size: 20px !important;
+  flex-shrink: 0 !important;
+  line-height: 1 !important;
+}
+.fiat-currency-body {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+.fiat-currency-body b {
+  color: var(--text-main) !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+}
+.fiat-currency-card--selected .fiat-currency-body b {
+  color: #16C784 !important;
+}
+.fiat-currency-body em {
+  color: #8899B0 !important;
+  font-size: 13px !important;
+  font-style: normal !important;
+}
+.fiat-currency-arrow {
+  color: #445566 !important;
+  flex-shrink: 0 !important;
+}
+.fiat-currency-check {
+  color: #16C784 !important;
+  flex-shrink: 0 !important;
+}
+
+/* Submit button */
+.fiat-submit-btn {
+  display: block !important;
+  width: 100% !important;
+  height: 50px !important;
+  margin-top: 6px !important;
+  border-radius: 15px !important;
+  border: none !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  cursor: default !important;
+  background: rgba(255,255,255,0.08) !important;
+  color: rgba(255,255,255,0.35) !important;
+  transition: all 0.25s !important;
+}
+.fiat-submit-btn--ready {
+  background: linear-gradient(135deg, #1E3A6E 0%, #0F2448 100%) !important;
+  color: #fff !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 12px rgba(22,199,132,0.12) !important;
+}
+.fiat-submit-btn--ready:hover {
+  opacity: 0.92 !important;
+}
+.fiat-submit-btn--ready:active {
+  opacity: 0.85 !important;
+  transform: scale(0.99) !important;
+}

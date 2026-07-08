@@ -93,7 +93,7 @@ type AdminData = {
   orders: Order[];
   withdrawals: Withdrawal[];
 };
-type TabId = "dashboard" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "admins" | "orders" | "markets" | "settings" | "support";
+type TabId = "dashboard" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "admins" | "orders" | "markets" | "settings" | "support" | "fiatDeposits" | "fiatBankAccounts";
 type ModalState =
   | { type: "funds"; user: User }
   | { type: "loginPassword"; user: User }
@@ -651,6 +651,7 @@ export default function AdminPage() {
         { id: "markets", label: "交易市场", icon: Activity },
         { id: "settings", label: "平台设置", icon: Settings2 },
         { id: "support", label: "客服消息", icon: MessageSquare },
+        { id: "fiatBankAccounts", label: "法币银行", icon: Landmark },
       ],
     },
   ];
@@ -666,6 +667,8 @@ export default function AdminPage() {
     markets: { title: "交易市场", description: "管理交易对与市场参数。" },
     settings: { title: "平台设置", description: "配置平台开关、提现说明与前台内容。" },
     support: { title: "客服消息", description: "查看用户咨询并回复。" },
+    fiatDeposits: { title: "法币入金", description: "管理法币入金申请与到账确认。" },
+    fiatBankAccounts: { title: "法币银行", description: "管理各币种银行账户信息。" },
   };
   const notificationSlot = (
     <div className="bell-wrap" ref={bellWrapRef}>
@@ -756,6 +759,8 @@ export default function AdminPage() {
             {tab === "markets" && <MarketsTab markets={data.markets} newMarket={newMarket} setNewMarket={setNewMarket} mutate={mutate} />}
             {tab === "settings" && <SettingsTab settings={settings} setSettings={updateSettingsDraft} markDirty={markSettingsDirty} saveSettings={saveSettingsDraft} />}
             {tab === "support" && <SupportChatAdmin />}
+            {tab === "fiatDeposits" && <FiatDepositsAdmin />}
+            {tab === "fiatBankAccounts" && <FiatBankAccountsAdmin />}
           </>
         )}
       </AdminLayout>
@@ -3110,6 +3115,242 @@ function SettingSwitch({ label, value, onToggle }: { label: string; value?: stri
   return <div className="ledger-row"><div><b>{label}</b><br /><span className="muted">{enabled ? "当前开启" : "当前关闭"}</span></div><Toggle enabled={enabled} onChange={onToggle} /></div>;
 }
 
+function FiatBankAccountsAdmin() {
+  const [accounts, setAccounts] = useState<Array<Record<string, unknown>>>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [error, setError] = useState("");
+  const [currencyFilter, setCurrencyFilter] = useState("");
+
+  const load = () => {
+    const url = currencyFilter ? `/api/admin/fiat-bank-accounts?currency=${currencyFilter}` : "/api/admin/fiat-bank-accounts";
+    fetch(url).then(r => r.json()).then(d => {
+      if (d.accounts) setAccounts(d.accounts);
+    }).catch(() => {}).finally(() => setLoaded(true));
+  };
+
+  useEffect(() => { load(); }, [currencyFilter]);
+
+  const openNew = () => {
+    setEditing(null);
+    setForm({ currency: "MYR" });
+    setFormOpen(true);
+    setError("");
+  };
+
+  const openEdit = (a: Record<string, unknown>) => {
+    setEditing(a);
+    const f: Record<string, string> = {};
+    for (const [k, v] of Object.entries(a)) {
+      if (v !== null && v !== undefined) f[k] = String(v);
+    }
+    setForm(f);
+    setFormOpen(true);
+    setError("");
+  };
+
+  const doSave = async () => {
+    const currency = (form.currency || "MYR").toUpperCase();
+    const url = editing ? "/api/admin/fiat-bank-accounts" : "/api/admin/fiat-bank-accounts";
+    const method = editing ? "PATCH" : "POST";
+    const body: Record<string, unknown> = { ...form, id: editing ? editing.id : undefined };
+    body.min_amount = form.min_amount ? Number(form.min_amount) : undefined;
+    body.max_amount = form.max_amount ? Number(form.max_amount) : undefined;
+    body.default_exchange_rate = form.default_exchange_rate ? Number(form.default_exchange_rate) : undefined;
+    body.default_rate_spread = form.default_rate_spread ? Number(form.default_rate_spread) : undefined;
+    body.is_active = form.is_active === "0" ? 0 : 1;
+    body.sort_order = form.sort_order ? Number(form.sort_order) : 0;
+
+    const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) { setError(data.error || "Failed"); return; }
+    setFormOpen(false);
+    load();
+  };
+
+  const toggleActive = async (id: number, active: boolean) => {
+    await fetch("/api/admin/fiat-bank-accounts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, is_active: active ? 0 : 1 }),
+    });
+    load();
+  };
+
+  const fieldForCurrency = (currency: string): string[] => {
+    const base = ["bank_name", "account_holder", "account_number"];
+    switch (currency) {
+      case "USD": return [...base, "routing_number", "swift_code"];
+      case "MYR": return base;
+      case "GBP": return [...base, "sort_code", "iban", "swift_code"];
+      case "EUR": return ["bank_name", "account_holder", "iban", "swift_code"];
+      case "JPY": return ["bank_name", "branch_name", "account_number", "account_holder"];
+      case "TWD": return ["bank_name", "bank_code", "branch_code", "account_number", "account_holder"];
+      default: return base;
+    }
+  };
+
+  const formCurrency = (form.currency || "MYR").toUpperCase();
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}
+            style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }}>
+            <option value="">All Currencies</option>
+            {["USD","MYR","GBP","EUR","JPY","TWD"].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <button onClick={openNew} style={{ padding: "8px 16px", borderRadius: 8, background: "#2563FF", color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}>
+          + Add Account
+        </button>
+      </div>
+
+      {formOpen && (
+        <div style={{ marginBottom: 16, padding: 16, borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.02)" }}>
+          <div style={{ fontWeight: 600, marginBottom: 12 }}>{editing ? "Edit Bank Account" : "New Bank Account"}</div>
+          {error && <div style={{ color: "#DC2626", marginBottom: 8, fontSize: 13 }}>{error}</div>}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <select value={form.currency || "MYR"} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
+              style={{ padding: "8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }}>
+              {["USD","MYR","GBP","EUR","JPY","TWD"].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            {fieldForCurrency(formCurrency).map(field => (
+              <input key={field} placeholder={field.replace(/_/g, " ")} value={form[field] || ""}
+                onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+                style={{ padding: "8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }} />
+            ))}
+            <input placeholder="min_amount" value={form.min_amount || ""}
+              onChange={e => setForm(f => ({ ...f, min_amount: e.target.value }))}
+              style={{ padding: "8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }} />
+            <input placeholder="max_amount" value={form.max_amount || ""}
+              onChange={e => setForm(f => ({ ...f, max_amount: e.target.value }))}
+              style={{ padding: "8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }} />
+            <input placeholder="default_exchange_rate" value={form.default_exchange_rate || ""}
+              onChange={e => setForm(f => ({ ...f, default_exchange_rate: e.target.value }))}
+              style={{ padding: "8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }} />
+            <input placeholder="default_rate_spread" value={form.default_rate_spread || ""}
+              onChange={e => setForm(f => ({ ...f, default_rate_spread: e.target.value }))}
+              style={{ padding: "8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }} />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button onClick={doSave} style={{ padding: "8px 20px", borderRadius: 8, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}>Save</button>
+            <button onClick={() => setFormOpen(false)} style={{ padding: "8px 20px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer" }}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: "grid", gap: 8 }}>
+        {!loaded && <div style={{ color: "#6e88a4" }}>Loading...</div>}
+        {loaded && accounts.length === 0 && <div style={{ color: "#6e88a4" }}>No bank accounts configured.</div>}
+        {accounts.map((a: Record<string, unknown>) => (
+          <div key={String(a.id)} style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: `1px solid ${a.is_active ? "rgba(255,255,255,0.08)" : "rgba(239,68,68,0.15)"}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+                <span style={{ background: "#2563FF", color: "#fff", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700 }}>{String(a.currency)}</span>
+                <span style={{ fontWeight: 600, fontSize: 14 }}>{String(a.bank_name)}</span>
+                {!a.is_active && <span style={{ color: "#DC2626", fontSize: 11 }}>Inactive</span>}
+              </div>
+              <div style={{ fontSize: 12, color: "#6e88a4" }}>
+                {String(a.account_holder)} · {String(a.account_number || "")}
+                {a.sort_code ? ` · Sort: ${a.sort_code}` : ""}
+                {a.iban ? ` · IBAN: ${a.iban}` : ""}
+                {a.bank_code ? ` · Bank Code: ${a.bank_code}` : ""}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => openEdit(a)} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "#8899B0", cursor: "pointer", fontSize: 12 }}>Edit</button>
+              <button onClick={() => toggleActive(Number(a.id), Boolean(a.is_active))} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: a.is_active ? "#DC2626" : "#16A34A", cursor: "pointer", fontSize: 12 }}>
+                {a.is_active ? "Disable" : "Enable"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FiatDepositsAdmin() {
+  const [deposits, setDeposits] = useState<Array<Record<string, unknown>>>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("");
+
+  const load = () => {
+    const url = statusFilter ? `/api/admin/fiat-deposits?status=${statusFilter}` : "/api/admin/fiat-deposits";
+    fetch(url).then(r => r.json()).then(d => {
+      if (d.deposits) setDeposits(d.deposits);
+    }).catch(() => {}).finally(() => setLoaded(true));
+  };
+
+  useEffect(() => { load(); }, [statusFilter]);
+
+  const doConfirm = async (id: number) => {
+    const res = await fetch("/api/admin/fiat-deposit/confirm", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: id }),
+    });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || "Failed"); return; }
+    load();
+  };
+
+  const doReject = async (id: number) => {
+    const remark = prompt("Rejection reason:");
+    if (!remark) return;
+    const res = await fetch("/api/admin/fiat-deposit/reject", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: id, remark }),
+    });
+    const data = await res.json();
+    if (!res.ok) { alert(data.error || "Failed"); return; }
+    load();
+  };
+
+  return (
+    <div style={{ padding: 20 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); }}
+          style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }}>
+          <option value="">All Status</option>
+          {["requested","bank_sent","submitted","confirmed","rejected"].map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <button onClick={load} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "#8899B0", cursor: "pointer" }}>Refresh</button>
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {!loaded && <div style={{ color: "#6e88a4" }}>Loading...</div>}
+        {loaded && deposits.length === 0 && <div style={{ color: "#6e88a4" }}>No fiat deposits found.</div>}
+        {deposits.map((d: Record<string, unknown>) => (
+          <div key={String(d.id)} style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>#{String(d.id)} · {String(d.currency)} · {String(d.username || d.user_id)}</span>
+              <span style={{
+                padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700,
+                background: d.status === "confirmed" ? "rgba(34,197,94,0.15)" : d.status === "rejected" ? "rgba(239,68,68,0.15)" : d.status === "submitted" ? "rgba(37,99,255,0.15)" : "rgba(255,255,255,0.08)",
+                color: d.status === "confirmed" ? "#22C55E" : d.status === "rejected" ? "#DC2626" : d.status === "submitted" ? "#2563FF" : "#8899B0"
+              }}>{String(d.status)}</span>
+            </div>
+            <div style={{ fontSize: 12, color: "#6e88a4", marginBottom: 4 }}>
+              {d.reference_code ? `Ref: ${d.reference_code} · ` : ""}
+              Amount: {d.amount_fiat ? `${d.amount_fiat} ${d.currency}` : "-"}
+              {d.estimated_usdt ? ` · Est: ${d.estimated_usdt} USDT` : ""}
+              {d.confirmed_usdt ? ` · Confirmed: ${d.confirmed_usdt} USDT` : ""}
+            </div>
+            {d.status === "submitted" && (
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <button onClick={() => doConfirm(Number(d.id))} style={{ padding: "4px 14px", borderRadius: 6, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Confirm</button>
+                <button onClick={() => doReject(Number(d.id))} style={{ padding: "4px 14px", borderRadius: 6, background: "rgba(239,68,68,0.15)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer", fontSize: 12 }}>Reject</button>
+              </div>
+            )}
+            {(() => { const r = String(d.admin_remark || ""); return r ? <div style={{ fontSize: 11, color: "#6e88a4", marginTop: 4 }}>Remark: {r}</div> : null; })()}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SupportChatAdmin() {
   const [conversations, setConversations] = useState<Array<{ userId: number; username: string; email: string | null; lastMessage: string | null; lastMessageAt: string | null; unreadCount: number }>>([]);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -3118,6 +3359,12 @@ function SupportChatAdmin() {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  // Fiat deposit state for selected user
+  const [fiatDeposits, setFiatDeposits] = useState<Array<Record<string, unknown>>>([]);
+  const [fiatBankAccounts, setFiatBankAccounts] = useState<Array<Record<string, unknown>>>([]);
+  const [sendBankOpen, setSendBankOpen] = useState(false);
+  const [sendBankForm, setSendBankForm] = useState({ depositId: 0, bankAccountId: 0, exchangeRate: "", rateSpread: "0" });
 
   // Load conversations
   useEffect(() => {
@@ -3129,13 +3376,19 @@ function SupportChatAdmin() {
 
   // Load messages when user selected
   useEffect(() => {
-    if (!selectedUserId) { setMessages([]); return; }
+    if (!selectedUserId) { setMessages([]); setFiatDeposits([]); return; }
     setLoading(true);
+    // Load messages
     fetch(`/api/admin/support/messages?userId=${selectedUserId}`)
       .then((r) => r.json())
       .then((d) => { if (d.messages) setMessages(d.messages); })
       .catch(() => {})
       .finally(() => setLoading(false));
+    // Load fiat deposits for this user
+    fetch(`/api/admin/fiat-deposit/by-user?userId=${selectedUserId}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.deposits) setFiatDeposits(d.deposits); })
+      .catch(() => {});
   }, [selectedUserId]);
 
   // Poll conversations + messages every 5s
@@ -3228,6 +3481,93 @@ function SupportChatAdmin() {
             <div ref={scrollerRef} style={{ flex: 1, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
               {loading && <div style={{ textAlign: "center", color: "#6e88a4" }}>加载中...</div>}
               {!loading && messages.length === 0 && <div style={{ textAlign: "center", color: "#6e88a4", padding: 20 }}>暂无消息</div>}
+              {/* Fiat Deposit Panel */}
+              {fiatDeposits.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  {fiatDeposits.filter((d: Record<string, unknown>) => d.status !== "confirmed" && d.status !== "rejected").map((d: Record<string, unknown>) => (
+                    <div key={String(d.id)} style={{ padding: "10px 12px", borderRadius: 8, background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "#60A5FA" }}>🏦 Fiat Deposit #{String(d.id)} · {String(d.currency)}</div>
+                      <div style={{ fontSize: 11, color: "#6e88a4", marginBottom: 4 }}>
+                        Status: <span style={{ fontWeight: 600, color: d.status === "requested" ? "#B8860B" : d.status === "bank_sent" ? "#2563FF" : d.status === "submitted" ? "#22C55E" : "#6e88a4" }}>{String(d.status)}</span>
+                        {d.reference_code ? ` · Ref: ${d.reference_code}` : ""}
+                        {d.amount_fiat ? ` · ${d.amount_fiat} ${d.currency}` : ""}
+                        {d.estimated_usdt ? ` · Est: ${d.estimated_usdt} USDT` : ""}
+                      </div>
+                      {d.status === "requested" && (
+                        <button onClick={async () => {
+                          // Load bank accounts for this currency
+                          const res = await fetch(`/api/admin/fiat-bank-accounts?currency=${d.currency}`);
+                          const data = await res.json();
+                          setFiatBankAccounts(data.accounts || []);
+                          setSendBankForm({ depositId: Number(d.id), bankAccountId: 0, exchangeRate: String(d.exchange_rate || ""), rateSpread: String(d.rate_spread !== undefined ? d.rate_spread : "0") });
+                          setSendBankOpen(true);
+                        }} style={{ padding: "4px 12px", borderRadius: 6, background: "#2563FF", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                          Send Bank Details
+                        </button>
+                      )}
+                      {d.status === "bank_sent" && <div style={{ fontSize: 11, color: "#8899B0" }}>Waiting for user to submit transfer info...</div>}
+                      {d.status === "submitted" && (
+                        <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                          <button onClick={async () => {
+                            if (!confirm(`Confirm deposit #${d.id} (${d.amount_fiat} ${d.currency} → ${d.estimated_usdt} USDT)?`)) return;
+                            const r = await fetch("/api/admin/fiat-deposit/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: d.id }) });
+                            const rd = await r.json();
+                            if (!r.ok) { alert(rd.error || "Failed"); return; }
+                            // Reload
+                            fetch(`/api/admin/fiat-deposit/by-user?userId=${selectedUserId}`).then(r => r.json()).then(d => { if (d.deposits) setFiatDeposits(d.deposits); });
+                          }} style={{ padding: "4px 12px", borderRadius: 6, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                            Confirm
+                          </button>
+                          <button onClick={async () => {
+                            const remark = prompt("Rejection reason:");
+                            if (!remark) return;
+                            const r = await fetch("/api/admin/fiat-deposit/reject", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: d.id, remark }) });
+                            const rd = await r.json();
+                            if (!r.ok) { alert(rd.error || "Failed"); return; }
+                            fetch(`/api/admin/fiat-deposit/by-user?userId=${selectedUserId}`).then(r => r.json()).then(d => { if (d.deposits) setFiatDeposits(d.deposits); });
+                          }} style={{ padding: "4px 12px", borderRadius: 6, background: "rgba(239,68,68,0.15)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer", fontSize: 11 }}>
+                            Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {sendBankOpen && (
+                <div style={{ marginBottom: 8, padding: "10px 12px", borderRadius: 8, background: "rgba(37,99,255,0.08)", border: "1px solid rgba(37,99,255,0.2)" }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8, color: "#60A5FA" }}>Send Bank Details — Deposit #{sendBankForm.depositId}</div>
+                  <select value={sendBankForm.bankAccountId} onChange={e => setSendBankForm(f => ({ ...f, bankAccountId: Number(e.target.value) }))}
+                    style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", marginBottom: 6, fontSize: 12 }}>
+                    <option value={0}>Select bank account...</option>
+                    {fiatBankAccounts.map((a: Record<string, unknown>) => (
+                      <option key={String(a.id)} value={String(a.id)}>{String(a.bank_name)} · {String(a.account_holder)} · {String(a.account_number || "")}</option>
+                    ))}
+                  </select>
+                  <input placeholder="Exchange Rate (1 MYR = ? USDT)" value={sendBankForm.exchangeRate}
+                    onChange={e => setSendBankForm(f => ({ ...f, exchangeRate: e.target.value }))}
+                    style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", marginBottom: 6, fontSize: 12 }} />
+                  <input placeholder="Rate Spread (0-1)" value={sendBankForm.rateSpread}
+                    onChange={e => setSendBankForm(f => ({ ...f, rateSpread: e.target.value }))}
+                    style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", marginBottom: 8, fontSize: 12 }} />
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={async () => {
+                      if (!sendBankForm.bankAccountId) { alert("Select a bank account"); return; }
+                      if (!sendBankForm.exchangeRate) { alert("Enter exchange rate"); return; }
+                      const r = await fetch("/api/admin/fiat-deposit/send-bank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: sendBankForm.depositId, bankAccountId: sendBankForm.bankAccountId, exchangeRate: Number(sendBankForm.exchangeRate), rateSpread: Number(sendBankForm.rateSpread) }) });
+                      const rd = await r.json();
+                      if (!r.ok) { alert(rd.error || "Failed"); return; }
+                      setSendBankOpen(false);
+                      fetch(`/api/admin/fiat-deposit/by-user?userId=${selectedUserId}`).then(r => r.json()).then(d => { if (d.deposits) setFiatDeposits(d.deposits); });
+                    }} style={{ padding: "4px 12px", borderRadius: 6, background: "#2563FF", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                      Confirm & Send
+                    </button>
+                    <button onClick={() => setSendBankOpen(false)} style={{ padding: "4px 12px", borderRadius: 6, background: "transparent", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", fontSize: 12 }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
               {messages.map((m) => (
                 <div key={m.id} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
                   <div style={{
