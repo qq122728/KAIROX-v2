@@ -826,7 +826,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
           />
         ) : (
           <>
-            {tab === "home" && <HomeTab rows={filteredMarkets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} sort={marketSort} setSort={setMarketSort} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} goTab={switchTab} push={push} kycStatus={kycStatus} totalEquity={assets?.summary.totalEquity ?? 0} availableBalance={assets?.summary.availableBalance ?? user.balance} pnl={assets?.summary.unrealizedPnl ?? 0} marginUsed={assets?.summary.marginUsed ?? 0} favorites={favorites} toggleFavorite={toggleFavorite} />}
+            {tab === "home" && <HomeTab rows={filteredMarkets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} sort={marketSort} setSort={setMarketSort} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} goTab={switchTab} push={push} kycStatus={kycStatus} totalEquity={assets?.summary.totalEquity ?? 0} availableBalance={assets?.summary.availableBalance ?? user.balance} pnl={assets?.summary.unrealizedPnl ?? 0} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "markets" && <MarketsListTab rows={markets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "trade" && currentMarket && <TradeTab market={currentMarket} tickers={tickers} setCurrentSymbol={(symbol) => { setCurrentSymbol(symbol); pushMobileUrl(tabPath("trade", symbol)); }} markets={markets} openSheet={(d) => { setActiveOrderId(null); setSheetMinimized(false); setOrderSheet(d); }} stake={stake} setStake={setStake} duration={duration} durations={durationOptions} setDuration={setDuration} availableBalance={assets?.summary.availableBalance ?? user.balance} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "orders" && <OrdersTab openOrders={openOrders} history={history} now={now} onOpenRunningOrder={(order) => { setActiveOrderId(order.id); setOrderSheet(order.direction); setSheetMinimized(false); setTab("trade"); }} />}
@@ -1402,7 +1402,7 @@ function CryptoIcon({ asset }: { asset: string }) {
 }
 
 
-function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity, availableBalance, pnl, marginUsed, favorites, toggleFavorite }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; sort: "hot" | "gainers" | "losers"; setSort: (v: "hot" | "gainers" | "losers") => void; onSelect: (symbol: string) => void; goTab: (t: Tab) => void; push: (p: StackPage) => void; kycStatus: string; totalEquity: number; availableBalance: number; pnl: number; marginUsed: number; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
+function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity, pnl, favorites, toggleFavorite }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; sort: "hot" | "gainers" | "losers"; setSort: (v: "hot" | "gainers" | "losers") => void; onSelect: (symbol: string) => void; goTab: (t: Tab) => void; push: (p: StackPage) => void; kycStatus: string; totalEquity: number; availableBalance: number; pnl: number; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
   const quickActions: { icon: string; label: string; action: () => void }[] = [
     { icon: "arrow-down", label: "Deposit",  action: () => push({ id: "deposit-asset",  title: "Deposit" }) },
     { icon: "arrow-up",   label: "Withdraw", action: () => push({ id: "withdraw-asset", title: "Withdraw" }) },
@@ -1412,10 +1412,9 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
   const kycNeedsAttention = kycStatus !== "approved";
   const pnlPos = pnl >= 0;
   const [balanceHidden, setBalanceHidden] = useState(false);
-  const [period, setPeriod] = useState<"today" | "7d" | "30d">("today");
+  const [period, setPeriod] = useState<"today" | "30d">("today");
   const maskedValue = "$ ******";
   const pnlPctRaw = totalEquity > 0 ? (pnl / Math.max(1, totalEquity)) * 100 : 0;
-  const hasAssets = totalEquity > 0;
   return (
     <div className="tab-page">
       <div className="portfolio-card">
@@ -1426,69 +1425,36 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
               {balanceHidden ? <EyeOff size={14} strokeWidth={1.6} /> : <Eye size={14} strokeWidth={1.6} />}
             </button>
           </span>
-          <button type="button" className="pc-expand" aria-label="View all assets" onClick={() => push({ id: "asset-overview", title: "Assets" })}>
-            Assets <ChevronRight size={13} />
+          <button type="button" className="pc-expand" aria-label="View assets" onClick={() => push({ id: "asset-overview", title: "Assets" })}>
+            <ArrowUpRight size={14} strokeWidth={1.8} />
           </button>
         </div>
         <div className="pc-value">{balanceHidden ? maskedValue : money(totalEquity)}</div>
         <div className="pc-sub">
-          {hasAssets ? (
-            <>
-              <span className={`pc-pnl ${pnlPos ? "up" : "down"}`}>
-                {balanceHidden ? "******" : `${pnlPos ? "+" : ""}${money(pnl)}`}
-              </span>
-              <span className={`pc-badge ${pnlPos ? "up" : "down"}`}>
-                {balanceHidden ? "**" : `${pnlPos ? "+" : ""}${pnlPctRaw.toFixed(2)}%`}
-              </span>
-            </>
-          ) : (
-            <span className="pc-pnl muted" style={{ color: "#8899B0", fontSize: 12 }}>$0.00 · 0.00%</span>
-          )}
+          <span className={`pc-pnl ${pnlPos ? "up" : "down"}`}>{balanceHidden ? "******" : `${pnlPos ? "+" : ""}${money(pnl)}`}</span>
+          <span className={`pc-badge ${pnlPos ? "up" : "down"}`}>{balanceHidden ? "**" : `${pnlPos ? "+" : ""}${pnlPctRaw.toFixed(2)}%`}</span>
           <span className="pc-period-toggle">
             <button type="button" className={period === "today" ? "on" : ""} onClick={() => setPeriod("today")}>Today</button>
-            <button type="button" className={period === "7d" ? "on" : ""} onClick={() => setPeriod("7d")}>7D</button>
             <button type="button" className={period === "30d" ? "on" : ""} onClick={() => setPeriod("30d")}>30D</button>
           </span>
         </div>
-        {hasAssets ? (
-          <svg className="pc-spark" viewBox="0 0 340 110" preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="pcGrad" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#5B8DFF" stopOpacity="0.22" />
-                <stop offset="100%" stopColor="#5B8DFF" stopOpacity="0" />
-              </linearGradient>
-              <filter id="pcDotGlow" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="3" />
-              </filter>
-            </defs>
-            <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8 L340,110 L0,110 Z" fill="url(#pcGrad)" stroke="none" />
-            <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8" stroke="#5B8DFF" strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" />
-            <circle cx="338" cy="8" r="7" fill="#5B8DFF" opacity="0.45" filter="url(#pcDotGlow)" />
-            <circle cx="338" cy="8" r="4" fill="#5B8DFF" />
-            <circle cx="338" cy="8" r="2" fill="#FFFFFF" />
-          </svg>
-        ) : (
-          <div className="pc-empty-chart">
-            <BarChart3 size={32} strokeWidth={1.2} />
-            <b>No portfolio data yet</b>
-            <em>Deposit or start trading to see your performance.</em>
-          </div>
-        )}
-        <div className="pc-axis">{hasAssets ? <><span>30D ago</span><span>Today</span></> : null}</div>
-        <div className="pc-stats-row">
-          <div className="pc-stat">
-            <em>Available</em>
-            <b className="tabular-nums">{balanceHidden ? "****" : money(availableBalance)}</b>
-          </div>
-          <div className="pc-stat">
-            <em>In Orders</em>
-            <b className="tabular-nums">{balanceHidden ? "****" : money(marginUsed)}</b>
-          </div>
-          <div className="pc-stat">
-            <em>Today's PnL</em>
-            <b className={`tabular-nums ${pnl >= 0 ? "up" : "down"}`}>{balanceHidden ? "****" : `${pnl >= 0 ? "+" : ""}${money(pnl)}`}</b>
-          </div>
-        </div>
+        <svg className="pc-spark" viewBox="0 0 340 110" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="pcGrad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#5B8DFF" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#5B8DFF" stopOpacity="0" />
+            </linearGradient>
+            <filter id="pcDotGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" />
+            </filter>
+          </defs>
+          <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8 L340,110 L0,110 Z" fill="url(#pcGrad)" stroke="none" />
+          <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8" stroke="#5B8DFF" strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" />
+          <circle cx="338" cy="8" r="7" fill="#5B8DFF" opacity="0.45" filter="url(#pcDotGlow)" />
+          <circle cx="338" cy="8" r="4" fill="#5B8DFF" />
+          <circle cx="338" cy="8" r="2" fill="#FFFFFF" />
+        </svg>
+        <div className="pc-axis"><span>30D ago</span><span>Today</span></div>
       </div>
       <div className="quick-actions">
         {quickActions.map((a) => (
@@ -3780,6 +3746,8 @@ function SupportChatPage() {
   const [fiatDeposit, setFiatDeposit] = useState<FiatDeposit | null>(null);
   const [showSubmitForm, setShowSubmitForm] = useState(false);
   const [submitForm, setSubmitForm] = useState({ amountFiat: "", transferReference: "", remark: "" });
+  const [proof, setProof] = useState<File | null>(null);
+  const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Load fiat deposit
@@ -3879,21 +3847,41 @@ function SupportChatPage() {
     }
   }
 
+  function handleProofPick(file: File | undefined) {
+    if (!file) return;
+    const allowed = ["image/jpeg", "image/png", "image/webp"];
+    if (!allowed.includes(file.type)) {
+      setError("Only JPG, PNG or WEBP files are allowed.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError("File must be smaller than 5MB.");
+      return;
+    }
+    setProof(file);
+    const url = URL.createObjectURL(file);
+    setProofPreview(url);
+    setError("");
+  }
+
+  function clearProof() {
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    setProof(null);
+    setProofPreview(null);
+  }
+
   async function doSubmitTransfer() {
     const amountFiat = Number(submitForm.amountFiat);
     if (!amountFiat || amountFiat <= 0 || !fiatDeposit) return;
     setSubmitting(true);
     try {
-      const res = await fetch("/api/fiat-deposit/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          depositId: fiatDeposit.id,
-          amountFiat,
-          transferReference: submitForm.transferReference || undefined,
-          remark: submitForm.remark || undefined,
-        }),
-      });
+      const form = new FormData();
+      form.append("depositId", String(fiatDeposit.id));
+      form.append("amountFiat", String(amountFiat));
+      if (submitForm.transferReference) form.append("transferReference", submitForm.transferReference);
+      if (submitForm.remark) form.append("remark", submitForm.remark);
+      if (proof) form.append("proof", proof);
+      const res = await fetch("/api/fiat-deposit/submit", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to submit");
@@ -3901,6 +3889,7 @@ function SupportChatPage() {
       }
       setShowSubmitForm(false);
       setSubmitForm({ amountFiat: "", transferReference: "", remark: "" });
+      clearProof();
       loadFiatDeposit();
     } catch {
       setError("Network error");
@@ -4020,6 +4009,24 @@ function SupportChatPage() {
               onChange={(e) => setSubmitForm((s) => ({ ...s, remark: e.target.value }))}
               style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 10 }}
             />
+            {/* Proof upload */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: "#8899B0", marginBottom: 4 }}>Upload transfer proof</div>
+              <input type="file" accept="image/jpeg,image/png,image/webp" id="fiat-proof-input" style={{ display: "none" }} onChange={(e) => handleProofPick(e.target.files?.[0])} />
+              {proof ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                  {proofPreview && <img src={proofPreview} alt="Proof preview" style={{ width: 40, height: 40, borderRadius: 4, objectFit: "cover", flexShrink: 0 }} />}
+                  <span style={{ flex: 1, fontSize: 12, color: "#c0cde0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{proof.name}</span>
+                  <button type="button" onClick={clearProof} style={{ padding: "2px 8px", borderRadius: 4, background: "rgba(239,68,68,0.15)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer", fontSize: 11 }}>Remove</button>
+                </div>
+              ) : (
+                <label htmlFor="fiat-proof-input" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "14px", borderRadius: 8, border: "1px dashed rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.02)", cursor: "pointer", color: "#6e88a4", fontSize: 12 }}>
+                  <Upload size={16} strokeWidth={1.6} />
+                  Tap to upload screenshot
+                </label>
+              )}
+              <div style={{ fontSize: 10, color: "#445566", marginTop: 3 }}>JPG, PNG or WEBP, max 5MB</div>
+            </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button type="button" onClick={doSubmitTransfer} disabled={!submitForm.amountFiat || submitting} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#2563FF", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (!submitForm.amountFiat || submitting) ? 0.5 : 1 }}>
                 {submitting ? "Submitting..." : "Submit"}

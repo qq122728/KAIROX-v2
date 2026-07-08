@@ -3365,6 +3365,7 @@ function SupportChatAdmin() {
   const [fiatBankAccounts, setFiatBankAccounts] = useState<Array<Record<string, unknown>>>([]);
   const [sendBankOpen, setSendBankOpen] = useState(false);
   const [sendBankForm, setSendBankForm] = useState({ depositId: 0, bankAccountId: 0, exchangeRate: "", rateSpread: "0" });
+  const [proofViewer, setProofViewer] = useState<{ name?: string; data?: string } | null>(null);
 
   // Load conversations
   useEffect(() => {
@@ -3494,6 +3495,14 @@ function SupportChatAdmin() {
                         {d.amount_fiat ? ` · ${d.amount_fiat} ${d.currency}` : ""}
                         {d.estimated_usdt ? ` · Est: ${d.estimated_usdt} USDT` : ""}
                       </div>
+                      {d.proof_data ? (
+                        <div style={{ marginBottom: 4 }}>
+                          <button type="button" onClick={() => setProofViewer({ name: String(d.proof_name || "Transfer Proof"), data: String(d.proof_data) })}
+                            style={{ padding: "3px 10px", borderRadius: 6, background: "rgba(22,199,132,0.12)", color: "#16C784", border: "1px solid rgba(22,199,132,0.2)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                            📎 View Proof
+                          </button>
+                        </div>
+                      ) : null}
                       {d.status === "requested" && (
                         <button onClick={async () => {
                           // Load bank accounts for this currency
@@ -3609,6 +3618,21 @@ function SupportChatAdmin() {
           </>
         )}
       </div>
+      {/* Proof viewer modal */}
+      {proofViewer && (
+        <div onClick={() => setProofViewer(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: 12, overflow: "hidden", background: "rgba(30,41,59,0.95)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: "#e0eaf5" }}>Transfer Proof</span>
+              <button onClick={() => setProofViewer(null)} style={{ background: "transparent", border: "none", color: "#6e88a4", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>✕</button>
+            </div>
+            <div style={{ padding: 16 }}>
+              {proofViewer.data ? <img src={proofViewer.data} alt="Transfer proof" style={{ maxWidth: "100%", maxHeight: "70vh", borderRadius: 8, objectFit: "contain" }} /> : <div style={{ color: "#6e88a4", fontSize: 13 }}>No proof uploaded</div>}
+              <div style={{ color: "#6e88a4", fontSize: 11, marginTop: 8 }}>{proofViewer.name}</div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
