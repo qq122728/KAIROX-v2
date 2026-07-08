@@ -3997,6 +3997,25 @@ function SupportChatPage() {
               onChange={(e) => setSubmitForm((s) => ({ ...s, amountFiat: e.target.value }))}
               style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 8 }}
             />
+            {/* Locked rate + estimate */}
+            {fiatDeposit?.final_rate ? (
+              <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", fontSize: 11 }}>
+                <div style={{ color: "#6e88a4", marginBottom: 2 }}>Locked rate</div>
+                <div style={{ color: "#c0d0e0", fontWeight: 600, marginBottom: 4 }}>
+                  1 {fiatDeposit.currency || "?"} ≈ {Number(fiatDeposit.final_rate).toFixed(4)} USDT
+                </div>
+                {(() => {
+                  const amt = Number(submitForm.amountFiat);
+                  const fr = Number(fiatDeposit.final_rate);
+                  if (amt > 0 && fr > 0) {
+                    const est = (amt * fr).toFixed(2);
+                    return <div style={{ color: "#22C55E", fontWeight: 600, marginBottom: 3 }}>≈ {est} USDT estimated</div>;
+                  }
+                  return null;
+                })()}
+                <div style={{ color: "#445566", fontSize: 10 }}>Final credited amount may be adjusted by admin after review.</div>
+              </div>
+            ) : null}
             <input
               type="text" placeholder="Transfer reference (optional)"
               value={submitForm.transferReference}
