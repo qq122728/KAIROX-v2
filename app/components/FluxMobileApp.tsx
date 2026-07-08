@@ -1429,10 +1429,17 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
             <ArrowUpRight size={14} strokeWidth={1.8} />
           </button>
         </div>
-        <div className="pc-value">{balanceHidden ? maskedValue : money(totalEquity)}</div>
+        <div className="pc-value">
+          {balanceHidden ? maskedValue : (
+            <><span className="pc-value-num">{Number(totalEquity).toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</span> <span className="pc-value-unit">USDC</span></>
+          )}
+        </div>
+        <div className="pc-equity-usd">
+          {balanceHidden ? "" : `≈ ${money(totalEquity)}`}
+        </div>
         <div className="pc-sub">
-          <span className={`pc-pnl ${pnlPos ? "up" : "down"}`}>{balanceHidden ? "******" : `${pnlPos ? "+" : ""}${money(pnl)}`}</span>
-          <span className={`pc-badge ${pnlPos ? "up" : "down"}`}>{balanceHidden ? "**" : `${pnlPos ? "+" : ""}${pnlPctRaw.toFixed(2)}%`}</span>
+          <span className={`pc-pnl ${pnlPos ? "up" : pnl === 0 ? "zero" : "down"}`}>{balanceHidden ? "******" : `${pnlPos ? "+" : ""}${money(pnl)}`}</span>
+          <span className={`pc-badge ${pnlPos ? "up" : pnl === 0 ? "zero" : "down"}`}>{balanceHidden ? "**" : `${pnlPos ? "+" : ""}${pnlPctRaw.toFixed(2)}%`}</span>
           <span className="pc-period-toggle">
             <button type="button" className={period === "today" ? "on" : ""} onClick={() => setPeriod("today")}>Today</button>
             <button type="button" className={period === "30d" ? "on" : ""} onClick={() => setPeriod("30d")}>30D</button>
@@ -1819,10 +1826,6 @@ function RunningModeBody({ order, now, currentPrice }: { order: BinaryOrder; now
   const progress = Math.min(1, Math.max(0, elapsedMs / (totalSec * 1000)));
   const winAmount = order.stake * order.duration.odds;
   const payout = order.stake + winAmount;
-  const ringSize = 92;
-  const stroke = 6;
-  const r = (ringSize - stroke) / 2;
-  const circumference = 2 * Math.PI * r;
   const dirColor = order.direction === "call" ? "#16C784" : "#F6465D";
   const priceDelta = currentPrice - order.entry;
   const priceChangePct = order.entry ? (priceDelta / order.entry) * 100 : 0;
@@ -1834,6 +1837,7 @@ function RunningModeBody({ order, now, currentPrice }: { order: BinaryOrder; now
   const statusLabel = isFlat ? "Awaiting Movement" : isWinning ? "Currently Winning" : "Currently Losing";
   return (
     <>
+      {/* Header: badge + pair + Expires */}
       <div className="run-header">
         <div className="run-title-line">
           <span className={`run-direction-badge ${order.direction}`}>{order.direction.toUpperCase()}</span>
@@ -1842,63 +1846,54 @@ function RunningModeBody({ order, now, currentPrice }: { order: BinaryOrder; now
         <em className="run-sublabel">{isSettling ? "Settlement in Progress" : `Expires in ${remainingSec}s`}</em>
       </div>
 
-      <div className="run-trade-panel">
-        <div className="run-timer-stack">
-          <div className="run-ring-wrap" style={{ width: ringSize, height: ringSize }}>
-            <svg width={ringSize} height={ringSize} className="run-ring">
-              <circle cx={ringSize / 2} cy={ringSize / 2} r={r} stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} fill="none" />
-              <circle
-                cx={ringSize / 2}
-                cy={ringSize / 2}
-                r={r}
-                stroke={dirColor}
-                strokeWidth={stroke}
-                fill="none"
-                strokeDasharray={circumference}
-                strokeDashoffset={circumference * progress}
-                strokeLinecap="round"
-                transform={`rotate(-90 ${ringSize / 2} ${ringSize / 2})`}
-                style={{ transition: "stroke-dashoffset 0.9s linear" }}
-              />
-            </svg>
-            <div className={`run-ring-center${lastThree ? " emphasis" : ""}${isSettling ? " settling" : ""}`}>
-              {isSettling ? (
-                <b className="run-settling-label">SETTLING</b>
-              ) : (
-                <>
-                  <b className="tabular-nums" style={{ color: dirColor }}>{remainingSec}<small>s</small></b>
-                  <em>remaining</em>
-                </>
-              )}
-            </div>
+      {/* Horizontal progress bar */}
+      {!isSettling && (
+        <div className={`run-progress-bar ${lastThree ? "emphasis" : ""}`}>
+          <div className="run-progress-track">
+            <div
+              className="run-progress-fill"
+              style={{ width: `${Math.min(100, progress * 100)}%`, background: dirColor }}
+            />
           </div>
-          {!isSettling && (
-            <div className={`run-status ${isFlat ? "flat" : isWinning ? "winning" : "losing"}`} aria-live="polite">
-              {statusLabel}
-            </div>
-          )}
+          <span className="run-progress-label tabular-nums">{remainingSec}s Remaining</span>
         </div>
-
-        <div className="run-price-panel">
-          <div className="run-price-row">
-            <small>Entry</small>
-            <span>
-              <b className="tabular-nums">{formatTradePrice(order.entry)}</b>
-              <em>USDC</em>
-            </span>
+      )}
+      {isSettling && (
+        <div className="run-progress-bar settling">
+          <div className="run-progress-track settling">
+            <div className="run-progress-fill settling" />
           </div>
-          <div className="run-price-row">
-            <small>Live</small>
-            <span>
-              <b className="tabular-nums">{formatTradePrice(currentPrice)}</b>
-              <em className={`tabular-nums ${priceChangePct >= 0 ? "good" : "bad"}`}>{priceChangePct >= 0 ? "+" : ""}{priceChangePct.toFixed(2)}%</em>
-            </span>
+          <span className="run-progress-label settling">Settlement in Progress</span>
+        </div>
+      )}
+
+      {/* Status pill */}
+      <div className={`run-status-badge ${isSettling ? "settling" : isFlat ? "flat" : isWinning ? "winning" : "losing"}`} aria-live="polite">
+        Status: {statusLabel}
+      </div>
+
+      {/* Price info cards */}
+      <div className="run-price-cards">
+        <div className="run-price-card">
+          <small>Entry Price</small>
+          <div className="run-price-card-body">
+            <b className="tabular-nums">{formatTradePrice(order.entry)}</b>
+            <em>USDC</em>
+          </div>
+        </div>
+        <div className="run-price-card">
+          <small>Live Price</small>
+          <div className="run-price-card-body">
+            <b className="tabular-nums">{formatTradePrice(currentPrice)}</b>
+            <em className={`tabular-nums ${priceChangePct >= 0 ? "good" : "bad"}`}>{priceChangePct >= 0 ? "+" : ""}{priceChangePct.toFixed(2)}%</em>
           </div>
         </div>
       </div>
 
+      {/* Sparkline */}
       <Sparkline symbol={order.symbol} change={priceChangePct} className="run-sparkline" stretch />
 
+      {/* Summary grid */}
       <div className="run-summary-panel">
         <div className="run-summary-row">
           <span>Investment</span>
@@ -1918,6 +1913,7 @@ function RunningModeBody({ order, now, currentPrice }: { order: BinaryOrder; now
         </div>
       </div>
 
+      {/* Footer */}
       <div className="run-footer">
         Settlement is automatic · Funds secured
       </div>
@@ -3561,16 +3557,7 @@ function SupportPage({ support, push }: { support: { telegram: string; whatsapp:
             </span>
             <ChevronRight className="support-method-arrow" size={18} aria-hidden="true" />
           </a>
-        ) : (
-          <span className="support-method telegram support-disabled">
-            <span className="support-method-icon"><Send size={20} strokeWidth={2} /></span>
-            <span className="support-method-body">
-              <b>Telegram</b>
-              <em>Not available</em>
-            </span>
-            <ChevronRight className="support-method-arrow" size={18} aria-hidden="true" />
-          </span>
-        )}
+        ) : null}
 
         {support.whatsapp ? (
           <a className="support-method whatsapp" href={support.whatsapp} target="_blank" rel="noreferrer">
@@ -3581,16 +3568,7 @@ function SupportPage({ support, push }: { support: { telegram: string; whatsapp:
             </span>
             <ChevronRight className="support-method-arrow" size={18} aria-hidden="true" />
           </a>
-        ) : (
-          <span className="support-method whatsapp support-disabled">
-            <span className="support-method-icon"><MessageCircle size={20} strokeWidth={2} /></span>
-            <span className="support-method-body">
-              <b>WhatsApp</b>
-              <em>Not available</em>
-            </span>
-            <ChevronRight className="support-method-arrow" size={18} aria-hidden="true" />
-          </span>
-        )}
+        ) : null}
       </div>
     </div>
   );

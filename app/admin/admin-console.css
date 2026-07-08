@@ -813,17 +813,19 @@
 }
 
 .admin-action-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  z-index: 20;
+  /* position values are set via inline style (fixed positioning) */
   display: grid;
   min-width: 168px;
-  border: 1px solid var(--admin-line-strong);
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: 12px;
   background: #101827;
-  box-shadow: var(--admin-shadow);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04);
   padding: 6px;
+  animation: admin-dropdown-in 0.15s ease-out;
+}
+@keyframes admin-dropdown-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .admin-action-dropdown-item {

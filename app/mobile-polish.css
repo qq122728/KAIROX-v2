@@ -1780,7 +1780,24 @@ button.promo-banner {
   font-size: 34px !important;
   margin-bottom: 6px !important;
 }
-.pc-value::after { font-size: 13px !important; margin-left: 5px !important; }
+.pc-value-num {
+  font-size: inherit;
+  word-break: break-all;
+}
+.pc-value-unit {
+  font-size: 18px !important;
+  font-weight: 500 !important;
+  color: var(--text-sub, #8899B0) !important;
+  vertical-align: baseline;
+}
+.pc-equity-usd {
+  font-size: 12px !important;
+  color: var(--text-sub, #8899B0) !important;
+  margin-bottom: 6px !important;
+  margin-top: -2px !important;
+}
+.pc-pnl.zero { color: var(--text-sub, #8899B0) !important; }
+.pc-badge.zero { color: var(--text-sub, #8899B0) !important; background: rgba(255,255,255,0.05) !important; }
 .pc-sub { gap: 6px !important; }
 .pc-pnl { font-size: 13px !important; }
 .pc-badge { font-size: 11px !important; padding: 2px 7px !important; }
@@ -4365,17 +4382,17 @@ section.trade-ticket.settings-card {
 .sheet-close:hover { color: #fff !important; border-color: rgba(255,255,255,0.30) !important; }
 .sheet-close svg { display: block !important; pointer-events: none !important; }
 
-/* Running mode */
+/* Running mode — professional trade detail layout */
 /* ============================================================
-   Binary Order — Running sheet (Binance/Hyperliquid/Apple style)
+   Binary Order — Running sheet (pro trading terminal style)
    ============================================================ */
 
-/* Header: PUT/CALL badge + large pair + sublabel */
+/* Header: PUT/CALL badge + pair + sublabel */
 .run-header {
   display: flex !important;
   flex-direction: column !important;
   align-items: flex-start !important;
-  gap: 4px !important;
+  gap: 3px !important;
   padding-right: 28px !important;
   margin-top: -4px !important;
 }
@@ -4415,90 +4432,71 @@ section.trade-ticket.settings-card {
   font-weight: 500 !important;
 }
 
-/* Countdown ring — same size, larger digit, last-3s scale-up, settling state */
-.run-ring-wrap {
-  position: relative !important;
+/* Horizontal progress bar — replaces old circular countdown ring */
+.run-progress-bar {
   display: flex !important;
   align-items: center !important;
-  justify-content: center !important;
-  margin: 8px auto 4px !important;
-  transform: scale(clamp(0.86, calc(100dvh / 880), 1.10)) !important;
-  transform-origin: center !important;
+  gap: 10px !important;
+  margin: 6px 0 2px !important;
 }
-.run-ring { display: block !important; }
-.run-ring-center {
-  position: absolute !important;
-  inset: 0 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 0 !important;
-  pointer-events: none !important;
-  transition: transform 0.25s ease-out !important;
+.run-progress-track {
+  flex: 1 !important;
+  height: 6px !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,0.08) !important;
+  overflow: hidden !important;
+  min-width: 0 !important;
 }
-.run-ring-center b {
-  font-size: clamp(32px, 4.6dvh, 40px) !important;
-  font-weight: 700 !important;
-  line-height: 1 !important;
-  letter-spacing: -0.03em !important;
-  display: inline-flex !important;
-  align-items: baseline !important;
-  gap: 2px !important;
+.run-progress-fill {
+  height: 100% !important;
+  border-radius: 999px !important;
+  transition: width 0.9s linear !important;
+  min-width: 0 !important;
 }
-.run-ring-center b small {
-  font-size: 0.45em !important;
-  font-weight: 700 !important;
-  color: rgba(255,255,255,0.55) !important;
-  letter-spacing: 0 !important;
-}
-.run-ring-center em {
+.run-progress-label {
   color: rgba(255,255,255,0.50) !important;
-  font-size: 11px !important;
-  font-style: normal !important;
-  font-weight: 600 !important;
-  margin-top: 6px !important;
-  letter-spacing: 0.08em !important;
-  text-transform: uppercase !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  letter-spacing: 0.02em !important;
 }
-.run-ring-center.emphasis { transform: scale(1.08) !important; }
-.run-ring-center.emphasis b { letter-spacing: -0.04em !important; }
-.run-ring-center.settling { animation: run-settling-pulse 1.2s ease-in-out infinite !important; }
-.run-settling-label {
-  font-size: 18px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.16em !important;
-  color: rgba(255,255,255,0.78) !important;
+.run-progress-bar.emphasis .run-progress-label { color: #F4F7FB !important; }
+.run-progress-bar.settling .run-progress-label { color: rgba(255,255,255,0.55) !important; }
+.run-progress-track.settling { background: rgba(255,255,255,0.04) !important; }
+.run-progress-fill.settling {
+  width: 80% !important;
+  background: rgba(255,255,255,0.12) !important;
+  animation: run-settling-pulse 1.2s ease-in-out infinite !important;
 }
 @keyframes run-settling-pulse {
-  0%, 100% { opacity: 0.65; }
+  0%, 100% { opacity: 0.5; }
   50% { opacity: 1; }
 }
 
-/* Winning / Losing status — single centered row below ring */
-.run-status {
+/* Status badge — small subdued pill */
+.run-status-badge {
   display: inline-flex !important;
   align-items: center !important;
-  gap: 6px !important;
-  margin: 4px auto 8px !important;
-  padding: 5px 12px !important;
+  align-self: flex-start !important;
+  gap: 0 !important;
+  margin: 2px 0 6px !important;
+  padding: 3px 10px !important;
   border-radius: 999px !important;
-  font-size: 12.5px !important;
-  font-weight: 700 !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
   letter-spacing: 0.02em !important;
-  align-self: center !important;
 }
-.run-status.winning { color: #16C784 !important; background: rgba(22, 199, 132, 0.10) !important; }
-.run-status.losing  { color: #F6465D !important; background: rgba(246, 70, 93, 0.10) !important; }
-.run-status.flat    { color: rgba(255,255,255,0.50) !important; background: rgba(255,255,255,0.04) !important; }
-.run-status-arrow { font-size: 10px !important; line-height: 1 !important; }
+.run-status-badge.winning { color: #16C784 !important; background: rgba(22, 199, 132, 0.08) !important; }
+.run-status-badge.losing  { color: #F6465D !important; background: rgba(246, 70, 93, 0.08) !important; }
+.run-status-badge.flat    { color: rgba(255,255,255,0.42) !important; background: rgba(255,255,255,0.035) !important; }
+.run-status-badge.settling { color: rgba(255,255,255,0.50) !important; background: rgba(255,255,255,0.04) !important; animation: run-settling-pulse 1.2s ease-in-out infinite !important; }
 
-/* Price cards — Entry | Live, equal width, glass surface */
+/* Price cards — two equal-width glass cards */
 .run-price-cards {
   display: grid !important;
   grid-template-columns: 1fr 1fr !important;
   gap: 10px !important;
-  margin-top: 4px !important;
 }
 .run-price-card {
   display: flex !important;
@@ -4516,29 +4514,33 @@ section.trade-ticket.settings-card {
   letter-spacing: 0.06em !important;
   text-transform: uppercase !important;
 }
-.run-price-card b {
+.run-price-card-body {
+  display: flex !important;
+  align-items: baseline !important;
+  gap: 6px !important;
+}
+.run-price-card-body b {
   color: #F4F7FB !important;
   font-size: 17px !important;
   font-weight: 700 !important;
   letter-spacing: -0.01em !important;
 }
-.run-price-card em {
+.run-price-card-body em {
   color: rgba(255,255,255,0.50) !important;
   font-size: 11px !important;
   font-style: normal !important;
   font-weight: 600 !important;
 }
-.run-price-card em.good { color: #16C784 !important; }
-.run-price-card em.bad  { color: #F6465D !important; }
+.run-price-card-body em.good { color: #16C784 !important; }
+.run-price-card-body em.bad  { color: #F6465D !important; }
 
-/* Sparkline — subdued, assistive only. Stretches full row width thanks to
-   preserveAspectRatio="none" on the SVG; non-scaling-stroke keeps the line crisp. */
+/* Sparkline — taller, more visible */
 .run-sparkline {
   display: block !important;
   width: 100% !important;
-  height: 28px !important;
-  opacity: 0.40 !important;
-  margin-top: 4px !important;
+  height: 44px !important;
+  opacity: 0.55 !important;
+  margin: 2px 0 !important;
   color: rgba(255,255,255,0.55);
 }
 .run-sparkline.up { color: #16C784; }
@@ -4673,9 +4675,9 @@ section.trade-ticket.settings-card {
   font-weight: 800;
 }
 
-/* Selected modal redesign: compact running + settled hierarchy */
+/* Selected modal redesign: compact professional running layout */
 .run-header {
-  gap: 5px !important;
+  gap: 3px !important;
   margin-top: -2px !important;
 }
 .run-title-line {
@@ -4701,101 +4703,41 @@ section.trade-ticket.settings-card {
   font-weight: 600 !important;
   line-height: 1.2 !important;
 }
-.run-trade-panel {
-  display: grid !important;
-  grid-template-columns: 112px minmax(0, 1fr) !important;
-  align-items: center !important;
-  gap: 14px !important;
-  margin-top: 2px !important;
+
+/* Progress bar — modal sizing */
+.run-progress-bar {
+  margin: 4px 0 2px !important;
 }
-.run-timer-stack {
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: center !important;
-  gap: 7px !important;
-  min-width: 0 !important;
+.run-progress-track {
+  height: 6px !important;
 }
-.run-ring-wrap {
-  margin: 0 !important;
-  transform: none !important;
-}
-.run-ring-center b {
-  font-size: 32px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0 !important;
-}
-.run-ring-center em {
-  font-size: 10.5px !important;
-  font-weight: 700 !important;
-  margin-top: 4px !important;
-  letter-spacing: 0.07em !important;
-}
-.run-ring-center.emphasis { transform: scale(1.06) !important; }
-.run-ring-center.emphasis b { letter-spacing: 0 !important; }
-.run-settling-label {
+.run-progress-label {
   font-size: 11px !important;
-  letter-spacing: 0.10em !important;
 }
-.run-status {
-  justify-content: center !important;
-  max-width: 112px !important;
-  min-height: 22px !important;
-  margin: 0 !important;
-  padding: 4px 8px !important;
+
+/* Status badge — subdued pill below progress */
+.run-status-badge {
+  margin: 1px 0 5px !important;
+  padding: 2px 9px !important;
   font-size: 10.5px !important;
-  letter-spacing: 0 !important;
-  line-height: 1.15 !important;
-  text-align: center !important;
-  white-space: nowrap !important;
 }
-.run-price-panel {
-  display: grid !important;
-  min-width: 0 !important;
-  padding: 8px 12px !important;
-  border-radius: 12px !important;
-  background: rgba(255,255,255,0.026) !important;
-  border: 1px solid rgba(255,255,255,0.06) !important;
+
+/* Price cards — full width glass */
+.run-price-cards {
+  gap: 8px !important;
 }
-.run-price-row {
-  display: grid !important;
-  grid-template-columns: 52px minmax(0, 1fr) !important;
-  align-items: baseline !important;
-  min-height: 31px !important;
-  gap: 10px !important;
-  border-bottom: 1px solid rgba(255,255,255,0.055) !important;
+.run-price-card {
+  gap: 2px !important;
+  padding: 10px 12px !important;
 }
-.run-price-row:last-child { border-bottom: 0 !important; }
-.run-price-row small,
-.run-summary-row span,
-.settled-price-col small {
-  color: rgba(255,255,255,0.50) !important;
-  font-size: 11px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0.05em !important;
-  text-transform: uppercase !important;
+.run-price-card small {
+  font-size: 10.5px !important;
 }
-.run-price-row span {
-  display: inline-flex !important;
-  align-items: baseline !important;
-  justify-content: flex-end !important;
-  gap: 6px !important;
-  min-width: 0 !important;
-}
-.run-price-row b,
-.run-summary-row b,
-.settled-price-col b,
-.settled-summary-row b {
-  color: #F4F7FB !important;
+.run-price-card-body b {
   font-size: 16px !important;
-  font-weight: 700 !important;
-  letter-spacing: 0 !important;
 }
-.run-price-row em {
-  color: rgba(255,255,255,0.50) !important;
+.run-price-card-body em {
   font-size: 10.5px !important;
-  font-style: normal !important;
-  font-weight: 700 !important;
-  letter-spacing: 0 !important;
 }
 .run-price-row em.good,
 .run-summary-row .good,
@@ -4811,8 +4753,8 @@ section.trade-ticket.settings-card {
   display: block !important;
   width: 100% !important;
   max-width: none !important;
-  height: 28px !important;
-  opacity: 0.42 !important;
+  height: 44px !important;
+  opacity: 0.50 !important;
   margin: 0 !important;
   color: rgba(255,255,255,0.55) !important;
 }
@@ -8687,50 +8629,86 @@ a:focus-visible,
   margin: 0 !important;
 }
 
-.bottom-sheet.order-sheet .run-ring-center .run-settling-label {
-  display: block !important;
-  color: rgba(255,255,255,0.72) !important;
+/* Running order — bottom-sheet progress bar + card overrides */
+
+/* Progress bar — bottom-sheet sizing */
+.bottom-sheet.order-sheet.sheet-mode-running .run-progress-bar {
+  margin: 3px 0 1px !important;
+  gap: 8px !important;
+}
+.bottom-sheet.order-sheet.sheet-mode-running .run-progress-track {
+  height: 6px !important;
+}
+.bottom-sheet.order-sheet.sheet-mode-running .run-progress-label {
   font-size: 10.5px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.08em !important;
-  line-height: 1 !important;
-  max-width: 74px !important;
-  text-align: center !important;
-  white-space: nowrap !important;
 }
 
-/* Running order typography pass */
-.bottom-sheet.order-sheet .run-ring-center {
+/* Status badge — bottom-sheet sizing */
+.bottom-sheet.order-sheet.sheet-mode-running .run-status-badge {
+  margin: 1px 0 5px !important;
+  padding: 2px 8px !important;
+  font-size: 10px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em !important;
+}
+
+/* Price cards — bottom-sheet overrides */
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-cards {
+  gap: 8px !important;
+}
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-card {
   gap: 2px !important;
+  padding: 10px 11px !important;
+  border-radius: 11px !important;
 }
-.bottom-sheet.order-sheet .run-ring-center b:not(.run-settling-label) {
-  font-family: Inter, "DM Sans", Arial, sans-serif !important;
-  font-size: 30px !important;
-  font-weight: 760 !important;
-  letter-spacing: 0 !important;
-  line-height: 0.95 !important;
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-card small {
+  font-size: 10px !important;
+  letter-spacing: 0.04em !important;
 }
-.bottom-sheet.order-sheet .run-ring-center b:not(.run-settling-label) small {
-  font-size: 0.42em !important;
-  font-weight: 760 !important;
-  margin-left: 1px !important;
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-card-body {
+  gap: 5px !important;
 }
-.bottom-sheet.order-sheet .run-ring-center em {
-  font-family: Inter, "DM Sans", Arial, sans-serif !important;
-  font-size: 9.5px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.055em !important;
-  line-height: 1 !important;
-  margin-top: 2px !important;
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-card-body b {
+  font-size: 16px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
 }
-.bottom-sheet.order-sheet .run-price-panel {
-  padding: 9px 12px !important;
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-card-body em {
+  font-size: 10px !important;
+  white-space: nowrap !important;
 }
-.bottom-sheet.order-sheet .run-price-row {
-  grid-template-columns: 48px minmax(0, 1fr) !important;
-  min-height: 35px !important;
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-card-body em.good {
+  color: #16C784 !important;
 }
-.bottom-sheet.order-sheet .run-price-row small,
+.bottom-sheet.order-sheet.sheet-mode-running .run-price-card-body em.bad {
+  color: #F6465D !important;
+}
+
+/* Sparkline — bottom-sheet sizing */
+.bottom-sheet.order-sheet.sheet-mode-running .run-sparkline {
+  height: 40px !important;
+  opacity: 0.50 !important;
+}
+
+/* Summary panel — bottom-sheet overrides */
+.bottom-sheet.order-sheet.sheet-mode-running .run-summary-panel {
+  border-radius: 11px !important;
+}
+.bottom-sheet.order-sheet.sheet-mode-running .run-summary-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto !important;
+  align-items: baseline !important;
+  gap: 8px !important;
+  min-height: 34px !important;
+  padding: 8px 11px !important;
+}
+.bottom-sheet.order-sheet.sheet-mode-running .run-summary-row span {
+  min-width: 0 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
 .bottom-sheet.order-sheet .run-summary-row span {
   font-family: Inter, "DM Sans", Arial, sans-serif !important;
   color: rgba(244,247,251,0.52) !important;
@@ -8738,33 +8716,6 @@ a:focus-visible,
   font-weight: 800 !important;
   letter-spacing: 0.045em !important;
   line-height: 1 !important;
-}
-.bottom-sheet.order-sheet .run-price-row span {
-  display: grid !important;
-  grid-template-columns: minmax(0, max-content) 46px !important;
-  align-items: baseline !important;
-  justify-content: end !important;
-  gap: 7px !important;
-}
-.bottom-sheet.order-sheet .run-price-row b {
-  font-family: Inter, "DM Sans", Arial, sans-serif !important;
-  color: #F4F7FB !important;
-  font-size: 17px !important;
-  font-weight: 760 !important;
-  line-height: 1 !important;
-  text-align: right !important;
-}
-.bottom-sheet.order-sheet .run-price-row em {
-  font-family: Inter, "DM Sans", Arial, sans-serif !important;
-  color: rgba(244,247,251,0.48) !important;
-  font-size: 10px !important;
-  font-weight: 800 !important;
-  line-height: 1 !important;
-  text-align: left !important;
-}
-.bottom-sheet.order-sheet .run-summary-row {
-  gap: 6px !important;
-  padding: 11px 13px !important;
 }
 .bottom-sheet.order-sheet .run-summary-row b {
   font-family: Inter, "DM Sans", Arial, sans-serif !important;
@@ -8774,172 +8725,61 @@ a:focus-visible,
   letter-spacing: 0 !important;
   line-height: 1.05 !important;
 }
-.bottom-sheet.order-sheet .run-price-row em.good,
+.bottom-sheet.order-sheet.sheet-mode-running .run-summary-row b {
+  font-size: 15.5px !important;
+  text-align: right !important;
+  white-space: nowrap !important;
+}
 .bottom-sheet.order-sheet .run-summary-row span.good,
 .bottom-sheet.order-sheet .run-summary-row b.good {
   color: #16C784 !important;
 }
-.bottom-sheet.order-sheet .run-price-row em.bad,
 .bottom-sheet.order-sheet .run-summary-row span.bad,
 .bottom-sheet.order-sheet .run-summary-row b.bad {
   color: #F6465D !important;
 }
 
+/* Footer */
+.bottom-sheet.order-sheet.sheet-mode-running .run-footer {
+  margin-top: -3px !important;
+  padding: 2px 0 0 !important;
+  font-size: 11px !important;
+}
+
+/* Mobile 380px — price card tighter padding */
 @media (max-width: 380px) {
-  .bottom-sheet.order-sheet.sheet-mode-running .run-trade-panel {
-    grid-template-columns: 96px minmax(0, 1fr) !important;
-    gap: 9px !important;
-  }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-panel,
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-card,
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row,
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row span {
-    min-width: 0 !important;
-  }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-panel {
-    padding: 8px 9px !important;
-  }
-
   .bottom-sheet.order-sheet.sheet-mode-running .run-price-cards {
     gap: 7px !important;
   }
-
   .bottom-sheet.order-sheet.sheet-mode-running .run-price-card {
-    gap: 3px !important;
-    padding: 10px 9px !important;
+    gap: 2px !important;
+    padding: 9px 8px !important;
   }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row {
-    grid-template-columns: 42px minmax(0, 1fr) !important;
-    gap: 7px !important;
-    min-height: 33px !important;
-  }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row span {
-    grid-template-columns: minmax(0, 1fr) 34px !important;
-    gap: 5px !important;
-  }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row b,
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-card b {
-    min-width: 0 !important;
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-card-body b {
+    font-size: 15px !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
   }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row b {
-    font-size: 16px !important;
-  }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row em {
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-card-body em {
     font-size: 9px !important;
-    min-width: 0 !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
   }
 }
 
-/* Final trade sheet hierarchy pass: tighter running/settled rhythm without touching behavior. */
+/* Container spacing — running/settled rhythm */
 .bottom-sheet.order-sheet.sheet-mode-running,
 .bottom-sheet.order-sheet.sheet-mode-settled {
   gap: 7px !important;
   padding-top: 2px !important;
   padding-bottom: max(14px, env(safe-area-inset-bottom)) !important;
 }
-
 .bottom-sheet.order-sheet.sheet-mode-running > .sheet-handle,
 .bottom-sheet.order-sheet.sheet-mode-settled > .sheet-handle {
   margin: 5px auto 2px !important;
 }
-
 .bottom-sheet.order-sheet.sheet-mode-running .run-header {
   gap: 3px !important;
   margin-top: -3px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-trade-panel {
-  grid-template-columns: 100px minmax(0, 1fr) !important;
-  align-items: center !important;
-  gap: 10px !important;
-  margin-top: 0 !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-timer-stack {
-  gap: 5px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-status {
-  max-width: 100px !important;
-  min-height: 21px !important;
-  padding: 3px 8px !important;
-  font-size: 10px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-price-panel {
-  padding: 7px 10px !important;
-  border-radius: 11px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-price-row {
-  grid-template-columns: 45px minmax(0, 1fr) !important;
-  gap: 8px !important;
-  min-height: 30px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-price-row span {
-  grid-template-columns: minmax(0, 1fr) 38px !important;
-  gap: 6px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-price-row b {
-  font-size: 16px !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-price-row em {
-  font-size: 9.5px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-sparkline {
-  height: 24px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-summary-panel {
-  border-radius: 11px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-summary-row {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) auto !important;
-  align-items: baseline !important;
-  gap: 8px !important;
-  min-height: 34px !important;
-  padding: 8px 11px !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-summary-row span {
-  min-width: 0 !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-summary-row b {
-  font-size: 15.5px !important;
-  text-align: right !important;
-  white-space: nowrap !important;
-}
-
-.bottom-sheet.order-sheet.sheet-mode-running .run-footer {
-  margin-top: -3px !important;
-  padding: 2px 0 0 !important;
-  font-size: 11px !important;
 }
 
 .bottom-sheet.order-sheet.sheet-mode-settled .settled-header {
@@ -9009,31 +8849,16 @@ a:focus-visible,
 }
 
 @media (max-width: 380px) {
-  .bottom-sheet.order-sheet.sheet-mode-running .run-trade-panel {
-    grid-template-columns: 94px minmax(0, 1fr) !important;
-    gap: 8px !important;
-  }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-panel {
-    padding: 7px 8px !important;
-  }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row {
-    grid-template-columns: 40px minmax(0, 1fr) !important;
+  .bottom-sheet.order-sheet.sheet-mode-running .run-progress-bar {
     gap: 6px !important;
-    min-height: 29px !important;
   }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row span {
-    grid-template-columns: minmax(0, 1fr) 38px !important;
-    gap: 5px !important;
-  }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row b {
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-card-body b {
     font-size: 15px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
   }
-
-  .bottom-sheet.order-sheet.sheet-mode-running .run-price-row em {
+  .bottom-sheet.order-sheet.sheet-mode-running .run-price-card-body em {
     font-size: 8.8px !important;
   }
 }

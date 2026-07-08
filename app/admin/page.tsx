@@ -63,6 +63,19 @@ type Order = { id: number; user_id: number; user_public_uid?: string | null; use
 type Withdrawal = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; amount: number; address: string; status: string; note: string | null; created_at: string };
 type DepositAddress = { id: number; asset: string; network: string; address: string; is_active: number };
 type UserDepositAddress = DepositAddress & { user_id: number; user_public_uid?: string | null; email: string | null; username: string };
+
+const ASSET_NETWORKS: Record<string, string[]> = {
+  USDC: ["TRC20", "ERC20", "BEP20", "Polygon", "Solana"],
+  ETH: ["ERC20"],
+  BTC: ["Bitcoin"],
+  SOL: ["Solana"],
+};
+const ASSET_DEFAULT_NETWORK: Record<string, string> = {
+  USDC: "TRC20",
+  ETH: "ERC20",
+  BTC: "Bitcoin",
+  SOL: "Solana",
+};
 type Deposit = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; asset: string; network: string; amount: number; tx_hash: string | null; proof_data?: string | null; has_proof?: number | boolean | null; deposit_address: string | null; status: "pending" | "approved" | "rejected"; admin_note: string | null; created_at: string };
 type KycSubmission = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; legal_name: string; document_type: string; front_data?: string | null; back_data?: string | null; has_front?: number | boolean | null; has_back?: number | boolean | null; status: "pending" | "approved" | "rejected"; rejection_reason: string | null; created_at: string; reviewed_at: string | null };
 type Settings = {
@@ -202,17 +215,18 @@ const adminCss = `
 .main{min-width:0}.topbar{height:64px;background:#fff;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;padding:0 24px}.topbar h1{font-size:18px;margin:0}.topbar p{margin:3px 0 0;color:#64748b;font-size:12px}.tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .realtime-state{display:inline-flex;align-items:center;gap:6px;border:1px solid #d8dee9;border-radius:999px;background:#fff;color:#64748b;font-size:12px;font-weight:800;min-height:28px;padding:4px 9px}.realtime-state span{width:7px;height:7px;border-radius:999px;background:#94a3b8}.realtime-state.connected{color:#15803d;border-color:#bbf7d0;background:#f0fdf4}.realtime-state.connected span{background:#22c55e}.realtime-state.polling{color:#b45309;border-color:#fed7aa;background:#fff7ed}.realtime-state.polling span{background:#f97316}.realtime-state.connecting span{background:#38bdf8}
 .bell-wrap{position:relative;display:inline-flex}
-.bell-btn{position:relative;border:1px solid #d8dee9;background:#fff;color:#475569;border-radius:8px;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}.bell-btn:hover{border-color:#2563eb;color:#2563eb}.bell-btn svg{width:18px;height:18px}.bell-btn.has-unread{color:#2563eb;border-color:#bfdbfe}
-.bell-dot{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;line-height:18px;border-radius:999px;text-align:center;box-shadow:0 0 0 2px #fff}
-.bell-panel{position:absolute;top:calc(100% + 8px);right:0;width:min(360px,92vw);background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 18px 50px rgba(15,23,42,.18);z-index:50;overflow:hidden}
-.bell-panel-head{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid #e5e7eb;font-size:13px}.bell-panel-head strong{font-size:13px}
-.bell-panel-actions{display:flex;gap:10px}.bell-link{background:transparent;border:0;color:#2563eb;font-size:12px;cursor:pointer;padding:0}.bell-link:disabled{color:#94a3b8;cursor:not-allowed}.bell-link:hover:not(:disabled){text-decoration:underline}
+.bell-btn{position:relative;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#8899B0;border-radius:8px;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}.bell-btn:hover{border-color:#2563eb;color:#e0eaf5}.bell-btn svg{width:18px;height:18px}.bell-btn.has-unread{color:#2563eb;border-color:rgba(37,99,235,.3)}
+.bell-dot{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;padding:0 5px;background:#ef4444;color:#fff;font-size:11px;font-weight:800;line-height:18px;border-radius:999px;text-align:center;box-shadow:0 0 0 2px #0f172a}
+.bell-panel{position:absolute;top:calc(100% + 8px);right:0;width:min(340px,calc(100vw - 32px));background:rgba(15,23,34,.96);border:1px solid rgba(255,255,255,.08);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.45);z-index:50;overflow:hidden;backdrop-filter:blur(16px)}
+.bell-panel-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px}.bell-panel-head strong{font-size:14px;color:#e0eaf5}
+.bell-panel-actions{display:flex;gap:12px}.bell-link{background:transparent;border:0;color:#6e88a4;font-size:12px;cursor:pointer;padding:0}.bell-link:disabled{color:#445566;cursor:not-allowed}.bell-link:hover:not(:disabled){color:#e0eaf5}
 .bell-panel-body{max-height:60vh;overflow-y:auto}
-.bell-empty{padding:34px 16px;text-align:center;color:#94a3b8;font-size:13px}
-.bell-item{display:grid;grid-template-columns:1fr auto;grid-template-areas:"title time" "meta meta";gap:2px 12px;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid #f1f5f9;padding:11px 14px;cursor:pointer;font:inherit}.bell-item:last-child{border-bottom:0}.bell-item:hover{background:#f8fafc}.bell-item.read{opacity:.55}
-.bell-item-title{grid-area:title;font-size:13px;font-weight:700;color:#0f172a}.bell-item.read .bell-item-title{font-weight:500;color:#475569}
-.bell-item-time{grid-area:time;font-size:11px;color:#94a3b8;font-variant-numeric:tabular-nums;white-space:nowrap}
-.bell-item-meta{grid-area:meta;font-size:12px;color:#64748b}
+.bell-empty{padding:40px 16px;text-align:center;color:#556677;font-size:13px}
+.bell-item{display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"dot title time" ". meta meta";gap:2px 10px;width:100%;text-align:left;background:transparent;border:0;border-bottom:1px solid rgba(255,255,255,.04);padding:12px 16px;cursor:pointer;font:inherit;align-items:start}.bell-item:last-child{border-bottom:0}.bell-item:hover{background:rgba(255,255,255,.04)}.bell-item.read{opacity:.5}
+.bell-item-dot{grid-area:dot;width:6px;height:6px;border-radius:50%;background:#2563eb;margin-top:5px;flex-shrink:0}.bell-item.read .bell-item-dot{background:transparent}
+.bell-item-title{grid-area:title;font-size:13px;font-weight:700;color:#e0eaf5}.bell-item.read .bell-item-title{font-weight:500;color:#8899B0}
+.bell-item-time{grid-area:time;font-size:11px;color:#556677;font-variant-numeric:tabular-nums;white-space:nowrap}
+.bell-item-meta{grid-area:meta;font-size:12px;color:#6e88a4}
 .content{padding:22px;display:grid;gap:16px}.btn{border:1px solid #d8dee9;background:#fff;color:#334155;border-radius:6px;min-height:34px;padding:7px 12px;font-size:13px;font-weight:700;display:inline-flex;gap:7px;align-items:center;justify-content:center;cursor:pointer;text-decoration:none}.btn:hover{border-color:#2563eb;color:#2563eb}.btn svg{width:15px;height:15px}.btn.primary{background:#2563eb;border-color:#2563eb;color:#fff}.btn.good{background:#16a34a;border-color:#16a34a;color:#fff}.btn.danger{background:#ef4444;border-color:#ef4444;color:#fff}.btn.warn{background:#fff7ed;border-color:#fdba74;color:#ea580c}.btn.icon{width:32px;padding:0}.btn.disabled{opacity:.55;pointer-events:none}
 .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;box-shadow:0 1px 2px rgba(15,23,42,.04)}.stat{display:flex;justify-content:space-between;gap:12px}.stat label{display:block;color:#64748b;font-size:13px}.stat strong{display:block;margin-top:10px;font-size:24px;letter-spacing:-.02em}.stat small{display:block;color:#94a3b8;margin-top:4px}.stat svg{width:22px;height:22px;color:#2563eb}
 .panel{background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #e5e7eb}.panel-head h2{font-size:15px;margin:0;display:flex;align-items:center;gap:8px}.panel-head svg{width:17px;height:17px;color:#2563eb}.panel-body{padding:16px}.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
@@ -697,6 +711,7 @@ export default function AdminPage() {
                   className={`bell-item${notification.read ? " read" : ""}`}
                   onClick={() => openNotification(notification)}
                 >
+                  <span className="bell-item-dot" />
                   <span className="bell-item-title">{notification.title}</span>
                   {notification.meta && <span className="bell-item-meta">{notification.meta}</span>}
                   <span className="bell-item-time">{formatNotificationTime(notification.ts)}</span>
@@ -2275,6 +2290,9 @@ function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
 
   async function saveAddress() {
     setError("");
+    if (!form.asset || !ASSET_NETWORKS[form.asset]) return setError("请选择有效币种");
+    if (!form.network || !ASSET_NETWORKS[form.asset]?.includes(form.network)) return setError(`网络 "${form.network}" 不属于币种 ${form.asset}，请重新选择`);
+    if (!form.address.trim()) return setError("充值地址不能为空");
     const res = await fetch("/api/admin/deposit-addresses", {
       method: editing ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
@@ -2480,11 +2498,31 @@ function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
             )}
             <label>
               <span>币种</span>
-              <input disabled={!!editing} onChange={(event) => setForm({ ...form, asset: event.target.value.toUpperCase() })} value={form.asset} />
+              <select
+                disabled={!!editing}
+                onChange={(event) => {
+                  const newAsset = event.target.value;
+                  const defaultNet = ASSET_DEFAULT_NETWORK[newAsset] || "TRC20";
+                  setForm({ ...form, asset: newAsset, network: defaultNet });
+                }}
+                value={form.asset}
+              >
+                {Object.keys(ASSET_NETWORKS).map((asset) => (
+                  <option key={asset} value={asset}>{asset}</option>
+                ))}
+              </select>
             </label>
             <label>
               <span>网络</span>
-              <input disabled={!!editing} onChange={(event) => setForm({ ...form, network: event.target.value })} value={form.network} />
+              <select
+                disabled={!!editing}
+                onChange={(event) => setForm({ ...form, network: event.target.value })}
+                value={form.network}
+              >
+                {(ASSET_NETWORKS[form.asset] || ["TRC20"]).map((net) => (
+                  <option key={net} value={net}>{net}</option>
+                ))}
+              </select>
             </label>
             <label>
               <span>充值地址</span>
@@ -2513,6 +2551,9 @@ function LegacyDepositAddressesTab() {
 
   async function saveAddress() {
     setError("");
+    if (!form.asset || !ASSET_NETWORKS[form.asset]) return setError("请选择有效币种");
+    if (!form.network || !ASSET_NETWORKS[form.asset]?.includes(form.network)) return setError(`网络 "${form.network}" 不属于币种 ${form.asset}，请重新选择`);
+    if (!form.address.trim()) return setError("充值地址不能为空");
     const res = await fetch("/api/admin/deposit-addresses", {
       method: editing ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
@@ -2562,8 +2603,8 @@ function LegacyDepositAddressesTab() {
           {error && <div className="error">{error}</div>}
           <label className="field"><span>地址类型</span><select className="select" value={form.scope} disabled={!!editing} onChange={(e) => setForm({ ...form, scope: e.target.value })}><option value="default">平台默认充值地址</option><option value="user">用户自定义充值地址</option></select></label>
           {form.scope === "user" && <label className="field"><span>用户 ID</span><input className="input" value={form.userId} disabled={!!editing} onChange={(e) => setForm({ ...form, userId: e.target.value })} placeholder="例如 123456" /></label>}
-          <label className="field"><span>币种</span><input className="input" value={form.asset} disabled={!!editing} onChange={(e) => setForm({ ...form, asset: e.target.value.toUpperCase() })} /></label>
-          <label className="field"><span>网络</span><input className="input" value={form.network} disabled={!!editing} onChange={(e) => setForm({ ...form, network: e.target.value })} /></label>
+          <label className="field"><span>币种</span><select className="select" value={form.asset} disabled={!!editing} onChange={(e) => { const newAsset = e.target.value; setForm({ ...form, asset: newAsset, network: ASSET_DEFAULT_NETWORK[newAsset] || "TRC20" }); }}>{Object.keys(ASSET_NETWORKS).map((a) => <option key={a} value={a}>{a}</option>)}</select></label>
+          <label className="field"><span>网络</span><select className="select" value={form.network} disabled={!!editing} onChange={(e) => setForm({ ...form, network: e.target.value })}>{(ASSET_NETWORKS[form.asset] || ["TRC20"]).map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
           <label className="field"><span>充值地址</span><textarea className="textarea" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></label>
           <div className="actions">
             <button className="btn primary" onClick={saveAddress}>{editing ? "保存修改" : "保存地址"}</button>
@@ -3035,46 +3076,57 @@ function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSe
         <button className="admin-button admin-button-primary" onClick={submitSettings} type="button"><Save size={15} />保存设置</button>
       </div>
 
-      <div className="admin-settings-grid">
-        <SectionCard title="系统开关" description="影响注册、提现和交易入口。">
-          <div className="admin-setting-switch-list">
-            <div>
-              <div><strong>注册开关</strong><span>{settings.registration_enabled !== "false" ? "当前开启" : "当前关闭"}</span></div>
-              <Toggle enabled={settings.registration_enabled !== "false"} onChange={(value) => setSwitch("registration_enabled", value)} />
-            </div>
-            <div>
-              <div><strong>提现开关</strong><span>{settings.withdrawals_enabled !== "false" ? "当前开启" : "当前关闭"}</span></div>
-              <Toggle enabled={settings.withdrawals_enabled !== "false"} onChange={(value) => setSwitch("withdrawals_enabled", value)} />
-            </div>
-            <div>
-              <div><strong>交易开关</strong><span>{settings.trading_enabled !== "false" ? "当前开启" : "当前关闭"}</span></div>
-              <Toggle enabled={settings.trading_enabled !== "false"} onChange={(value) => setSwitch("trading_enabled", value)} />
-            </div>
-          </div>
-        </SectionCard>
-
-        <SectionCard title="平台配置" description="客服链接、注册赠金和提现说明。">
-          <div className="admin-settings-form">
-            <label><span>WhatsApp 客服链接</span><input value={settings.whatsapp_support_url || ""} onChange={(event) => setValue("whatsapp_support_url", event.target.value)} /></label>
-            <label><span>Telegram 客服链接</span><input value={settings.telegram_url || ""} onChange={(event) => setValue("telegram_url", event.target.value)} /></label>
-            <label><span>注册赠金 USDC（已关闭）</span><input disabled readOnly value={settings.default_signup_balance || "0"} /></label>
-            <label><span>最小提现金额</span><input value={settings.min_withdrawal_amount || ""} onChange={(event) => setValue("min_withdrawal_amount", event.target.value)} /></label>
-            <label className="is-wide"><span>提现说明</span><textarea value={settings.withdrawal_notice || ""} onChange={(event) => setValue("withdrawal_notice", event.target.value)} /></label>
-          </div>
-        </SectionCard>
+      {/* 基础开关 — 三张横向小卡片 */}
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+        gap: 12,
+      }}>
+        <SettingToggleCard
+          title="注册开关"
+          subtitle={settings.registration_enabled !== "false" ? "当前开启" : "当前关闭"}
+          enabled={settings.registration_enabled !== "false"}
+          onToggle={(v) => setSwitch("registration_enabled", v)}
+        />
+        <SettingToggleCard
+          title="提现开关"
+          subtitle={settings.withdrawals_enabled !== "false" ? "当前开启" : "当前关闭"}
+          enabled={settings.withdrawals_enabled !== "false"}
+          onToggle={(v) => setSwitch("withdrawals_enabled", v)}
+        />
+        <SettingToggleCard
+          title="交易开关"
+          subtitle={settings.trading_enabled !== "false" ? "当前开启" : "当前关闭"}
+          enabled={settings.trading_enabled !== "false"}
+          onToggle={(v) => setSwitch("trading_enabled", v)}
+        />
       </div>
 
-      <SectionCard title="二元期权配置" description="每行一个档位，格式保持：秒数,收益率。">
+      {/* 客服配置 */}
+      <SectionCard title="客服配置" description="WhatsApp 和 Telegram 客服链接。">
         <div className="admin-settings-form">
-          <label className="is-wide">
-            <span>时间和收益率</span>
-            <textarea className="is-mono" value={binaryText} onChange={(event) => { markDirty(); setDirty(true); setBinaryText(event.target.value); }} placeholder={"30,30\n60,35"} />
-          </label>
+          <label><span>WhatsApp 客服链接</span><input value={settings.whatsapp_support_url || ""} onChange={(event) => setValue("whatsapp_support_url", event.target.value)} /></label>
+          <label><span>Telegram 客服链接</span><input value={settings.telegram_url || ""} onChange={(event) => setValue("telegram_url", event.target.value)} /></label>
         </div>
-        <p className="admin-settings-help">示例：30,30。保存前仍按现有规则解析为二元期权档位。</p>
-        {binaryError && <div className="error">{binaryError}</div>}
       </SectionCard>
 
+      {/* 提现配置 */}
+      <SectionCard title="提现配置" description="注册赠金、最小提现金额与提现说明。">
+        <div className="admin-settings-form">
+          <label><span>注册赠金 USDC（已关闭）</span><input disabled readOnly value={settings.default_signup_balance || "0"} /></label>
+          <label><span>最小提现金额</span><input value={settings.min_withdrawal_amount || ""} onChange={(event) => setValue("min_withdrawal_amount", event.target.value)} /></label>
+          <label className="is-wide"><span>提现说明</span><textarea value={settings.withdrawal_notice || ""} onChange={(event) => setValue("withdrawal_notice", event.target.value)} /></label>
+        </div>
+      </SectionCard>
+
+      {/* 交易参数 — 表格 + 高级编辑 */}
+      <BinaryOptionsSettings
+        binaryText={binaryText}
+        setBinaryText={(v) => { markDirty(); setDirty(true); setBinaryText(v); }}
+        binaryError={binaryError}
+      />
+
+      {/* 前端页面内容 */}
       <SectionCard title="前端页面内容" description="这些文案会显示在前台静态页面。">
         <div className="admin-settings-content-grid">
           <label><span>关于我们</span><textarea value={settings.about_content || ""} onChange={(event) => setValue("about_content", event.target.value)} /></label>
@@ -3082,6 +3134,13 @@ function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSe
           <label><span>隐私政策</span><textarea value={settings.privacy_content || ""} onChange={(event) => setValue("privacy_content", event.target.value)} /></label>
         </div>
       </SectionCard>
+
+      {/* 底部保存按钮 */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button className="admin-button admin-button-primary" onClick={submitSettings} type="button" style={{ padding: "10px 28px" }}>
+          <Save size={16} /> 保存设置
+        </button>
+      </div>
     </div>
   );
 }
@@ -3107,6 +3166,228 @@ function Status({ status }: { status: string }) {
 function SettingSwitch({ label, value, onToggle }: { label: string; value?: string; onToggle: (enabled: boolean) => void }) {
   const enabled = value !== "false";
   return <div className="ledger-row"><div><b>{label}</b><br /><span className="muted">{enabled ? "当前开启" : "当前关闭"}</span></div><Toggle enabled={enabled} onChange={onToggle} /></div>;
+}
+
+function SettingToggleCard({ title, subtitle, enabled, onToggle }: { title: string; subtitle: string; enabled: boolean; onToggle: (enabled: boolean) => void }) {
+  return (
+    <div style={{
+      padding: "16px 18px",
+      borderRadius: 10,
+      border: "1px solid rgba(255,255,255,0.06)",
+      background: "rgba(16,24,39,0.72)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+      minHeight: 82,
+    }}>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#e0eaf5", marginBottom: 2 }}>{title}</div>
+        <div style={{ fontSize: 12, color: enabled ? "#22C55E" : "#6e88a4" }}>{subtitle}</div>
+      </div>
+      <Toggle enabled={enabled} onChange={onToggle} />
+    </div>
+  );
+}
+
+function BinaryOptionsSettings({ binaryText, setBinaryText, binaryError }: { binaryText: string; setBinaryText: (v: string) => void; binaryError: string }) {
+  const [rows, setRows] = useState<Array<{ seconds: string; percent: string }>>(() => parseBinaryText(binaryText));
+  const [rowError, setRowError] = useState("");
+
+  // Sync from parent prop
+  useEffect(() => {
+    const parsed = parseBinaryText(binaryText);
+    // Only update if different to avoid flicker during user editing
+    const currentText = rowsToText(rows);
+    if (binaryText && binaryText.trim() && currentText !== binaryText.trim()) {
+      setRows(parsed);
+    }
+  }, [binaryText]);
+
+  function syncToParent(newRows: Array<{ seconds: string; percent: string }>) {
+    setRows(newRows);
+    const text = rowsToText(newRows);
+    setBinaryText(text);
+    validateAndSetError(newRows);
+  }
+
+  function validateAndSetError(r: Array<{ seconds: string; percent: string }>) {
+    const filled = r.filter(row => row.seconds.trim() || row.percent.trim());
+    if (filled.length === 0) { setRowError(""); return; }
+    const seen = new Set<string>();
+    for (const row of filled) {
+      if (!row.seconds.trim() || !row.percent.trim()) { setRowError("请填写正确的时间周期和收益率。"); return; }
+      const s = Number(row.seconds);
+      if (!Number.isInteger(s) || s < 1) { setRowError("请填写正确的时间周期和收益率。"); return; }
+      const p = Number(row.percent);
+      if (!Number.isFinite(p) || p <= 0) { setRowError("请填写正确的时间周期和收益率。"); return; }
+      if (seen.has(row.seconds.trim())) { setRowError("时间周期不能重复。"); return; }
+      seen.add(row.seconds.trim());
+    }
+    setRowError("");
+  }
+
+  function updateRow(i: number, field: "seconds" | "percent", value: string) {
+    const next = rows.map((r, idx) => idx === i ? { ...r, [field]: value } : r);
+    syncToParent(next);
+  }
+
+  function deleteRow(i: number) {
+    if (rows.length <= 1) return;
+    const next = rows.filter((_, idx) => idx !== i);
+    syncToParent(next);
+  }
+
+  function addRow() {
+    syncToParent([...rows, { seconds: "", percent: "" }]);
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    height: 38,
+    padding: "6px 10px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.04)",
+    color: "#e0eaf5",
+    fontSize: 13,
+    outline: "none",
+    boxSizing: "border-box",
+  };
+
+  return (
+    <SectionCard title="交易参数" description="二元期权档位配置。">
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              <th style={{ textAlign: "left", padding: "6px 8px", color: "#6e88a4", fontWeight: 600, fontSize: 11, width: "40%" }}>时间周期</th>
+              <th style={{ textAlign: "left", padding: "6px 8px", color: "#6e88a4", fontWeight: 600, fontSize: 11, width: "35%" }}>收益率</th>
+              <th style={{ textAlign: "center", padding: "6px 8px", color: "#6e88a4", fontWeight: 600, fontSize: 11, width: "25%" }}>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                <td style={{ padding: "6px 8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="秒数"
+                      value={row.seconds}
+                      onChange={(e) => updateRow(i, "seconds", e.target.value)}
+                      style={inputStyle}
+                    />
+                    <span style={{ color: "#6e88a4", fontSize: 12, flexShrink: 0 }}>秒</span>
+                  </div>
+                </td>
+                <td style={{ padding: "6px 8px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <input
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      placeholder="收益率"
+                      value={row.percent}
+                      onChange={(e) => updateRow(i, "percent", e.target.value)}
+                      style={inputStyle}
+                    />
+                    <span style={{ color: "#6e88a4", fontSize: 12, flexShrink: 0 }}>%</span>
+                  </div>
+                </td>
+                <td style={{ padding: "6px 8px", textAlign: "center" }}>
+                  <button
+                    type="button"
+                    disabled={rows.length <= 1}
+                    onClick={() => deleteRow(i)}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: "1px solid rgba(239,68,68,0.25)",
+                      background: rows.length <= 1 ? "rgba(255,255,255,0.03)" : "rgba(239,68,68,0.08)",
+                      color: rows.length <= 1 ? "#445566" : "#DC2626",
+                      cursor: rows.length <= 1 ? "not-allowed" : "pointer",
+                      fontSize: 12,
+                    }}
+                  >
+                    删除
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Validation error */}
+      {(rowError || binaryError) && (
+        <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 6, background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#DC2626", fontSize: 12 }}>
+          {rowError || binaryError}
+        </div>
+      )}
+
+      {/* Add row button */}
+      <button
+        type="button"
+        onClick={addRow}
+        style={{
+          marginTop: 10,
+          padding: "8px 16px",
+          borderRadius: 10,
+          border: "1px dashed rgba(255,255,255,0.12)",
+          background: "transparent",
+          color: "#8899B0",
+          cursor: "pointer",
+          fontSize: 13,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+      >
+        <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> 添加档位
+      </button>
+
+      {/* Legacy textarea — collapsed */}
+      <details style={{ marginTop: 14 }}>
+        <summary style={{ cursor: "pointer", color: "#6e88a4", fontSize: 11, userSelect: "none" }}>高级编辑</summary>
+        <div className="admin-settings-form" style={{ marginTop: 8 }}>
+          <label className="is-wide">
+            <textarea
+              className="is-mono"
+              value={binaryText}
+              onChange={(e) => {
+                setBinaryText(e.target.value);
+                const parsed = parseBinaryText(e.target.value);
+                setRows(parsed.length > 0 ? parsed : [{ seconds: "", percent: "" }]);
+              }}
+              placeholder={"120,5\n300,15\n500,25\n1200,30"}
+              style={{ minHeight: 80 }}
+            />
+          </label>
+        </div>
+        <p className="admin-settings-help">每行一个档位，格式：秒数,收益率。</p>
+      </details>
+    </SectionCard>
+  );
+}
+
+function parseBinaryText(text: string): Array<{ seconds: string; percent: string }> {
+  if (!text || !text.trim()) return [{ seconds: "", percent: "" }];
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const parsed = lines.map(line => {
+    const [s, p] = line.split(/[,\s:]+/);
+    return { seconds: (s || "").trim(), percent: (p || "").replace("%", "").trim() };
+  }).filter(r => r.seconds || r.percent);
+  return parsed.length > 0 ? parsed : [{ seconds: "", percent: "" }];
+}
+
+function rowsToText(rows: Array<{ seconds: string; percent: string }>): string {
+  return rows
+    .filter(r => r.seconds.trim() || r.percent.trim())
+    .map(r => `${r.seconds.trim()},${r.percent.trim()}`)
+    .join("\n");
 }
 
 function FiatBankAccountsAdmin() {
@@ -3385,6 +3666,7 @@ function SupportChatAdmin() {
   } | null>(null);
   const [confirmAmount, setConfirmAmount] = useState("");
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [highValueVerified, setHighValueVerified] = useState(false);
 
   // Load conversations
   useEffect(() => {
@@ -3643,6 +3925,7 @@ function SupportChatAdmin() {
                               finalRate: Number(d.final_rate || 0), username: String(d.username || ""),
                             });
                             setConfirmAmount(String(d.estimated_usdt || ""));
+                            setHighValueVerified(false);
                           }} style={{ padding: "4px 12px", borderRadius: 6, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                             Confirm
                           </button>
@@ -3727,7 +4010,7 @@ function SupportChatAdmin() {
               )}
               {/* Confirm modal */}
               {confirmModal && (
-                <div onClick={() => { setConfirmModal(null); setConfirmLoading(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+                <div onClick={() => { setConfirmModal(null); setConfirmLoading(false); setHighValueVerified(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
                   <div onClick={(e) => e.stopPropagation()} style={{ width: 380, maxWidth: "90vw", borderRadius: 12, background: "rgba(30,41,59,0.98)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", padding: 20 }}>
                     <div style={{ fontSize: 15, fontWeight: 700, color: "#e0eaf5", marginBottom: 16 }}>Confirm Fiat Deposit</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#8899B0", marginBottom: 14 }}>
@@ -3743,16 +4026,44 @@ function SupportChatAdmin() {
                       style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#e0eaf5", fontSize: 16, fontWeight: 600, marginBottom: 6, outline: "none" }}
                       onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
                     />
-                    <div style={{ fontSize: 10, color: "#445566", marginBottom: 14 }}>You can adjust the final credited amount before confirming.</div>
+                    <div style={{ fontSize: 10, color: "#445566", marginBottom: 10 }}>You can adjust the final credited amount before confirming.</div>
+
+                    {/* High-value warning */}
+                    {(() => {
+                      const amt = Number(confirmAmount);
+                      if (Number.isFinite(amt) && amt > 10000) {
+                        return (
+                          <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, background: "rgba(234,179,8,0.08)", border: "1px solid rgba(234,179,8,0.25)", color: "#FACC15", fontSize: 12, lineHeight: 1.5 }}>
+                            <strong>High-value deposit.</strong> Please verify bank receipt before confirming.
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* High-value checkbox */}
+                    {(() => {
+                      const amt = Number(confirmAmount);
+                      if (Number.isFinite(amt) && amt > 10000) {
+                        return (
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, cursor: "pointer", fontSize: 12, color: "#8899B0" }}>
+                            <input type="checkbox" checked={highValueVerified} onChange={(e) => setHighValueVerified(e.target.checked)}
+                              style={{ width: 16, height: 16, accentColor: "#FACC15", cursor: "pointer" }} />
+                            I have verified the bank receipt.
+                          </label>
+                        );
+                      }
+                      return null;
+                    })()}
+
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button disabled={confirmLoading} onClick={() => { setConfirmModal(null); setConfirmLoading(false); }}
+                      <button disabled={confirmLoading} onClick={() => { setConfirmModal(null); setConfirmLoading(false); setHighValueVerified(false); }}
                         style={{ flex: 1, padding: "8px", borderRadius: 8, background: "rgba(255,255,255,0.06)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
                         Cancel
                       </button>
-                      <button disabled={confirmLoading} onClick={async () => {
+                      <button disabled={confirmLoading || (Number.isFinite(Number(confirmAmount)) && Number(confirmAmount) > 10000 && !highValueVerified)} onClick={async () => {
                         const amount = Number(confirmAmount);
                         if (!Number.isFinite(amount) || amount <= 0) { alert("Enter a valid positive amount"); return; }
-                        if (amount > 10000) { alert(`Maximum allowed is 10000 USDC`); return; }
                         const est = confirmModal.estimatedUsdt;
                         if (est > 0) {
                           const dev = Math.abs(amount - est) / est;
