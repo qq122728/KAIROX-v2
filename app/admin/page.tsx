@@ -3273,6 +3273,15 @@ function FiatDepositsAdmin() {
   const [loaded, setLoaded] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
 
+  const STATUS_LABELS: Record<string, string> = {
+    requested: "待发送银行信息",
+    bank_sent: "已发送银行信息",
+    submitted: "待确认到账",
+    confirmed: "已确认",
+    rejected: "已驳回",
+  };
+  const statusLabel = (s: string) => STATUS_LABELS[s] || s;
+
   const load = () => {
     const url = statusFilter ? `/api/admin/fiat-deposits?status=${statusFilter}` : "/api/admin/fiat-deposits";
     fetch(url).then(r => r.json()).then(d => {
@@ -3307,8 +3316,8 @@ function FiatDepositsAdmin() {
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); }}
           style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }}>
-          <option value="">All Status</option>
-          {["requested","bank_sent","submitted","confirmed","rejected"].map(s => <option key={s} value={s}>{s}</option>)}
+          <option value="">全部状态</option>
+          {["requested","bank_sent","submitted","confirmed","rejected"].map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
         </select>
         <button onClick={load} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "#8899B0", cursor: "pointer" }}>Refresh</button>
       </div>
@@ -3323,7 +3332,7 @@ function FiatDepositsAdmin() {
                 padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700,
                 background: d.status === "confirmed" ? "rgba(34,197,94,0.15)" : d.status === "rejected" ? "rgba(239,68,68,0.15)" : d.status === "submitted" ? "rgba(37,99,255,0.15)" : "rgba(255,255,255,0.08)",
                 color: d.status === "confirmed" ? "#22C55E" : d.status === "rejected" ? "#DC2626" : d.status === "submitted" ? "#2563FF" : "#8899B0"
-              }}>{String(d.status)}</span>
+              }}>{statusLabel(String(d.status))}</span>
             </div>
             <div style={{ fontSize: 12, color: "#6e88a4", marginBottom: 4 }}>
               {d.reference_code ? `Internal: ${d.reference_code} · ` : ""}
