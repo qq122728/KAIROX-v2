@@ -3370,6 +3370,12 @@ function SupportChatAdmin() {
   const [refRateError, setRefRateError] = useState("");
   const [proofViewer, setProofViewer] = useState<{ name?: string; data?: string } | null>(null);
   const [depositCurrency, setDepositCurrency] = useState("");
+  const [confirmModal, setConfirmModal] = useState<{
+    depositId: number; currency: string; amountFiat: number;
+    estimatedUsdt: number; finalRate: number; username: string;
+  } | null>(null);
+  const [confirmAmount, setConfirmAmount] = useState("");
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   // Load conversations
   useEffect(() => {
@@ -3538,12 +3544,13 @@ function SupportChatAdmin() {
                       {d.status === "bank_sent" && <div style={{ fontSize: 11, color: "#8899B0" }}>Waiting for user to submit transfer info...</div>}
                       {d.status === "submitted" && (
                         <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                          <button onClick={async () => {
-                            if (!confirm(`Confirm deposit #${d.id} (${d.amount_fiat} ${d.currency} → ${d.estimated_usdt} USDT)?`)) return;
-                            const r = await fetch("/api/admin/fiat-deposit/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: d.id }) });
-                            const rd = await r.json();
-                            if (!r.ok) { alert(rd.error || "Failed"); return; }
-                            loadData();
+                          <button onClick={() => {
+                            setConfirmModal({
+                              depositId: Number(d.id), currency: String(d.currency),
+                              amountFiat: Number(d.amount_fiat || 0), estimatedUsdt: Number(d.estimated_usdt || 0),
+                              finalRate: Number(d.final_rate || 0), username: String(d.username || ""),
+                            });
+                            setConfirmAmount(String(d.estimated_usdt || ""));
                           }} style={{ padding: "4px 12px", borderRadius: 6, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                             Confirm
                           </button>
@@ -3614,6 +3621,49 @@ function SupportChatAdmin() {
                     <button onClick={() => { setSendBankOpen(false); setRefRate(null); setRefRateError(""); }} style={{ padding: "4px 12px", borderRadius: 6, background: "transparent", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", fontSize: 12 }}>
                       Cancel
                     </button>
+                  </div>
+                </div>
+              )}
+              {/* Confirm modal */}
+              {confirmModal && (
+                <div onClick={() => { setConfirmModal(null); setConfirmLoading(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+                  <div onClick={(e) => e.stopPropagation()} style={{ width: 380, maxWidth: "90vw", borderRadius: 12, background: "rgba(30,41,59,0.98)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", padding: 20 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#e0eaf5", marginBottom: 16 }}>Confirm Fiat Deposit</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#8899B0", marginBottom: 14 }}>
+                      <div>Deposit: <span style={{ color: "#c0d0e0" }}>#{confirmModal.depositId}</span></div>
+                      <div>User: <span style={{ color: "#c0d0e0" }}>{confirmModal.username}</span></div>
+                      <div>Fiat: <span style={{ color: "#c0d0e0" }}>{confirmModal.amountFiat} {confirmModal.currency}</span></div>
+                      <div>Rate: <span style={{ color: "#c0d0e0" }}>{confirmModal.finalRate}</span></div>
+                      <div>Estimated: <span style={{ color: "#c0d0e0" }}>{confirmModal.estimatedUsdt} USDT</span></div>
+                    </div>
+                    <div style={{ fontSize: 11, color: "#6e88a4", marginBottom: 6 }}>Final credit amount (USDT)</div>
+                    <input type="number" step="0.01" min="0.01" value={confirmAmount}
+                      onChange={(e) => setConfirmAmount(e.target.value)}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#e0eaf5", fontSize: 16, fontWeight: 600, marginBottom: 6, outline: "none" }}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+                    />
+                    <div style={{ fontSize: 10, color: "#445566", marginBottom: 14 }}>You can adjust the final credited amount before confirming.</div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button disabled={confirmLoading} onClick={() => { setConfirmModal(null); setConfirmLoading(false); }}
+                        style={{ flex: 1, padding: "8px", borderRadius: 8, background: "rgba(255,255,255,0.06)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                        Cancel
+                      </button>
+                      <button disabled={confirmLoading} onClick={async () => {
+                        const amount = Number(confirmAmount);
+                        if (!Number.isFinite(amount) || amount <= 0) { alert("Enter a valid positive amount"); return; }
+                        setConfirmLoading(true);
+                        try {
+                          const r = await fetch("/api/admin/fiat-deposit/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: confirmModal.depositId, confirmedUsdt: amount }) });
+                          const rd = await r.json();
+                          if (!r.ok) { alert(rd.error || "Failed"); setConfirmLoading(false); return; }
+                          setConfirmModal(null); setConfirmLoading(false);
+                          loadData();
+                        } catch { alert("Network error"); setConfirmLoading(false); }
+                      }}
+                        style={{ flex: 1, padding: "8px", borderRadius: 8, background: confirmLoading ? "#444" : "#16A34A", color: "#fff", border: "none", cursor: confirmLoading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700 }}>
+                        {confirmLoading ? "Confirming..." : "Confirm Credit"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
