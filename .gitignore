@@ -21,3 +21,16 @@ ui-*.png
 
 Thumbs.db
 .DS_Store
+
+# Local databases — never commit
+vorx.sqlite
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-wal
+*.sqlite-shm
+
+# Local review artifacts
+CODE_REVIEW.md
+CODE_REVIEW_ISSUES.md
+
