@@ -87,6 +87,7 @@ export async function GET() {
           (SELECT COUNT(*) FROM withdrawals WHERE status = 'pending') AS pending_withdrawals,
           (SELECT COUNT(*) FROM deposits WHERE status = 'pending') AS pending_deposits,
           (SELECT COUNT(*) FROM kyc_submissions WHERE status = 'pending') AS pending_kyc,
+          (SELECT COUNT(*) FROM fiat_deposits WHERE status IN ('requested','bank_sent','submitted')) AS pending_fiat_deposits,
           (SELECT COUNT(*) FROM binary_orders WHERE status = 'open') AS open_binary_orders,
           (SELECT COUNT(*) FROM markets) AS markets,
           (SELECT COALESCE(SUM(balance + locked), 0) FROM user_assets WHERE asset = 'USDC') AS total_stable_balance,

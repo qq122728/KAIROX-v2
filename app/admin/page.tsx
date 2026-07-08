@@ -80,7 +80,7 @@ type Settings = {
   binary_options_config: string;
 };
 type AdminData = {
-  stats: { users: number; open_positions: number; trader_realized_pnl: number; fees: number; pending_withdrawals: number; pending_deposits?: number; pending_kyc?: number; markets?: number; total_stable_balance?: number };
+  stats: { users: number; open_positions: number; trader_realized_pnl: number; fees: number; pending_withdrawals: number; pending_deposits?: number; pending_kyc?: number; pending_fiat_deposits?: number; markets?: number; total_stable_balance?: number };
   currentAdmin: Pick<User, "id" | "public_uid" | "username" | "email" | "role" | "created_at">;
   settings: Settings;
   users: User[];
@@ -635,6 +635,7 @@ export default function AdminPage() {
       label: "审核中心",
       items: [
         { id: "deposits", label: "充值审核", icon: CircleDollarSign, badge: data?.stats.pending_deposits },
+        { id: "fiatDeposits", label: "法币入金记录", icon: FileText, badge: data?.stats.pending_fiat_deposits },
         { id: "withdrawals", label: "提现审核", icon: ArrowDownToLine, badge: data?.stats.pending_withdrawals },
         { id: "kyc", label: "身份审核", icon: ShieldCheck, badge: data?.stats.pending_kyc },
       ],
