@@ -3750,6 +3750,7 @@ function SupportChatPage() {
   const [proof, setProof] = useState<File | null>(null);
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Load fiat deposit
   const loadFiatDeposit = () => {
@@ -3894,7 +3895,7 @@ function SupportChatPage() {
       const res = await fetch("/api/fiat-deposit/submit", { method: "POST", body: form });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Failed to submit");
+        setSubmitError(data.error || "Failed to submit");
         return;
       }
       setShowSubmitForm(false);
@@ -3972,6 +3973,7 @@ function SupportChatPage() {
     <div className="stack-page chat-stack">
       {error && <div className="auth-alert" role="alert" style={{ margin: "8px 16px 0" }}><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
       <div className="chat-scroller" ref={scrollerRef}
+        style={fiatStatus ? { paddingBottom: 32 } : undefined}
         onScroll={() => {
           const el = scrollerRef.current;
           if (!el) return;
@@ -4009,7 +4011,7 @@ function SupportChatPage() {
           <Banknote size={16} />
           <span>{fiatStatus.text}</span>
           {fiatDeposit?.status === "bank_sent" && !showSubmitForm && (
-            <button type="button" onClick={() => setShowSubmitForm(true)} style={{
+            <button type="button" onClick={() => { setShowSubmitForm(true); setSubmitError(null); }} style={{
               marginLeft: "auto", padding: "6px 14px", borderRadius: 8, border: `1px solid ${fiatStatus.color}`,
               background: "transparent", color: fiatStatus.color, fontSize: 12, cursor: "pointer", fontWeight: 600,
             }}>
@@ -4024,9 +4026,12 @@ function SupportChatPage() {
           <input
             type="number" placeholder={`Amount in ${fiatDeposit.currency}`}
             value={submitForm.amountFiat}
-            onChange={(e) => setSubmitForm((s) => ({ ...s, amountFiat: e.target.value }))}
-            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 8 }}
+            onChange={(e) => { setSubmitForm((s) => ({ ...s, amountFiat: e.target.value })); setSubmitError(null); }}
+            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: submitError ? "1px solid #DC2626" : "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: submitError ? 4 : 8 }}
           />
+          {submitError && (
+            <div style={{ marginBottom: 8, color: "#DC2626", fontSize: 12, fontWeight: 500 }}>{submitError}</div>
+          )}
           {fiatDeposit?.final_rate ? (
             <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 8, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", fontSize: 11 }}>
               <div style={{ color: "#6e88a4", marginBottom: 2 }}>Locked rate</div>
@@ -4078,7 +4083,7 @@ function SupportChatPage() {
             <button type="button" onClick={doSubmitTransfer} disabled={!submitForm.amountFiat || submitting} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#2563FF", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (!submitForm.amountFiat || submitting) ? 0.5 : 1 }}>
               {submitting ? "Submitting..." : "Submit"}
             </button>
-            <button type="button" onClick={() => { setShowSubmitForm(false); setSubmitForm({ amountFiat: "", transferReference: "", remark: "" }); }} style={{ padding: "8px 16px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", fontSize: 14, cursor: "pointer" }}>
+            <button type="button" onClick={() => { setShowSubmitForm(false); setSubmitForm({ amountFiat: "", transferReference: "", remark: "" }); setSubmitError(null); }} style={{ padding: "8px 16px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", fontSize: 14, cursor: "pointer" }}>
               Cancel
             </button>
           </div>
