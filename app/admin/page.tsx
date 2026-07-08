@@ -634,16 +634,9 @@ export default function AdminPage() {
     {
       label: "审核中心",
       items: [
-        { id: "deposits", label: "充值审核", icon: CircleDollarSign, badge: data?.stats.pending_deposits },
         { id: "fiatDeposits", label: "法币入金记录", icon: FileText, badge: data?.stats.pending_fiat_deposits },
         { id: "withdrawals", label: "提现审核", icon: ArrowDownToLine, badge: data?.stats.pending_withdrawals },
         { id: "kyc", label: "身份审核", icon: ShieldCheck, badge: data?.stats.pending_kyc },
-      ],
-    },
-    {
-      label: "交易中心",
-      items: [
-        { id: "orders", label: "二元订单", icon: WalletCards },
       ],
     },
     {
