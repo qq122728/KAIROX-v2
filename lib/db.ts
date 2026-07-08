@@ -594,6 +594,7 @@ function initialize(database: DatabaseSync) {
   addColumn(database, "fiat_deposits", "proof_name", "TEXT");
   addColumn(database, "fiat_deposits", "proof_data", "TEXT");
   addColumn(database, "fiat_deposits", "proof_mime", "TEXT");
+  addColumn(database, "fiat_deposits", "bank_reference_code", "TEXT");
   addColumn(database, "users", "email", "TEXT");
   addColumn(database, "users", "public_uid", "TEXT");
   addColumn(database, "users", "withdrawal_password_hash", "TEXT");

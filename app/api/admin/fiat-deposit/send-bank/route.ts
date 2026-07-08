@@ -18,12 +18,14 @@ export async function POST(request: Request) {
       exchangeRate: number;
       rateSpread?: number;
       finalRate?: number;
+      bankReferenceCode: string;
     }>(request);
 
     const depositId = Number(body.depositId);
     const bankAccountId = Number(body.bankAccountId);
     const exchangeRate = Number(body.exchangeRate);
     const rateSpread = Number(body.rateSpread ?? 0);
+    const bankReferenceCode = (body.bankReferenceCode || "").trim();
     const finalRate = Number.isFinite(Number(body.finalRate))
       ? Number(body.finalRate)
       : exchangeRate * (1 - rateSpread);
@@ -32,6 +34,7 @@ export async function POST(request: Request) {
     if (!Number.isInteger(bankAccountId) || bankAccountId <= 0) return badRequest("Invalid bankAccountId");
     if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) return badRequest("Invalid exchangeRate");
     if (!Number.isFinite(finalRate) || finalRate <= 0) return badRequest("Invalid finalRate");
+    if (!bankReferenceCode) return badRequest("Bank reference code is required");
 
     const db = getDb();
 
@@ -65,7 +68,7 @@ export async function POST(request: Request) {
     }
     if (!referenceCode) return badRequest("Could not generate unique reference code");
 
-    const bankSnapshot = JSON.stringify(bankAccount);
+    const bankSnapshot = JSON.stringify({ ...bankAccount, bank_reference_code: bankReferenceCode });
 
     db.prepare(
       `UPDATE fiat_deposits SET
@@ -76,11 +79,12 @@ export async function POST(request: Request) {
         rate_spread = ?,
         final_rate = ?,
         reference_code = ?,
+        bank_reference_code = ?,
         bank_admin_id = ?,
         bank_sent_at = CURRENT_TIMESTAMP,
         updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`
-    ).run(bankAccountId, bankSnapshot, exchangeRate, rateSpread, finalRate, referenceCode, admin.id, depositId);
+    ).run(bankAccountId, bankSnapshot, exchangeRate, rateSpread, finalRate, referenceCode, bankReferenceCode, admin.id, depositId);
 
     // Build bank info message
     const bankInfo = {
@@ -89,6 +93,7 @@ export async function POST(request: Request) {
       account_number: bankAccount.account_number,
       currency: deposit.currency,
       reference_code: referenceCode,
+      bank_reference_code: bankReferenceCode,
       exchange_rate: exchangeRate,
       final_rate: finalRate,
     };
@@ -109,7 +114,7 @@ export async function POST(request: Request) {
       `Account Name: ${bankAccount.account_holder}`,
       `Account Number: ${bankAccount.account_number}`,
       ...(extraFields.length ? [...extraFields, ""] : [""]),
-      `Reference Code: \`${referenceCode}\``,
+      `Reference Code: \`${bankReferenceCode}\``,
       `Rate: 1 ${deposit.currency} = ${finalRate} USDT`,
       ``,
       `Please include the reference code in your transfer remark.`,

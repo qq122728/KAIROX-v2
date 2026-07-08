@@ -3332,7 +3332,8 @@ function FiatDepositsAdmin() {
               }}>{String(d.status)}</span>
             </div>
             <div style={{ fontSize: 12, color: "#6e88a4", marginBottom: 4 }}>
-              {d.reference_code ? `Ref: ${d.reference_code} · ` : ""}
+              {d.reference_code ? `Internal: ${d.reference_code} · ` : ""}
+              {(() => { const brc = String(d.bank_reference_code || ""); return brc ? `Bank Ref: ${brc} · ` : (d.reference_code ? `Bank Ref: ${d.reference_code} (legacy) · ` : ""); })()}
               Amount: {d.amount_fiat ? `${d.amount_fiat} ${d.currency}` : "-"}
               {d.estimated_usdt ? ` · Est: ${d.estimated_usdt} USDT` : ""}
               {d.confirmed_usdt ? ` · Confirmed: ${d.confirmed_usdt} USDT` : ""}
@@ -3369,7 +3370,7 @@ function SupportChatAdmin() {
   const [fiatDeposits, setFiatDeposits] = useState<Array<Record<string, unknown>>>([]);
   const [fiatBankAccounts, setFiatBankAccounts] = useState<Array<Record<string, unknown>>>([]);
   const [sendBankOpen, setSendBankOpen] = useState(false);
-  const [sendBankForm, setSendBankForm] = useState({ depositId: 0, bankAccountId: 0, exchangeRate: "", rateSpread: "0" });
+  const [sendBankForm, setSendBankForm] = useState({ depositId: 0, bankAccountId: 0, exchangeRate: "", rateSpread: "0", bankReferenceCode: "" });
   const [refRate, setRefRate] = useState<{ rate: number; source: string; fetchedAt: string } | null>(null);
   const [refRateLoading, setRefRateLoading] = useState(false);
   const [refRateError, setRefRateError] = useState("");
@@ -3603,7 +3604,7 @@ function SupportChatAdmin() {
                       <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "#60A5FA" }}>🏦 Fiat Deposit #{String(d.id)} · {String(d.currency)}</div>
                       <div style={{ fontSize: 11, color: "#6e88a4", marginBottom: 4 }}>
                         Status: <span style={{ fontWeight: 600, color: d.status === "requested" ? "#B8860B" : d.status === "bank_sent" ? "#2563FF" : d.status === "submitted" ? "#22C55E" : "#6e88a4" }}>{String(d.status)}</span>
-                        {d.reference_code ? ` · Ref: ${d.reference_code}` : ""}
+                        {d.bank_reference_code ? ` · Bank Ref: ${d.bank_reference_code}` : (d.reference_code ? ` · Ref: ${d.reference_code}` : "")}
                         {d.amount_fiat ? ` · ${d.amount_fiat} ${d.currency}` : ""}
                         {d.estimated_usdt ? ` · Est: ${d.estimated_usdt} USDT` : ""}
                       </div>
@@ -3621,7 +3622,7 @@ function SupportChatAdmin() {
                           const res = await fetch(`/api/admin/fiat-bank-accounts?currency=${d.currency}`);
                           const data = await res.json();
                           setFiatBankAccounts(data.accounts || []);
-                          setSendBankForm({ depositId: Number(d.id), bankAccountId: 0, exchangeRate: String(d.exchange_rate || ""), rateSpread: String(d.rate_spread !== undefined ? d.rate_spread : "0") });
+                          setSendBankForm({ depositId: Number(d.id), bankAccountId: 0, exchangeRate: String(d.exchange_rate || ""), rateSpread: String(d.rate_spread !== undefined ? d.rate_spread : "0"), bankReferenceCode: "" });
                           setDepositCurrency(String(d.currency));
                           setSendBankOpen(true);
                           fetchRefRate(String(d.currency));
@@ -3692,12 +3693,21 @@ function SupportChatAdmin() {
                     style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", marginBottom: 6, fontSize: 12 }} />
                   <input placeholder="Rate Spread (0-1)" value={sendBankForm.rateSpread}
                     onChange={e => setSendBankForm(f => ({ ...f, rateSpread: e.target.value }))}
-                    style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", marginBottom: 8, fontSize: 12 }} />
+                    style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", marginBottom: 6, fontSize: 12 }} />
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, color: "#8899B0", marginBottom: 3 }}>Bank transfer reference code</div>
+                    <input placeholder="Enter reference code shown to user"
+                      value={sendBankForm.bankReferenceCode}
+                      onChange={e => setSendBankForm(f => ({ ...f, bankReferenceCode: e.target.value }))}
+                      style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", marginBottom: 2, fontSize: 12 }} />
+                    <div style={{ fontSize: 10, color: "#445566", marginBottom: 6 }}>This code will be shown to the user as the bank transfer remark/reference.</div>
+                  </div>
                   <div style={{ display: "flex", gap: 6 }}>
                     <button onClick={async () => {
                       if (!sendBankForm.bankAccountId) { alert("Select a bank account"); return; }
                       if (!sendBankForm.exchangeRate) { alert("Enter exchange rate"); return; }
-                      const r = await fetch("/api/admin/fiat-deposit/send-bank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: sendBankForm.depositId, bankAccountId: sendBankForm.bankAccountId, exchangeRate: Number(sendBankForm.exchangeRate), rateSpread: Number(sendBankForm.rateSpread) }) });
+                      if (!sendBankForm.bankReferenceCode.trim()) { alert("Enter bank reference code"); return; }
+                      const r = await fetch("/api/admin/fiat-deposit/send-bank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: sendBankForm.depositId, bankAccountId: sendBankForm.bankAccountId, exchangeRate: Number(sendBankForm.exchangeRate), rateSpread: Number(sendBankForm.rateSpread), bankReferenceCode: sendBankForm.bankReferenceCode.trim() }) });
                       const rd = await r.json();
                       if (!r.ok) { alert(rd.error || "Failed"); return; }
                       setSendBankOpen(false);
