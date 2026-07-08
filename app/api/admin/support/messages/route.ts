@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 
     const messages = db
       .prepare(
-        "SELECT id, role, text, read_by_user, read_by_admin, created_at FROM support_messages WHERE user_id = ? ORDER BY created_at ASC LIMIT 100"
+        "SELECT id, role, text, read_by_user, read_by_admin, created_at, message_type, metadata_json FROM support_messages WHERE user_id = ? ORDER BY created_at ASC LIMIT 100"
       )
       .all(userId) as Array<{
         id: number;
@@ -32,6 +32,8 @@ export async function GET(request: Request) {
         read_by_user: number;
         read_by_admin: number;
         created_at: string;
+        message_type: string | null;
+        metadata_json: string | null;
       }>;
 
     // Mark user messages as read by admin
@@ -47,6 +49,8 @@ export async function GET(request: Request) {
         role: m.role,
         text: m.text,
         createdAt: m.created_at,
+        message_type: m.message_type || "text",
+        metadata_json: m.metadata_json,
       })),
     });
   } catch (error) {

@@ -5629,7 +5629,8 @@ body:has(.mobile-shell) { background: var(--bg) !important; }
 .portfolio-card::before, .portfolio-card::after { content: none !important; }
 .pc-head { color: var(--text-sub) !important; }
 .pc-label { color: var(--text-sub) !important; font-weight: 500 !important; }
-.pc-expand { background: transparent !important; border: 0 !important; color: var(--text-muted) !important; }
+.pc-expand { background: transparent !important; border: 0 !important; color: #AFC3E8 !important; font-size: 12px !important; display: flex !important; align-items: center !important; gap: 2px !important; cursor: pointer !important; white-space: nowrap !important; }
+.pc-expand:hover { color: #D7E6FF !important; }
 .pc-value { color: var(--text-main) !important; font-weight: 700 !important; }
 .pc-sub { gap: 8px !important; align-items: center !important; }
 .pc-badge {
@@ -5645,6 +5646,63 @@ body:has(.mobile-shell) { background: var(--bg) !important; }
 .pc-spark { opacity: 0.78 !important; }
 .pc-spark path[stroke="#fff"] { stroke: var(--text-main) !important; }
 .pc-axis { color: var(--text-muted) !important; }
+
+/* Empty chart placeholder */
+.pc-empty-chart {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 90px !important;
+  gap: 6px !important;
+  color: #556 !important;
+  margin: 4px -16px 0 !important;
+  width: calc(100% + 32px) !important;
+}
+.pc-empty-chart b {
+  color: #6e88a4 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+.pc-empty-chart em {
+  color: #445566 !important;
+  font-size: 11px !important;
+  font-style: normal !important;
+}
+
+/* Bottom stats row */
+.pc-stats-row {
+  display: flex !important;
+  gap: 0 !important;
+  margin-top: 8px !important;
+  padding-top: 10px !important;
+  border-top: 1px solid rgba(255,255,255,0.05) !important;
+}
+.pc-stat {
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  gap: 2px !important;
+}
+.pc-stat + .pc-stat {
+  border-left: 1px solid rgba(255,255,255,0.05) !important;
+}
+.pc-stat em {
+  color: #556 !important;
+  font-size: 10px !important;
+  font-style: normal !important;
+  font-weight: 500 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+.pc-stat b {
+  color: var(--text-main) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+}
+.pc-stat b.up { color: #16C784 !important; }
+.pc-stat b.down { color: #F6465D !important; }
 
 /* ---------- Quick actions: row with vertical dividers, no card ---------- */
 .quick-actions {

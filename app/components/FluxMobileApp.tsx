@@ -826,7 +826,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
           />
         ) : (
           <>
-            {tab === "home" && <HomeTab rows={filteredMarkets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} sort={marketSort} setSort={setMarketSort} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} goTab={switchTab} push={push} kycStatus={kycStatus} totalEquity={assets?.summary.totalEquity ?? 0} availableBalance={assets?.summary.availableBalance ?? user.balance} pnl={assets?.summary.unrealizedPnl ?? 0} favorites={favorites} toggleFavorite={toggleFavorite} />}
+            {tab === "home" && <HomeTab rows={filteredMarkets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} sort={marketSort} setSort={setMarketSort} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} goTab={switchTab} push={push} kycStatus={kycStatus} totalEquity={assets?.summary.totalEquity ?? 0} availableBalance={assets?.summary.availableBalance ?? user.balance} pnl={assets?.summary.unrealizedPnl ?? 0} marginUsed={assets?.summary.marginUsed ?? 0} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "markets" && <MarketsListTab rows={markets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "trade" && currentMarket && <TradeTab market={currentMarket} tickers={tickers} setCurrentSymbol={(symbol) => { setCurrentSymbol(symbol); pushMobileUrl(tabPath("trade", symbol)); }} markets={markets} openSheet={(d) => { setActiveOrderId(null); setSheetMinimized(false); setOrderSheet(d); }} stake={stake} setStake={setStake} duration={duration} durations={durationOptions} setDuration={setDuration} availableBalance={assets?.summary.availableBalance ?? user.balance} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "orders" && <OrdersTab openOrders={openOrders} history={history} now={now} onOpenRunningOrder={(order) => { setActiveOrderId(order.id); setOrderSheet(order.direction); setSheetMinimized(false); setTab("trade"); }} />}
@@ -1402,7 +1402,7 @@ function CryptoIcon({ asset }: { asset: string }) {
 }
 
 
-function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity, pnl, favorites, toggleFavorite }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; sort: "hot" | "gainers" | "losers"; setSort: (v: "hot" | "gainers" | "losers") => void; onSelect: (symbol: string) => void; goTab: (t: Tab) => void; push: (p: StackPage) => void; kycStatus: string; totalEquity: number; availableBalance: number; pnl: number; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
+function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity, availableBalance, pnl, marginUsed, favorites, toggleFavorite }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; sort: "hot" | "gainers" | "losers"; setSort: (v: "hot" | "gainers" | "losers") => void; onSelect: (symbol: string) => void; goTab: (t: Tab) => void; push: (p: StackPage) => void; kycStatus: string; totalEquity: number; availableBalance: number; pnl: number; marginUsed: number; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
   const quickActions: { icon: string; label: string; action: () => void }[] = [
     { icon: "arrow-down", label: "Deposit",  action: () => push({ id: "deposit-asset",  title: "Deposit" }) },
     { icon: "arrow-up",   label: "Withdraw", action: () => push({ id: "withdraw-asset", title: "Withdraw" }) },
@@ -1412,9 +1412,10 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
   const kycNeedsAttention = kycStatus !== "approved";
   const pnlPos = pnl >= 0;
   const [balanceHidden, setBalanceHidden] = useState(false);
-  const [period, setPeriod] = useState<"today" | "30d">("today");
+  const [period, setPeriod] = useState<"today" | "7d" | "30d">("today");
   const maskedValue = "$ ******";
   const pnlPctRaw = totalEquity > 0 ? (pnl / Math.max(1, totalEquity)) * 100 : 0;
+  const hasAssets = totalEquity > 0;
   return (
     <div className="tab-page">
       <div className="portfolio-card">
@@ -1425,36 +1426,69 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
               {balanceHidden ? <EyeOff size={14} strokeWidth={1.6} /> : <Eye size={14} strokeWidth={1.6} />}
             </button>
           </span>
-          <button type="button" className="pc-expand" aria-label="View assets" onClick={() => push({ id: "asset-overview", title: "Assets" })}>
-            <ArrowUpRight size={14} strokeWidth={1.8} />
+          <button type="button" className="pc-expand" aria-label="View all assets" onClick={() => push({ id: "asset-overview", title: "Assets" })}>
+            Assets <ChevronRight size={13} />
           </button>
         </div>
         <div className="pc-value">{balanceHidden ? maskedValue : money(totalEquity)}</div>
         <div className="pc-sub">
-          <span className={`pc-pnl ${pnlPos ? "up" : "down"}`}>{balanceHidden ? "******" : `${pnlPos ? "+" : ""}${money(pnl)}`}</span>
-          <span className={`pc-badge ${pnlPos ? "up" : "down"}`}>{balanceHidden ? "**" : `${pnlPos ? "+" : ""}${pnlPctRaw.toFixed(2)}%`}</span>
+          {hasAssets ? (
+            <>
+              <span className={`pc-pnl ${pnlPos ? "up" : "down"}`}>
+                {balanceHidden ? "******" : `${pnlPos ? "+" : ""}${money(pnl)}`}
+              </span>
+              <span className={`pc-badge ${pnlPos ? "up" : "down"}`}>
+                {balanceHidden ? "**" : `${pnlPos ? "+" : ""}${pnlPctRaw.toFixed(2)}%`}
+              </span>
+            </>
+          ) : (
+            <span className="pc-pnl muted" style={{ color: "#8899B0", fontSize: 12 }}>$0.00 · 0.00%</span>
+          )}
           <span className="pc-period-toggle">
             <button type="button" className={period === "today" ? "on" : ""} onClick={() => setPeriod("today")}>Today</button>
+            <button type="button" className={period === "7d" ? "on" : ""} onClick={() => setPeriod("7d")}>7D</button>
             <button type="button" className={period === "30d" ? "on" : ""} onClick={() => setPeriod("30d")}>30D</button>
           </span>
         </div>
-        <svg className="pc-spark" viewBox="0 0 340 110" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="pcGrad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#5B8DFF" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#5B8DFF" stopOpacity="0" />
-            </linearGradient>
-            <filter id="pcDotGlow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="3" />
-            </filter>
-          </defs>
-          <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8 L340,110 L0,110 Z" fill="url(#pcGrad)" stroke="none" />
-          <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8" stroke="#5B8DFF" strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" />
-          <circle cx="338" cy="8" r="7" fill="#5B8DFF" opacity="0.45" filter="url(#pcDotGlow)" />
-          <circle cx="338" cy="8" r="4" fill="#5B8DFF" />
-          <circle cx="338" cy="8" r="2" fill="#FFFFFF" />
-        </svg>
-        <div className="pc-axis"><span>30D ago</span><span>Today</span></div>
+        {hasAssets ? (
+          <svg className="pc-spark" viewBox="0 0 340 110" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="pcGrad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#5B8DFF" stopOpacity="0.22" />
+                <stop offset="100%" stopColor="#5B8DFF" stopOpacity="0" />
+              </linearGradient>
+              <filter id="pcDotGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" />
+              </filter>
+            </defs>
+            <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8 L340,110 L0,110 Z" fill="url(#pcGrad)" stroke="none" />
+            <path d="M0,95 L12,92 L24,93 L36,88 L48,85 L60,87 L72,82 L84,80 L96,75 L108,77 L120,70 L132,72 L144,65 L156,60 L168,62 L180,55 L192,58 L204,50 L216,47 L228,42 L240,45 L252,38 L264,35 L276,30 L288,32 L300,25 L312,22 L324,18 L336,12 L340,8" stroke="#5B8DFF" strokeWidth="1.6" fill="none" strokeLinejoin="round" strokeLinecap="round" />
+            <circle cx="338" cy="8" r="7" fill="#5B8DFF" opacity="0.45" filter="url(#pcDotGlow)" />
+            <circle cx="338" cy="8" r="4" fill="#5B8DFF" />
+            <circle cx="338" cy="8" r="2" fill="#FFFFFF" />
+          </svg>
+        ) : (
+          <div className="pc-empty-chart">
+            <BarChart3 size={32} strokeWidth={1.2} />
+            <b>No portfolio data yet</b>
+            <em>Deposit or start trading to see your performance.</em>
+          </div>
+        )}
+        <div className="pc-axis">{hasAssets ? <><span>30D ago</span><span>Today</span></> : null}</div>
+        <div className="pc-stats-row">
+          <div className="pc-stat">
+            <em>Available</em>
+            <b className="tabular-nums">{balanceHidden ? "****" : money(availableBalance)}</b>
+          </div>
+          <div className="pc-stat">
+            <em>In Orders</em>
+            <b className="tabular-nums">{balanceHidden ? "****" : money(marginUsed)}</b>
+          </div>
+          <div className="pc-stat">
+            <em>Today's PnL</em>
+            <b className={`tabular-nums ${pnl >= 0 ? "up" : "down"}`}>{balanceHidden ? "****" : `${pnl >= 0 ? "+" : ""}${money(pnl)}`}</b>
+          </div>
+        </div>
       </div>
       <div className="quick-actions">
         {quickActions.map((a) => (
