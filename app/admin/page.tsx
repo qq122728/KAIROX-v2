@@ -3,7 +3,7 @@
 import "./admin-console.css";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   ArrowDownToLine,
@@ -3374,22 +3374,23 @@ function SupportChatAdmin() {
       .catch(() => {});
   }, []);
 
-  // Load messages when user selected
-  useEffect(() => {
+  // Shared loader: messages + fiat deposits for selected user
+  const loadData = useCallback(() => {
     if (!selectedUserId) { setMessages([]); setFiatDeposits([]); return; }
     setLoading(true);
-    // Load messages
     fetch(`/api/admin/support/messages?userId=${selectedUserId}`)
       .then((r) => r.json())
       .then((d) => { if (d.messages) setMessages(d.messages); })
       .catch(() => {})
       .finally(() => setLoading(false));
-    // Load fiat deposits for this user
     fetch(`/api/admin/fiat-deposit/by-user?userId=${selectedUserId}`)
       .then((r) => r.json())
       .then((d) => { if (d.deposits) setFiatDeposits(d.deposits); })
       .catch(() => {});
   }, [selectedUserId]);
+
+  // Load messages when user selected
+  useEffect(() => { loadData(); }, [loadData]);
 
   // Poll conversations + messages every 5s
   useEffect(() => {
@@ -3513,8 +3514,7 @@ function SupportChatAdmin() {
                             const r = await fetch("/api/admin/fiat-deposit/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: d.id }) });
                             const rd = await r.json();
                             if (!r.ok) { alert(rd.error || "Failed"); return; }
-                            // Reload
-                            fetch(`/api/admin/fiat-deposit/by-user?userId=${selectedUserId}`).then(r => r.json()).then(d => { if (d.deposits) setFiatDeposits(d.deposits); });
+                            loadData();
                           }} style={{ padding: "4px 12px", borderRadius: 6, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                             Confirm
                           </button>
@@ -3524,7 +3524,7 @@ function SupportChatAdmin() {
                             const r = await fetch("/api/admin/fiat-deposit/reject", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: d.id, remark }) });
                             const rd = await r.json();
                             if (!r.ok) { alert(rd.error || "Failed"); return; }
-                            fetch(`/api/admin/fiat-deposit/by-user?userId=${selectedUserId}`).then(r => r.json()).then(d => { if (d.deposits) setFiatDeposits(d.deposits); });
+                            loadData();
                           }} style={{ padding: "4px 12px", borderRadius: 6, background: "rgba(239,68,68,0.15)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer", fontSize: 11 }}>
                             Reject
                           </button>
@@ -3558,7 +3558,7 @@ function SupportChatAdmin() {
                       const rd = await r.json();
                       if (!r.ok) { alert(rd.error || "Failed"); return; }
                       setSendBankOpen(false);
-                      fetch(`/api/admin/fiat-deposit/by-user?userId=${selectedUserId}`).then(r => r.json()).then(d => { if (d.deposits) setFiatDeposits(d.deposits); });
+                      loadData();
                     }} style={{ padding: "4px 12px", borderRadius: 6, background: "#2563FF", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
                       Confirm & Send
                     </button>
