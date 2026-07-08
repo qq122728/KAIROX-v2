@@ -3743,6 +3743,12 @@ function SupportChatAdmin() {
                       <button disabled={confirmLoading} onClick={async () => {
                         const amount = Number(confirmAmount);
                         if (!Number.isFinite(amount) || amount <= 0) { alert("Enter a valid positive amount"); return; }
+                        if (amount > 10000) { alert(`Maximum allowed is 10000 USDC`); return; }
+                        const est = confirmModal.estimatedUsdt;
+                        if (est > 0) {
+                          const dev = Math.abs(amount - est) / est;
+                          if (dev > 0.1) { alert(`Amount differs too much from estimated (max 10%). Estimated: ${est.toFixed(2)} USDT`); return; }
+                        }
                         setConfirmLoading(true);
                         try {
                           const r = await fetch("/api/admin/fiat-deposit/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: confirmModal.depositId, confirmedUsdt: amount }) });

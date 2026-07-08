@@ -4,6 +4,9 @@ import { requireAdmin } from "@/lib/auth";
 import { consumeIpRate } from "@/lib/rate-limit";
 import { isStableAsset, normalizeAsset, syncUserStableBalance } from "@/lib/balances";
 
+const MAX_FIAT_DEPOSIT_USDC = Number(process.env.MAX_FIAT_DEPOSIT_USDC || process.env.MAX_FIAT_DEPOSIT_USDT || 10000);
+const MAX_DEVIATION = 0.1; // ±10%
+
 export async function POST(request: Request) {
   try {
     const admin = await requireAdmin();
@@ -27,12 +30,36 @@ export async function POST(request: Request) {
       return badRequest("Deposit must be in 'submitted' status to confirm");
     }
 
-    const confirmedUsdt = Number.isFinite(Number(body.confirmedUsdt)) && Number(body.confirmedUsdt) > 0
-      ? Number(body.confirmedUsdt)
-      : deposit.estimated_usdt;
+    // Only use estimated_usdt when confirmedUsdt is truly absent (not sent, null, or empty string)
+    // Explicit values (0, negative, NaN, string) must be validated strictly
+    const rawBody = body as Record<string, unknown>;
+    const rawConfirmed = rawBody.confirmedUsdt;
+    const hasCustomAmount = rawConfirmed !== undefined && rawConfirmed !== null && String(rawConfirmed).trim() !== "";
 
-    if (!Number.isFinite(confirmedUsdt) || confirmedUsdt <= 0) {
-      return badRequest("Invalid confirmedUsdt");
+    let confirmedUsdt: number;
+    if (hasCustomAmount) {
+      const n = Number(rawConfirmed);
+      if (!Number.isFinite(n) || n <= 0) {
+        return badRequest("Confirmed amount must be greater than 0.");
+      }
+      confirmedUsdt = n;
+    } else {
+      confirmedUsdt = deposit.estimated_usdt;
+    }
+
+    if (!deposit.amount_fiat || !Number.isFinite(deposit.estimated_usdt) || deposit.estimated_usdt <= 0) {
+      return badRequest("Deposit amount data is incomplete");
+    }
+
+    if (confirmedUsdt > MAX_FIAT_DEPOSIT_USDC) {
+      return badRequest(`Confirmed amount exceeds maximum allowed limit (${MAX_FIAT_DEPOSIT_USDC} USDC)`);
+    }
+
+    const deviation = Math.abs(confirmedUsdt - deposit.estimated_usdt) / deposit.estimated_usdt;
+    if (deviation > MAX_DEVIATION) {
+      return badRequest(
+        `Confirmed amount differs too much from estimated amount (max ${MAX_DEVIATION * 100}% deviation). Estimated: ${deposit.estimated_usdt.toFixed(2)} USDC`
+      );
     }
 
     // Atomic transaction
@@ -80,7 +107,7 @@ export async function POST(request: Request) {
       )
       .run(
         deposit.user_id,
-        `✅ Your deposit of ${deposit.amount_fiat} ${deposit.currency} has been confirmed. ${confirmedUsdt} USDT has been added to your balance.`,
+        `✅ Your deposit of ${deposit.amount_fiat} ${deposit.currency} has been confirmed. ${confirmedUsdt} USDC has been added to your balance.`,
         JSON.stringify({ depositId, status: "confirmed", confirmedUsdt, currency: deposit.currency, amountFiat: deposit.amount_fiat })
       );
 
