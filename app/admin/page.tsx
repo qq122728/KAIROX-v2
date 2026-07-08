@@ -3360,6 +3360,10 @@ function SupportChatAdmin() {
   const [loading, setLoading] = useState(false);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const shouldStickRef = useRef(true);
+  const lastMsgIdRef = useRef(0);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const [soundUnlocked, setSoundUnlocked] = useState(false);
+  const [toast, setToast] = useState("");
 
   // Fiat deposit state for selected user
   const [fiatDeposits, setFiatDeposits] = useState<Array<Record<string, unknown>>>([]);
@@ -3404,20 +3408,43 @@ function SupportChatAdmin() {
   // Load messages when user selected
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Poll conversations + messages every 5s
+  // Poll conversations + messages every 3s
   useEffect(() => {
-    const timer = setInterval(() => {
-      fetch("/api/admin/support/conversations")
-        .then((r) => r.json())
-        .then((d) => { if (d.conversations) setConversations(d.conversations); })
-        .catch(() => {});
-      if (selectedUserId) {
-        fetch(`/api/admin/support/messages?userId=${selectedUserId}`)
-          .then((r) => r.json())
-          .then((d) => { if (d.messages) setMessages(d.messages); })
-          .catch(() => {});
-      }
-    }, 5000);
+    let beepCooldown = false;
+    const timer = setInterval(async () => {
+      // Refresh conversations
+      try {
+        const cr = await fetch("/api/admin/support/conversations");
+        const cd = await cr.json();
+        if (cd.conversations) setConversations(cd.conversations);
+      } catch {}
+      if (!selectedUserId) return;
+      try {
+        const mr = await fetch(`/api/admin/support/messages?userId=${selectedUserId}`);
+        const md = await mr.json();
+        if (md.messages) {
+          const msgs = md.messages as Array<{ id: number; role: string; text: string; createdAt: string; message_type?: string }>;
+          // Detect new messages
+          if (lastMsgIdRef.current > 0) {
+            const newMsgs = msgs.filter((m) => m.id > lastMsgIdRef.current);
+            const hasUserMsg = newMsgs.some((m) => m.role === "user");
+            const hasFiat = newMsgs.some((m) => m.message_type === "fiat_request" || m.message_type === "fiat_transfer");
+            if ((hasUserMsg || hasFiat) && !beepCooldown) {
+              beepCooldown = true;
+              setTimeout(() => { beepCooldown = false; }, 2000);
+              playBeep();
+              setToast("New support message");
+              setTimeout(() => setToast(""), 4000);
+            }
+          }
+          // Track highest ID
+          if (msgs.length > 0) {
+            lastMsgIdRef.current = Math.max(lastMsgIdRef.current, msgs[msgs.length - 1].id);
+          }
+          setMessages(msgs);
+        }
+      } catch {}
+    }, 3000);
     return () => clearInterval(timer);
   }, [selectedUserId]);
 
@@ -3439,6 +3466,31 @@ function SupportChatAdmin() {
       }
     } catch { setRefRateError("Rate unavailable"); }
     finally { setRefRateLoading(false); }
+  }
+
+  function playBeep() {
+    if (!soundUnlocked) return;
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const ctx = audioCtxRef.current;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      osc.frequency.setValueAtTime(1000, ctx.currentTime + 0.05);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
+    } catch { /* audio not available */ }
+  }
+
+  function unlockSound() {
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
+      setSoundUnlocked(true);
+    } catch { /* audio not available */ }
   }
 
   async function doReply() {
@@ -3474,6 +3526,17 @@ function SupportChatAdmin() {
       {/* Conversation list */}
       <div style={{ width: 280, flexShrink: 0, borderRight: "1px solid var(--line, rgba(255,255,255,0.06))", overflowY: "auto" }}>
         <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--line, rgba(255,255,255,0.06))", fontWeight: 700, fontSize: 14 }}>对话列表</div>
+        {!soundUnlocked && (
+          <button type="button" onClick={unlockSound}
+            style={{ width: "100%", padding: "6px 14px", border: "none", background: "rgba(37,99,255,0.08)", color: "#60A5FA", cursor: "pointer", fontSize: 11, fontWeight: 600, textAlign: "left" }}>
+            🔔 Enable sound alerts
+          </button>
+        )}
+        {toast && (
+          <div style={{ padding: "6px 14px", background: "rgba(22,199,132,0.1)", color: "#16C784", fontSize: 11, fontWeight: 600 }}>
+            {toast}
+          </div>
+        )}
         {conversations.length === 0 && <div style={{ padding: 20, color: "#6e88a4", fontSize: 13 }}>暂无用户消息</div>}
         {conversations.map((c) => (
           <button
@@ -3503,8 +3566,11 @@ function SupportChatAdmin() {
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "#6e88a4" }}>选择左侧对话查看消息</div>
         ) : (
           <>
-            <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line, rgba(255,255,255,0.06))", fontWeight: 700, fontSize: 14 }}>
-              {conversations.find((c) => c.userId === selectedUserId)?.username || `用户 #${selectedUserId}`}
+            <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line, rgba(255,255,255,0.06))", fontWeight: 700, fontSize: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span>{conversations.find((c) => c.userId === selectedUserId)?.username || `用户 #${selectedUserId}`}</span>
+              <span style={{ fontSize: 10, fontWeight: 400, color: "#22C55E", display: "flex", alignItems: "center", gap: 4 }}>
+                <span style={{ width: 6, height: 6, borderRadius: 999, background: "#22C55E" }} /> 实时检查中
+              </span>
             </div>
             <div ref={scrollerRef}
               onScroll={() => {
