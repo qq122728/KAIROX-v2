@@ -3365,7 +3365,11 @@ function SupportChatAdmin() {
   const [fiatBankAccounts, setFiatBankAccounts] = useState<Array<Record<string, unknown>>>([]);
   const [sendBankOpen, setSendBankOpen] = useState(false);
   const [sendBankForm, setSendBankForm] = useState({ depositId: 0, bankAccountId: 0, exchangeRate: "", rateSpread: "0" });
+  const [refRate, setRefRate] = useState<{ rate: number; source: string; fetchedAt: string } | null>(null);
+  const [refRateLoading, setRefRateLoading] = useState(false);
+  const [refRateError, setRefRateError] = useState("");
   const [proofViewer, setProofViewer] = useState<{ name?: string; data?: string } | null>(null);
+  const [depositCurrency, setDepositCurrency] = useState("");
 
   // Load conversations
   useEffect(() => {
@@ -3414,6 +3418,20 @@ function SupportChatAdmin() {
     const el = scrollerRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  async function fetchRefRate(currency: string) {
+    setRefRate(null); setRefRateError(""); setRefRateLoading(true);
+    try {
+      const rr = await fetch(`/api/fiat-deposit/rate?currency=${currency}&amount=1`);
+      const rd = await rr.json();
+      if (rr.ok && rd.rate != null) {
+        setRefRate({ rate: rd.rate, source: rd.source, fetchedAt: rd.fetchedAt });
+      } else {
+        setRefRateError("Rate unavailable");
+      }
+    } catch { setRefRateError("Rate unavailable"); }
+    finally { setRefRateLoading(false); }
+  }
 
   async function doReply() {
     const text = draft.trim();
@@ -3510,7 +3528,9 @@ function SupportChatAdmin() {
                           const data = await res.json();
                           setFiatBankAccounts(data.accounts || []);
                           setSendBankForm({ depositId: Number(d.id), bankAccountId: 0, exchangeRate: String(d.exchange_rate || ""), rateSpread: String(d.rate_spread !== undefined ? d.rate_spread : "0") });
+                          setDepositCurrency(String(d.currency));
                           setSendBankOpen(true);
+                          fetchRefRate(String(d.currency));
                         }} style={{ padding: "4px 12px", borderRadius: 6, background: "#2563FF", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                           Send Bank Details
                         </button>
@@ -3553,6 +3573,25 @@ function SupportChatAdmin() {
                       <option key={String(a.id)} value={String(a.id)}>{String(a.bank_name)} · {String(a.account_holder)} · {String(a.account_number || "")}</option>
                     ))}
                   </select>
+                  {/* Reference rate */}
+                  <div style={{ marginBottom: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", fontSize: 11 }}>
+                    {refRateLoading ? (
+                      <span style={{ color: "#6e88a4" }}>Loading reference rate...</span>
+                    ) : refRateError ? (
+                      <span style={{ color: "#DC2626" }}>{refRateError}</span>
+                    ) : refRate ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ color: "#8899B0" }}>
+                          Reference: <span style={{ color: "#c0d0e0", fontWeight: 600 }}>1 {depositCurrency} ≈ {refRate.rate.toFixed(6)} USDT</span>
+                        </span>
+                        <button type="button" onClick={() => setSendBankForm(f => ({ ...f, exchangeRate: String(refRate.rate) }))}
+                          style={{ marginLeft: "auto", padding: "2px 8px", borderRadius: 4, background: "rgba(22,199,132,0.15)", color: "#16C784", border: "1px solid rgba(22,199,132,0.25)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>
+                          Use reference rate
+                        </button>
+                      </div>
+                    ) : null}
+                    {refRate && <div style={{ color: "#445566", marginTop: 2, fontSize: 10 }}>Source: {refRate.source} · {new Date(refRate.fetchedAt).toLocaleTimeString()} · Reference only</div>}
+                  </div>
                   <input placeholder="Exchange Rate (1 MYR = ? USDT)" value={sendBankForm.exchangeRate}
                     onChange={e => setSendBankForm(f => ({ ...f, exchangeRate: e.target.value }))}
                     style={{ width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", marginBottom: 6, fontSize: 12 }} />
@@ -3567,11 +3606,12 @@ function SupportChatAdmin() {
                       const rd = await r.json();
                       if (!r.ok) { alert(rd.error || "Failed"); return; }
                       setSendBankOpen(false);
+                      setRefRate(null); setRefRateError("");
                       loadData();
                     }} style={{ padding: "4px 12px", borderRadius: 6, background: "#2563FF", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
                       Confirm & Send
                     </button>
-                    <button onClick={() => setSendBankOpen(false)} style={{ padding: "4px 12px", borderRadius: 6, background: "transparent", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", fontSize: 12 }}>
+                    <button onClick={() => { setSendBankOpen(false); setRefRate(null); setRefRateError(""); }} style={{ padding: "4px 12px", borderRadius: 6, background: "transparent", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", fontSize: 12 }}>
                       Cancel
                     </button>
                   </div>
