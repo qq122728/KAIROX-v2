@@ -1,647 +1,406 @@
-# VORX Beta Operations and Maintenance Runbook
+# VORX Protocol — 运维手册
 
-This document is the day-to-day operations guide for VORX Beta. It is written for server agents and human operators who need to diagnose production issues quickly.
+最后更新: 2026-07-09
 
-## Quick Facts
+日常运维和故障排查指南，供运维人员和 AI Agent 使用。
 
-Production runs three processes:
+## 速览
 
-- `vorx-next`: Next.js app and API, default port `3000`
-- `vorx-socket`: Socket.IO realtime server, default port `3001`
-- `vorx-settlement`: binary options settlement worker
+生产环境运行三个 PM2 进程:
 
-Important paths:
+| 进程 | 端口 | 职责 |
+|------|------|------|
+| `vorx-next` | 3020 | Next.js 应用 + API |
+| `vorx-socket` | 3021 | Socket.IO 实时通信 |
+| `vorx-settlement` | — | 二元期权到期结算 |
+
+关键路径:
 
 ```bash
 APP_DIR=/var/www/vorx
 DATA_DIR=/var/lib/vorx
 BACKUP_DIR=/var/backups/vorx
-DB_PATH=/var/lib/vorx/vorx-beta.sqlite
+DB_PATH=/var/lib/vorx/vorx.sqlite
 ENV_FILE=/var/www/vorx/.env.production.local
 LOG_DIR=/var/www/vorx/logs
 ```
 
-Do not store real secrets in Git. The server-local `.env.production.local` is the source of production secrets.
+⚠️ 密钥不存 Git。`.env.production.local` 是生产配置的唯一来源。
 
-## Daily Health Check
-
-Run this once per day and after every deploy:
+## 每日健康检查
 
 ```bash
 cd /var/www/vorx
 pm2 status
-curl -I http://127.0.0.1:3000
-curl http://127.0.0.1:3001/health
-ls -lh /var/lib/vorx/vorx-beta.sqlite
-ls -lh /var/backups/vorx | tail
+curl -s -o /dev/null -w '%{http_code}' http://localhost:3020          # 200
+curl -s http://localhost:3021/health                                  # 200
+ls -lh /var/lib/vorx/vorx.sqlite
+ls -lh /var/backups/vorx | tail -3
 ```
 
-Expected:
+期望: 三个进程 online, app 返回 200, socket 返回 200, 数据库和备份存在。
 
-- `vorx-next`, `vorx-socket`, and `vorx-settlement` are online.
-- App responds on `127.0.0.1:3000`.
-- Socket health responds on `127.0.0.1:3001/health`.
-- SQLite database exists in `/var/lib/vorx`.
-- Recent database backups exist in `/var/backups/vorx`.
-
-## Log Locations
-
-PM2 status:
+## 日志
 
 ```bash
-pm2 status
-```
-
-Live logs:
-
-```bash
+# 实时
 pm2 logs vorx-next
 pm2 logs vorx-socket
 pm2 logs vorx-settlement
+
+# 文件
+tail -200 /var/www/vorx/logs/next-error.log
+tail -200 /var/www/vorx/logs/socket-error.log
+tail -200 /var/www/vorx/logs/settlement-error.log
+
+# Nginx
+tail -200 /var/log/nginx/error.log
+tail -200 /var/log/nginx/access.log
 ```
 
-File logs:
+## 安全重启
 
 ```bash
-tail -n 200 /var/www/vorx/logs/next-error.log
-tail -n 200 /var/www/vorx/logs/socket-error.log
-tail -n 200 /var/www/vorx/logs/settlement-error.log
-tail -n 200 /var/www/vorx/logs/next-out.log
-tail -n 200 /var/www/vorx/logs/socket-out.log
-tail -n 200 /var/www/vorx/logs/settlement-out.log
-```
+# 单进程
+pm2 restart vorx-next       # 构建后记得 --update-env
 
-Nginx logs are usually:
+# 全部
+pm2 restart all
 
-```bash
-tail -n 200 /var/log/nginx/error.log
-tail -n 200 /var/log/nginx/access.log
-```
-
-## Safe Restart
-
-Restart one process:
-
-```bash
-pm2 restart vorx-next
-pm2 restart vorx-socket
-pm2 restart vorx-settlement
-```
-
-Restart all VORX processes:
-
-```bash
-pm2 restart vorx-next vorx-socket vorx-settlement
-```
-
-After restart:
-
-```bash
+# 验证
 pm2 status
-curl -I http://127.0.0.1:3000
-curl http://127.0.0.1:3001/health
+curl -s -o /dev/null -w '%{http_code}' http://localhost:3020
 ```
 
-## Deployment Update
-
-Use this when deploying a newer commit:
+## 部署更新
 
 ```bash
 cd /var/www/vorx
-git fetch origin
-git status --short
+git status --short                          # 必须是干净的工作区
+
+# 备份数据库
+cp /var/lib/vorx/vorx.sqlite "/var/backups/vorx/vorx-$(date +%Y%m%d-%H%M%S).sqlite"
+
+# 构建 + 部署
+npx next build
+pm2 restart vorx-next --update-env
+pm2 save
+
+# 验证
+curl -s -o /dev/null -w '%{http_code}' http://localhost:3020  # 200
+curl -s https://vorxai.xyz | head -1                           # HTML
 ```
 
-If the working tree is not clean, stop and inspect before continuing.
-
-Back up the database:
+## 回滚
 
 ```bash
-mkdir -p /var/backups/vorx
-cp /var/lib/vorx/vorx-beta.sqlite "/var/backups/vorx/vorx-beta-$(date +%Y%m%d-%H%M%S).sqlite"
-```
-
-Deploy:
-
-```bash
-git pull --ff-only origin master
-npm install
-npm run lint
-npm run build
-pm2 restart vorx-next vorx-socket vorx-settlement
-pm2 status
-```
-
-Run the smoke test in the final section of this document.
-
-## Rollback
-
-Rollback code only:
-
-```bash
+# 代码回滚
 cd /var/www/vorx
 git log --oneline -10
-git checkout <previous-good-commit>
-npm install
-npm run build
-pm2 restart vorx-next vorx-socket vorx-settlement
+git checkout <good-commit>
+npx next build
+pm2 restart vorx-next --update-env
+
+# 数据库回滚（慎用）
+pm2 stop all
+cp /var/backups/vorx/<backup-file>.sqlite /var/lib/vorx/vorx.sqlite
+pm2 start all
 ```
 
-Rollback database:
+## 数据库维护
 
 ```bash
-pm2 stop vorx-next vorx-socket vorx-settlement
-cp /var/backups/vorx/<backup-file>.sqlite /var/lib/vorx/vorx-beta.sqlite
-pm2 start vorx-next vorx-socket vorx-settlement
-```
+# 完整性检查
+sqlite3 /var/lib/vorx/vorx.sqlite "PRAGMA integrity_check;"   # 期望: ok
 
-Only restore a database backup if the data problem is worse than losing changes made after that backup.
+# 大小
+ls -lh /var/lib/vorx/vorx.sqlite
 
-## Database Maintenance
+# 待审核统计
+sqlite3 /var/lib/vorx/vorx.sqlite "
+SELECT 'deposits', COUNT(*) FROM deposits WHERE status='pending'
+UNION ALL SELECT 'withdrawals', COUNT(*) FROM withdrawals WHERE status='pending'
+UNION ALL SELECT 'kyc', COUNT(*) FROM kyc_submissions WHERE status='pending'
+UNION ALL SELECT 'fiat', COUNT(*) FROM fiat_deposits WHERE status IN ('requested','bank_sent','submitted');
+"
 
-Check database file:
-
-```bash
-ls -lh /var/lib/vorx/vorx-beta.sqlite
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "PRAGMA integrity_check;"
-```
-
-Expected:
-
-```text
-ok
-```
-
-Check duplicate deposit transaction hashes:
-
-```bash
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "
-SELECT tx_hash, COUNT(*) AS count, GROUP_CONCAT(id) AS ids
-FROM deposits
-WHERE tx_hash IS NOT NULL
-GROUP BY tx_hash
-HAVING COUNT(*) > 1;
+# 图片存储增长
+sqlite3 /var/lib/vorx/vorx.sqlite "
+SELECT COUNT(*) AS deposit_proofs FROM deposits WHERE proof_data IS NOT NULL AND proof_data<>'';
+SELECT COUNT(*) AS kyc_front FROM kyc_submissions WHERE front_data IS NOT NULL AND front_data<>'';
+SELECT COUNT(*) AS kyc_back FROM kyc_submissions WHERE back_data IS NOT NULL AND back_data<>'';
+SELECT COUNT(*) AS fiat_proofs FROM fiat_deposits WHERE proof_data IS NOT NULL AND proof_data<>'';
 "
 ```
 
-Expected: no rows.
+## 常见故障
 
-Check pending reviews:
+### 网站打不开
 
-```bash
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "
-SELECT 'deposits' AS type, COUNT(*) FROM deposits WHERE status = 'pending'
-UNION ALL
-SELECT 'withdrawals', COUNT(*) FROM withdrawals WHERE status = 'pending'
-UNION ALL
-SELECT 'kyc', COUNT(*) FROM kyc_submissions WHERE status = 'pending';
-"
-```
-
-Check image-heavy database growth:
+症状: 浏览器无法访问, Nginx 502, curl localhost 失败
 
 ```bash
-ls -lh /var/lib/vorx/vorx-beta.sqlite
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "
-SELECT COUNT(*) AS deposit_images FROM deposits WHERE proof_data IS NOT NULL AND proof_data <> '';
-SELECT COUNT(*) AS kyc_front_images FROM kyc_submissions WHERE front_data IS NOT NULL AND front_data <> '';
-SELECT COUNT(*) AS kyc_back_images FROM kyc_submissions WHERE back_data IS NOT NULL AND back_data <> '';
-"
+pm2 status                           # 确认三个进程 online
+pm2 logs vorx-next --lines 100       # 找启动错误
+curl -s http://localhost:3020         # 本地可达？
+tail -100 /var/log/nginx/error.log
 ```
 
-## Common Problems
+修复:
+- vorx-next 停了: `pm2 restart vorx-next`
+- 构建文件丢失: `npx next build && pm2 restart vorx-next --update-env`
+- Nginx 端口错: 检查 proxy_pass 指向 `127.0.0.1:3020`
+- 环境变量缺失: 检查 `.env.production.local`
 
-### Site Does Not Open
-
-Symptoms:
-
-- Browser cannot open the domain.
-- Nginx returns `502 Bad Gateway`.
-- `curl http://127.0.0.1:3000` fails.
-
-Check:
-
-```bash
-pm2 status
-pm2 logs vorx-next --lines 100
-curl -I http://127.0.0.1:3000
-tail -n 100 /var/log/nginx/error.log
-```
-
-Fix:
-
-- If `vorx-next` is stopped, run `pm2 restart vorx-next`.
-- If build files are missing, run `npm run build`, then restart.
-- If Nginx points to the wrong port, proxy `/` to `127.0.0.1:3000`.
-- If `.env.production.local` is missing, create it from `docs/DEPLOYMENT.md`.
-
-### Admin Login Fails
-
-Symptoms:
-
-- Admin login page opens, but login fails.
-- Repeated attempts may lock login temporarily.
-
-Check:
+### 管理员登录失败
 
 ```bash
 pm2 logs vorx-next --lines 100
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "SELECT id, username, role, is_system FROM users WHERE role = 'admin';"
+sqlite3 /var/lib/vorx/vorx.sqlite "SELECT id,username,role FROM users WHERE role='admin';"
 ```
 
-Fix:
+修复:
+- 确认管理员账号存在
+- 被限流: 等 `PERP_SIM_ADMIN_LOGIN_LOCK_MS` (默认 15 分钟)
+- 重置密码: 见 DEPLOYMENT.md "重置密码" 章节
 
-- Confirm the admin account exists.
-- Confirm `PERP_SIM_ADMIN_PASSWORD` was used only for first setup, then removed.
-- If rate limited, wait for `PERP_SIM_ADMIN_LOGIN_LOCK_MS` or restart only if this is a test environment.
-- Do not edit password hashes manually unless you have a verified recovery procedure.
-
-### User Login Or Register Fails
-
-Symptoms:
-
-- Users cannot log in or register.
-- Register may be disabled in Settings.
-
-Check:
+### 用户登录/注册失败
 
 ```bash
 pm2 logs vorx-next --lines 100
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "SELECT key, value FROM settings WHERE key IN ('registration_enabled', 'trading_enabled', 'withdrawals_enabled');"
+sqlite3 /var/lib/vorx/vorx.sqlite "SELECT key,value FROM settings WHERE key IN ('registration_enabled','trading_enabled');"
 ```
 
-Fix:
+- 注册被关闭: 在后台设置中开启
+- 邮件验证码发不出: 检查 Resend API key 和域名验证状态
+- 限流: 等待窗口过期
 
-- If registration is disabled intentionally, no action is needed.
-- If login failures are rate-limit related, wait for the lock window.
-- If database errors appear, check SQLite path and permissions.
+### 邮件验证码发不出
 
-### Realtime Updates Not Working
-
-Symptoms:
-
-- User balances or admin notifications do not update live.
-- Manual refresh works, but realtime does not.
-
-Check:
+症状: 用户收不到验证码, 注册/忘记密码失败
 
 ```bash
-pm2 status
-curl http://127.0.0.1:3001/health
+# 确认 Resend API key
+grep RESEND_API_KEY /var/www/vorx/.env.production.local
+
+# 确认域名验证
+curl -s -H "Authorization: Bearer $RESEND_API_KEY" \
+  https://api.resend.com/domains | grep vorxai
+
+pm2 logs vorx-next --lines 50 | grep -i "resend\|email\|send-code"
+```
+
+- API key 错误: 在 Resend Dashboard 重新生成
+- 域名未验证: Resend us-east-1 中确认 vorxai.xyz 已验证
+- Cloudflare 邮件 DNS: MX/SPF/DKIM 必须灰云 (DNS only)
+
+### 实时通信不工作
+
+症状: 管理后台显示"轮询中", 通知不实时
+
+```bash
+pm2 status                           # vorx-socket 是否 online
+curl -s http://localhost:3021/health  # 期望 200
 pm2 logs vorx-socket --lines 100
-grep socket /var/log/nginx/error.log | tail -n 50
+grep socket /var/log/nginx/error.log | tail -50
 ```
 
-Fix:
-
-- Restart socket: `pm2 restart vorx-socket`.
-- Confirm Nginx proxies `/socket.io/` to `127.0.0.1:3001`.
-- Confirm WebSocket upgrade headers are configured.
-- Confirm `NEXT_PUBLIC_SOCKET_URL` matches the public domain.
-- Confirm `SOCKET_INTERNAL_SECRET` and `REALTIME_INTERNAL_SECRET` match.
-
-### Binary Orders Do Not Settle
-
-Symptoms:
-
-- Orders remain open after expiry.
-- User funds stay locked.
-
-Check:
+修复:
+- 重启 socket: `pm2 restart vorx-socket`
+- 确认 Nginx 代理 `/socket.io/` → `127.0.0.1:3021`
+- 确认 WebSocket upgrade headers 存在
+- 确认 `NEXT_PUBLIC_SOCKET_URL=https://vorxai.xyz`
+- 确认 `SOCKET_INTERNAL_SECRET` = `REALTIME_INTERNAL_SECRET`
 
 ```bash
-pm2 status
+# 测试内部 emit
+SECRET=$(grep SOCKET_INTERNAL_SECRET /var/www/vorx/.env.production.local | cut -d= -f2)
+curl -s -X POST http://localhost:3021/internal/emit \
+  -H "Content-Type: application/json" \
+  -H "x-realtime-secret: $SECRET" \
+  -d '{"event":"admin:update","room":"admin","payload":{"type":"test"}}'
+# 期望: {"ok":true}
+```
+
+### 通知声音不响
+
+症状: 通知中心有消息但没声音, console 报 `not-allowed`
+
+```bash
+# 浏览器 console 检查
+[notify] TTS error: not-allowed
+→ "Notification voice blocked by browser until user interaction."
+```
+
+根因: 浏览器要求用户手势才能播放语音
+
+修复:
+1. **点击页面任意位置** — 第一次点击会调用 `unlockAudio()` 解锁 speechSynthesis
+2. 确认右上角显示 "有声" (不是 "静音")
+3. 检查控制台 `[notify] TTS started:` 确认播放成功
+
+```bash
+# 测试通知声音 (服务器端)
+SECRET=$(grep SOCKET_INTERNAL_SECRET /var/www/vorx/.env.production.local | cut -d= -f2)
+curl -s -X POST http://localhost:3021/internal/emit \
+  -H "x-realtime-secret: $SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"event":"admin:update","room":"admin","payload":{"type":"binary:created","orderId":99999,"userId":1}}'
+```
+
+### 二元订单不结算
+
+```bash
+pm2 status                           # vorx-settlement 是否 online
 pm2 logs vorx-settlement --lines 200
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "SELECT id, user_id, symbol, status, expires_at FROM binary_orders WHERE status = 'open' ORDER BY expires_at ASC LIMIT 20;"
-```
-
-Fix:
-
-- Restart settlement worker: `pm2 restart vorx-settlement`.
-- Confirm `SETTLEMENT_INTERVAL_MS` is set.
-- Confirm the worker uses the same `PERP_SIM_DB_PATH` as the app.
-- Confirm market price APIs are reachable from the server.
-
-### Swap Quote Or Swap Submit Fails
-
-Symptoms:
-
-- Swap quote returns an error.
-- Swap submit refuses to execute.
-
-Check:
-
-```bash
-pm2 logs vorx-next --lines 200
-curl -I https://www.okx.com
-curl -I https://api.binance.com
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "SELECT key, value FROM settings WHERE key = 'trading_enabled';"
-```
-
-Fix:
-
-- If `trading_enabled` is off, enable it only if operations approve.
-- If OKX and Binance are unavailable, swaps should fail safely. Do not re-enable fixed fallback pricing.
-- If USDT/USDC conversion is unavailable, swaps that depend on it should fail safely.
-- If rate limited, wait for the configured swap window.
-
-### Portfolio Value Looks Wrong
-
-Symptoms:
-
-- Total balance looks too small after holding BTC, ETH, or SOL.
-- Asset page shows partial valuation.
-
-Check:
-
-```bash
-pm2 logs vorx-next --lines 200
-curl -I https://www.okx.com
-curl -I https://api.binance.com
-```
-
-Fix:
-
-- If price sources are unreachable, valuation may be partial.
-- Confirm `/api/assets` returns `summary.totalEquity`, `valuationStatus`, and `valuationWarnings`.
-- Do not manually edit user balances to correct temporary price-source issues.
-
-### Deposit Cannot Be Approved
-
-Symptoms:
-
-- Admin rejects or approves deposit, but action fails.
-- Duplicate transaction hash error appears.
-
-Check:
-
-```bash
-pm2 logs vorx-next --lines 200
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "
-SELECT id, user_id, asset, network, amount, tx_hash, status
-FROM deposits
-ORDER BY created_at DESC
-LIMIT 20;
+sqlite3 /var/lib/vorx/vorx.sqlite "
+SELECT id,user_id,symbol,status,expires_at
+FROM binary_orders WHERE status='open'
+ORDER BY expires_at ASC LIMIT 20;
 "
 ```
 
-Fix:
+修复:
+- `pm2 restart vorx-settlement`
+- 确认 `SETTLEMENT_INTERVAL_MS` 已设置
+- 确认 settlement 用同一个 `PERP_SIM_DB_PATH`
 
-- If duplicate `tx_hash` exists, do not approve the duplicate.
-- Confirm asset and network are correct.
-- Confirm the record is still `pending`; processed records should not be approved again.
+### 法币入金问题
 
-### Deposit Or KYC Image Cannot Be Previewed
-
-Symptoms:
-
-- Admin list shows a record, but image preview fails.
-- Preview button is disabled.
-
-Check:
+症状: 入金申请无法处理, 银行信息发不出, 到账确认失败
 
 ```bash
-pm2 logs vorx-next --lines 200
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "
-SELECT id, CASE WHEN proof_data IS NULL OR proof_data = '' THEN 0 ELSE 1 END AS has_proof
-FROM deposits
-ORDER BY created_at DESC
-LIMIT 20;
+pm2 logs vorx-next --lines 200 | grep -i "fiat\|send-bank\|confirm\|submit"
+
+# 检查待处理法币入金
+sqlite3 /var/lib/vorx/vorx.sqlite "
+SELECT id,user_id,currency,status,amount_fiat,estimated_usdt,created_at
+FROM fiat_deposits WHERE status IN ('requested','bank_sent','submitted')
+ORDER BY created_at DESC LIMIT 10;
 "
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "
-SELECT id,
-       CASE WHEN front_data IS NULL OR front_data = '' THEN 0 ELSE 1 END AS has_front,
-       CASE WHEN back_data IS NULL OR back_data = '' THEN 0 ELSE 1 END AS has_back
-FROM kyc_submissions
-ORDER BY created_at DESC
-LIMIT 20;
+
+# 检查银行账户
+sqlite3 /var/lib/vorx/vorx.sqlite "
+SELECT id,currency,bank_name,account_holder,is_active
+FROM fiat_bank_accounts ORDER BY currency;
 "
 ```
 
-Fix:
+常见问题:
+- 银行账户 max_amount 设置过小 → 用户提交时报 "Maximum deposit amount is X"
+  - 修复: 将 `fiat_bank_accounts.max_amount` 设为 NULL
+- 确认金额偏差超过 10% → 后台拒绝
+  - 修复: 确认实际到账金额, 用 `confirmedUsdt` 参数覆盖
+- 汇率获取失败 → 法币入金申请成功但 send-bank 没有汇率
+  - 检查 Frankfurter API 连通性
 
-- If `has_proof`, `has_front`, or `has_back` is `0`, no image was stored for that side.
-- If the flag is `1` but preview fails, check `/api/admin/deposits/proof` or `/api/admin/kyc/image` errors in `vorx-next` logs.
-- Confirm the admin session is valid; image endpoints require admin authentication.
-- Large images increase SQLite size. Keep regular backups.
-
-### Withdrawal Fails
-
-Symptoms:
-
-- User withdrawal submit returns an error.
-- Repeated wrong withdrawal password attempts return `429`.
-
-Check:
+### 数据库锁定或变慢
 
 ```bash
-pm2 logs vorx-next --lines 200
-sqlite3 /var/lib/vorx/vorx-beta.sqlite "SELECT key, value FROM settings WHERE key = 'withdrawals_enabled';"
+pm2 logs vorx-next --lines 200 | grep -i "busy\|locked\|timeout"
+ls -lh /var/lib/vorx/vorx.sqlite
 ```
 
-Fix:
+修复:
+- 确认三个进程用同一个 DB 路径
+- busy timeout ≥ 1000ms
+- 图片多时增加备份频率
+- 避免在生产库上跑重查询
 
-- If withdrawals are disabled, enable only with operations approval.
-- If password failures hit rate limit, wait for `PERP_SIM_WITHDRAW_PASSWORD_WINDOW_MS`.
-- Confirm the asset balance is available and not locked.
-- Confirm minimum withdrawal rules use USD valuation where needed.
-
-### Admin Risky Action Does Not Execute
-
-Symptoms:
-
-- User adjustment, password reset, market pause, settings save, or address delete does not happen.
-
-Check:
-
-```bash
-pm2 logs vorx-next --lines 200
-```
-
-Fix:
-
-- Confirm the operator clicked the second confirmation dialog.
-- Canceling confirmation must not submit the action.
-- Confirm the admin is not trying to adjust own funds, change own role, or promote a user to admin.
-- Confirm API request parameters match the intended action.
-
-### Market Data Or Price Source Fails
-
-Symptoms:
-
-- Charts stop updating.
-- Swap or portfolio valuation reports price unavailable.
-
-Check:
-
-```bash
-curl -I https://www.okx.com
-curl -I https://api.binance.com
-pm2 logs vorx-next --lines 200
-pm2 logs vorx-settlement --lines 200
-```
-
-Fix:
-
-- If both upstreams fail, trading flows should fail safely instead of using fixed fallback prices.
-- Check server outbound network and DNS.
-- Check whether a provider blocks the server region.
-- Do not change code to use static prices in production.
-
-### Database Locked Or Slow
-
-Symptoms:
-
-- Logs show `SQLITE_BUSY`, `database is locked`, or slow API responses.
-
-Check:
-
-```bash
-pm2 logs vorx-next --lines 200
-pm2 logs vorx-socket --lines 200
-pm2 logs vorx-settlement --lines 200
-ls -lh /var/lib/vorx/vorx-beta.sqlite
-```
-
-Fix:
-
-- Confirm all processes use the same `PERP_SIM_DB_PATH`.
-- Confirm busy timeout variables are set to `5000` or higher.
-- Avoid running heavy SQL queries against production during peak traffic.
-- If the database is very large due to uploaded images, increase backup frequency and plan image-storage migration.
-
-### Disk Full
-
-Symptoms:
-
-- Uploads fail.
-- Database writes fail.
-- PM2 logs grow without limit.
-
-Check:
+### 磁盘满
 
 ```bash
 df -h
-du -sh /var/lib/vorx
-du -sh /var/www/vorx/logs
-du -sh /var/backups/vorx
+du -sh /var/lib/vorx /var/www/vorx/logs /var/backups/vorx
 ```
 
-Fix:
+修复:
+- 移走旧备份
+- 轮转日志
+- ⚠️ 不删活动 SQLite 文件
+- ⚠️ 不删最新备份
 
-- Move old backups off the server.
-- Rotate or archive logs.
-- Do not delete the active SQLite file.
-- Do not delete the latest known-good backup.
-
-### PM2 Restart Loop
-
-Symptoms:
-
-- `pm2 status` shows repeated restarts.
-- Process status is `errored` or restart count keeps increasing.
-
-Check:
+### PM2 重启循环
 
 ```bash
-pm2 status
+pm2 status     # 看 restart 次数
 pm2 logs vorx-next --lines 200
-pm2 logs vorx-socket --lines 200
-pm2 logs vorx-settlement --lines 200
 ```
 
-Fix:
+修复:
+- 缺少环境变量 → 检查 `.env.production.local`
+- 缺少 node_modules → `npm install`
+- 缺少 .next → `npx next build`
+- 端口被占用 → 检查 3020/3021 端口
 
-- Look for missing environment variables.
-- Confirm `.env.production.local` exists in `/var/www/vorx`.
-- Confirm `node_modules` exists; run `npm install` if needed.
-- Confirm `.next` exists; run `npm run build` if needed.
-- Confirm ports `3000` and `3001` are not occupied by unrelated processes.
-
-### Nginx 502 Or WebSocket Fails
-
-Symptoms:
-
-- HTTP domain returns `502`.
-- App opens, but realtime stays disconnected.
-
-Check:
+### Nginx 502 或 WebSocket 失败
 
 ```bash
 nginx -t
-tail -n 200 /var/log/nginx/error.log
-curl -I http://127.0.0.1:3000
-curl http://127.0.0.1:3001/health
+tail -200 /var/log/nginx/error.log
+curl -s http://localhost:3020
+curl -s http://localhost:3021/health
 ```
 
-Fix:
+修复:
+- proxy `/` → `127.0.0.1:3020`
+- proxy `/socket.io/` → `127.0.0.1:3021`
+- `nginx -t && systemctl reload nginx`
 
-- Proxy `/` to `127.0.0.1:3000`.
-- Proxy `/socket.io/` to `127.0.0.1:3001`.
-- Include WebSocket upgrade headers for `/socket.io/`.
-- Reload Nginx only after `nginx -t` passes.
+## 运维冒烟测试
 
-```bash
-nginx -t
-systemctl reload nginx
-```
+每次部署后执行:
 
-## Operational Smoke Test
+- [ ] 打开前台 https://vorxai.xyz
+- [ ] 登录现有用户
+- [ ] 打开后台 https://vorxprotocol.xyz/admin
+- [ ] 登录管理员
+- [ ] 通知铃铛正常显示，点击有通知面板
+- [ ] 点击页面任意位置解锁声音（如有必要）
+- [ ] 提交法币入金申请 → 后台收到通知 + 语音
+- [ ] 提交链上充值 → 后台可预览证明图片
+- [ ] 提交 KYC → 后台可预览证件
+- [ ] 审核通过/拒绝 KYC
+- [ ] 下小额二元单 → 后台有通知 + 语音
+- [ ] 等二元单到期自动结算
+- [ ] 提现申请 → 冻结 → 后台审核
+- [ ] 客服消息发送 → 后台收到通知
+- [ ] PM2 三进程 online
+- [ ] 声音开关 (有声/静音) 正常切换
 
-Run this after every deploy:
+## 故障等级
 
-- Open public domain.
-- Register a user if registration is enabled.
-- Log in as user.
-- Log in as admin.
-- Submit a small deposit request with proof image.
-- Confirm admin can preview deposit proof.
-- Submit KYC front/back images.
-- Confirm admin can preview KYC images.
-- Approve or reject a test KYC record.
-- Try a small USDC to BTC swap, then BTC to USDC.
-- Place a small binary order and wait for settlement.
-- Open and close a small perpetual position.
-- Confirm Portfolio Value remains reasonable.
-- Confirm admin notification center receives events.
-- Confirm PM2 processes remain online.
+**P0 — 立即响应:**
+- 用户资金异常增减
+- 管理员权限绕过
+- 数据库损坏或数据丢失
+- 提现绕过
+- 交易使用不安全价格
 
-## Incident Severity
+响应: 停止受影响流程, 备份数据库, 抓日志, 必要时回滚
 
-P0:
+**P1 — 尽快修复:**
+- 核心交易/结算不可用
+- 管理员无法审核
+- 实时通信中断 (但手动刷新可用)
+- 邮件验证码无法发送
 
-- Users can gain or lose funds incorrectly.
-- Admin can bypass security controls.
-- Database corruption or data loss.
-- Swap or trading uses unsafe fallback prices.
-- Withdrawals can be bypassed.
+响应: 查日志 → 重启进程 → 冒烟测试
 
-Action: stop affected flows if possible, back up database, capture logs, roll back if needed.
+**P2 — 排期修复:**
+- UI 问题
+- 文案不一致
+- 通知声音偶尔不响
 
-P1:
+响应: 确认生产稳定后排期
 
-- Core trading or settlement unavailable.
-- Admin cannot review deposits, withdrawals, or KYC.
-- Realtime broken but manual refresh works.
-- Portfolio valuation partially unavailable.
+## 禁区
 
-Action: diagnose with logs, restart affected process, verify smoke test.
-
-P2:
-
-- UI polish issue.
-- Copy or layout inconsistency.
-- Non-critical reporting mismatch.
-
-Action: schedule fix after production stability is confirmed.
-
-## What Not To Do
-
-- Do not run destructive SQL on production without a fresh backup.
-- Do not delete `/var/lib/vorx/vorx-beta.sqlite`.
-- Do not place `PERP_SIM_DB_PATH` inside `/var/www/vorx`.
-- Do not commit `.env.production.local`.
-- Do not use fixed fallback prices for swap or valuation.
-- Do not manually credit users to hide a price-source issue.
-- Do not restore an old database backup before understanding what data will be lost.
-
+- ❌ 不备份直接跑删改 SQL
+- ❌ 不删 `/var/lib/vorx/vorx.sqlite`
+- ❌ 不把 DB 路径放在 `/var/www/vorx` 内
+- ❌ 不提交 `.env.production.local`
+- ❌ 不手动加余额掩盖价格源问题
+- ❌ 不恢复旧备份前不确认数据损失
+- ❌ 不 `git push --force` 到 master
+- ❌ 不在生产环境用 `perp-sim-local-realtime-secret`
