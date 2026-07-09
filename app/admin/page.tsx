@@ -666,6 +666,7 @@ export default function AdminPage() {
       label: "系统",
       items: [
         { id: "markets", label: "交易市场", icon: Activity },
+        { id: "orders", label: "二元订单", icon: WalletCards },
         { id: "settings", label: "平台设置", icon: Settings2 },
         { id: "support", label: "客服消息", icon: MessageSquare },
         { id: "fiatBankAccounts", label: "法币银行", icon: Landmark },
@@ -2852,11 +2853,8 @@ function ManualOrdersTab({ orders, allOrders, query, setQuery, status, setStatus
   );
 }
 
-function OrdersTab({ orders, allOrders, query, setQuery, status, setStatus, mutate }: { orders: Order[]; allOrders: Order[]; query: string; setQuery: (value: string) => void; status: "all" | "open" | "won" | "lost"; setStatus: (value: "all" | "open" | "won" | "lost") => void; mutate: (url: string, method: string, body: unknown) => Promise<void> }) {
-  const [settlePrice, setSettlePrice] = useState<Record<number, string>>({});
-  const tabs: Array<["all" | "open" | "won" | "lost", string]> = [["all", "全部"], ["open", "open"], ["won", "won"], ["lost", "lost"]];
-  return <div className="panel"><div className="panel-head"><h2><WalletCards />二元期权订单管理</h2><div className="tools"><input className="input" style={{ width: 220 }} placeholder="按用户 ID / 邮箱 / 交易对搜索" value={query} onChange={(e) => setQuery(e.target.value)} /></div></div><div className="panel-body"><div className="tabs">{tabs.map(([id, label]) => <button key={id} className={status === id ? "on" : ""} onClick={() => setStatus(id)}>{label} {id === "all" ? allOrders.length : allOrders.filter((o) => o.status === id).length}</button>)}</div></div><div className="table-wrap"><table className="table"><thead><tr><th>ID</th><th>用户 ID</th><th>用户</th><th>交易对</th><th>方向</th><th>金额</th><th>周期</th><th>入场价</th><th>状态</th><th>到期</th><th>盈亏</th><th>手动结算</th></tr></thead><tbody>{orders.length === 0 && <tr><td colSpan={12} className="empty">没有订单</td></tr>}{orders.map((o) => <tr key={o.id}><td className="mono">{o.id}</td><td className="mono">{displayUid(o)}</td><td>{o.email || o.username}</td><td className="mono">{o.symbol}</td><td><span className={`pill ${o.direction === "call" ? "ok" : "sys"}`}>{o.direction.toUpperCase()}</span></td><td className="mono">{money(o.stake)}</td><td>{o.duration_seconds}s / +{Math.round(o.odds * 100)}%</td><td className="mono">{money(o.entry_price)}</td><td><Status status={o.status} /></td><td className="muted">{cnTime(o.expires_at)}</td><td className="mono">{o.profit == null ? "-" : money(o.profit)}</td><td><div className="actions"><input className="input" style={{ width: 110 }} placeholder="结算价" value={settlePrice[o.id] || ""} onChange={(e) => setSettlePrice({ ...settlePrice, [o.id]: e.target.value })} disabled={o.status !== "open"} /><button className={`btn good ${o.status !== "open" ? "disabled" : ""}`} onClick={() => mutate("/api/admin/orders", "PATCH", { orderId: o.id, result: "won", settlePrice: Number(settlePrice[o.id] || o.entry_price), note: "后台手动判赢" })}>判赢</button><button className={`btn danger ${o.status !== "open" ? "disabled" : ""}`} onClick={() => mutate("/api/admin/orders", "PATCH", { orderId: o.id, result: "lost", settlePrice: Number(settlePrice[o.id] || o.entry_price), note: "后台手动判输" })}>判输</button></div></td></tr>)}</tbody></table></div></div>;
-}
+
+
 
 type MarketStatusFilter = "all" | "active" | "inactive";
 
