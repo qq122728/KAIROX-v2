@@ -129,6 +129,23 @@ export async function POST(request: Request) {
     );
 
     const updated = db.prepare("SELECT * FROM fiat_deposits WHERE id = ?").get(depositId);
+
+    // Emit realtime notification for admin
+    try {
+      const { emitRealtime } = await import("@/lib/realtime");
+      emitRealtime("admin:update", {
+        room: "admin",
+        payload: {
+          type: "fiat_deposit:submitted",
+          depositId,
+          userId: user.id,
+          currency: deposit.currency,
+          amountFiat,
+          estimatedUsdt,
+        },
+      });
+    } catch { /* realtime is best-effort */ }
+
     return json({ deposit: updated });
   } catch (error) {
     return handleError(error);

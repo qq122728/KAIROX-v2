@@ -7,6 +7,9 @@ type RealtimeEvent =
   | "binary:settled"
   | "trade:created"
   | "deposit-addresses:update"
+  | "fiat_deposit:requested"
+  | "fiat_deposit:submitted"
+  | "support_message:created"
   | "settings:update"
   | "market:update";
 

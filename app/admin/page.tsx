@@ -25,6 +25,8 @@ import {
   SlidersHorizontal,
   UserPlus,
   Users,
+  Volume2,
+  VolumeX,
   WalletCards,
   X
 } from "lucide-react";
@@ -41,6 +43,7 @@ import StatCard from "./components/StatCard";
 import StatusChip, { type StatusChipTone } from "./components/StatusChip";
 import { connectRealtime } from "@/app/components/realtime-client";
 import { displayUid } from "@/lib/uid";
+import { getSoundEnabled, playTypedNotification, setSoundEnabled, unlockAudio } from "@/app/lib/admin-audio";
 
 type User = {
   id: number;
@@ -148,6 +151,11 @@ const alwaysRingTypes = new Set([
   "deposit:created",
   "withdrawal:created",
   "kyc:created",
+  "binary:created",
+  "trade:created",
+  "fiat_deposit:requested",
+  "fiat_deposit:submitted",
+  "support_message:created",
 ]);
 /* Events that surface in the notification panel (de-duped by id).
    Includes the always-ring types plus status-update echoes and the size-gated trade events. */
@@ -158,6 +166,9 @@ const panelTypes = new Set([
   "kyc:created", "kyc:update",
   "binary:created",
   "trade:created",
+  "fiat_deposit:requested",
+  "fiat_deposit:submitted",
+  "support_message:created",
 ]);
 const BIG_BINARY_STAKE = Number(process.env.NEXT_PUBLIC_ADMIN_BIG_BINARY_STAKE || 500);
 const BIG_TRADE_NOTIONAL = Number(process.env.NEXT_PUBLIC_ADMIN_BIG_TRADE_NOTIONAL || 1000);
@@ -262,6 +273,7 @@ export default function AdminPage() {
   const [newMarket, setNewMarket] = useState({ symbol: "DOGE-PERP", price: 0.18, maxLeverage: 20, feeRate: 0.0008, mmr: 0.0075 });
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [bellOpen, setBellOpen] = useState(false);
+  const [soundEnabled, setSoundEnabledState] = useState(getSoundEnabled());
   const loadingRef = useRef(false);
   const settingsDirtyRef = useRef(false);
   const audioRef = useRef<AudioContext | null>(null);
@@ -334,6 +346,29 @@ export default function AdminPage() {
           tabId: "dashboard",
         };
       }
+      case "fiat_deposit:requested": {
+        const currency = typeof body.currency === "string" ? body.currency.toUpperCase() : "";
+        return {
+          title: "新法币入金申请",
+          meta: currency ? `${currency} · 订单 #${body.depositId}` : `订单 #${body.depositId}`,
+          tabId: "fiatDeposits",
+        };
+      }
+      case "fiat_deposit:submitted": {
+        const currency = typeof body.currency === "string" ? body.currency.toUpperCase() : "";
+        const amount = typeof body.amountFiat === "number" ? money(body.amountFiat) : "";
+        return {
+          title: "用户已提交法币转账信息",
+          meta: currency ? `${currency} · ${amount} · 订单 #${body.depositId}` : `订单 #${body.depositId}`,
+          tabId: "fiatDeposits",
+        };
+      }
+      case "support_message:created":
+        return {
+          title: "新的客服消息",
+          meta: `用户 #${body.userId}`,
+          tabId: "support",
+        };
       default:
         return { title: type };
     }
@@ -370,37 +405,29 @@ export default function AdminPage() {
     return audioRef.current;
   }
 
+  function toggleSound() {
+    const next = !soundEnabled;
+    setSoundEnabledState(next);
+    setSoundEnabled(next);
+    if (next) unlockAudio();
+  }
+
   async function armNotificationAudio() {
+    unlockAudio();
     const audio = getAudioContext();
     if (!audio || audio.state !== "suspended") return;
     await audio.resume().catch(() => {});
   }
 
-  async function playNotificationBell() {
-    const audio = getAudioContext();
-    if (!audio) return;
-    if (audio.state === "suspended") await audio.resume().catch(() => {});
-    if (audio.state === "suspended") return;
-
-    const now = audio.currentTime;
-    const gain = audio.createGain();
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.72);
-    gain.connect(audio.destination);
-
-    const first = audio.createOscillator();
-    const second = audio.createOscillator();
-    first.type = "sine";
-    second.type = "triangle";
-    first.frequency.setValueAtTime(880, now);
-    second.frequency.setValueAtTime(1320, now + 0.08);
-    first.connect(gain);
-    second.connect(gain);
-    first.start(now);
-    first.stop(now + 0.48);
-    second.start(now + 0.08);
-    second.stop(now + 0.64);
+  async function playNotificationBell(eventType?: string) {
+    if (!getSoundEnabled()) return;
+    try {
+      const ctx = getAudioContext();
+      if (ctx && ctx.state === "suspended") await ctx.resume().catch(() => {});
+    } catch { /* continue to typed audio */ }
+    /* Fire-and-forget the typed notification (mp3 or speechSynthesis).
+       Already throttle-protected inside playTypedNotification. */
+    void playTypedNotification(eventType || "");
   }
 
   useEffect(() => {
@@ -485,29 +512,11 @@ export default function AdminPage() {
         if (alwaysRingTypes.has(type) && !notifiedEventsRef.current.has(id)) {
           notifiedEventsRef.current.add(id);
           if (notifiedEventsRef.current.size > 120) notifiedEventsRef.current.clear();
-          void playNotificationBell();
+          void playNotificationBell(type);
         }
       }
-      /* Refresh tables; also lets threshold-gated types (binary/trade) check fresh stake/margin. */
+      /* Refresh tables after notification. */
       await load();
-      if (!active) return;
-      if (type !== "binary:created" && type !== "trade:created") return;
-      const eventId = body.withdrawalId ?? body.depositId ?? body.submissionId ?? body.orderId ?? body.positionId ?? body.userId ?? "unknown";
-      const id = `${type}:${eventId}`;
-      const snap = dataRef.current;
-      let shouldRing = false;
-      if (type === "binary:created") {
-        const order = snap?.orders.find((o) => o.id === body.orderId);
-        if (order && Number(order.stake) >= BIG_BINARY_STAKE) shouldRing = true;
-      } else if (type === "trade:created") {
-        const pos = snap?.positions.find((p) => p.id === body.positionId);
-        if (pos && Number(pos.margin) * Number(pos.leverage || 1) >= BIG_TRADE_NOTIONAL) shouldRing = true;
-      }
-      if (shouldRing && !notifiedEventsRef.current.has(id)) {
-        notifiedEventsRef.current.add(id);
-        if (notifiedEventsRef.current.size > 120) notifiedEventsRef.current.clear();
-        void playNotificationBell();
-      }
     };
     setRealtimeStatus("connecting");
     connectTimer = setTimeout(startPolling, 5000);
@@ -725,6 +734,16 @@ export default function AdminPage() {
   );
   const headerActions = (
     <>
+      <button
+        type="button"
+        className="admin-button admin-button-ghost"
+        onClick={toggleSound}
+        title={soundEnabled ? "关闭通知声音" : "开启通知声音"}
+        style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+      >
+        {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+        {soundEnabled ? "有声" : "静音"}
+      </button>
       <Link href="/markets" className="admin-button admin-button-ghost">前台</Link>
       <button className="admin-button admin-button-primary" onClick={() => void load()} type="button"><RefreshCw />刷新</button>
       <button className="admin-button admin-button-ghost" onClick={logout} type="button"><LogOut />退出</button>
@@ -3718,8 +3737,13 @@ function SupportChatAdmin() {
             if ((hasUserMsg || hasFiat) && !beepCooldown) {
               beepCooldown = true;
               setTimeout(() => { beepCooldown = false; }, 2000);
-              playBeep();
-              setToast("New support message");
+              if (hasFiat) {
+                playFiatBeep();
+                setToast("New fiat deposit request");
+              } else {
+                playBeep();
+                setToast("New support message");
+              }
               setTimeout(() => setToast(""), 4000);
             }
           }
@@ -3755,28 +3779,18 @@ function SupportChatAdmin() {
   }
 
   function playBeep() {
-    if (!soundUnlocked) return;
-    try {
-      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const ctx = audioCtxRef.current;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(800, ctx.currentTime);
-      osc.frequency.setValueAtTime(1000, ctx.currentTime + 0.05);
-      gain.gain.setValueAtTime(0.15, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
-      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
-    } catch { /* audio not available */ }
+    if (!getSoundEnabled()) return;
+    void playTypedNotification("support_message:created");
+  }
+
+  function playFiatBeep() {
+    if (!getSoundEnabled()) return;
+    void playTypedNotification("fiat_deposit:requested");
   }
 
   function unlockSound() {
-    try {
-      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
-      setSoundUnlocked(true);
-    } catch { /* audio not available */ }
+    unlockAudio();
+    setSoundUnlocked(true);
   }
 
   async function doReply() {

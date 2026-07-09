@@ -83,10 +83,21 @@ export async function POST(request: Request) {
       )
       .run(user.id, text);
 
+    const messageId = Number(result.lastInsertRowid);
+
+    // Emit realtime notification for admin
+    try {
+      const { emitRealtime } = await import("@/lib/realtime");
+      emitRealtime("admin:update", {
+        room: "admin",
+        payload: { type: "support_message:created", userId: user.id, messageId },
+      });
+    } catch { /* realtime is best-effort */ }
+
     return json({
       ok: true,
       message: {
-        id: result.lastInsertRowid,
+        id: messageId,
         role: "user",
         text,
         createdAt: new Date().toISOString(),
