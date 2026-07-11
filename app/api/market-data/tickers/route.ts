@@ -1,7 +1,7 @@
 import { handleError, json, tooManyRequests } from "@/lib/api";
 import { listMarkets } from "@/lib/trading";
 import { getDb } from "@/lib/db";
-import { fetchBinanceTickers, fetchOkxTickers, type ProviderTicker } from "@/lib/market-data-sources";
+import { fetchBinanceTickers, fetchHyperliquidTickers, fetchOkxTickers, type ProviderTicker } from "@/lib/market-data-sources";
 import { consumeIpRate } from "@/lib/rate-limit";
 
 const tickersLimit = Math.max(1, Number(process.env.PERP_SIM_TICKERS_LIMIT || 20));
@@ -44,12 +44,8 @@ function providerTicker(ticker: ProviderTicker): MarketTicker {
   };
 }
 
-async function fetchProviderTickers() {
-  try {
-    return await fetchOkxTickers();
-  } catch {
-    return await fetchBinanceTickers();
-  }
+async function trySource(fn: () => Promise<ProviderTicker[]>) {
+  try { return await fn(); } catch { return []; }
 }
 
 export async function GET(request: Request) {
@@ -59,22 +55,27 @@ export async function GET(request: Request) {
 
     const markets = listMarkets();
     const result: Record<string, MarketTicker> = {};
-    try {
-      const data = await fetchProviderTickers();
-      const bySymbol = new Map(data.map((item) => [item.symbol, item]));
-      markets.forEach((market) => {
-        const ticker = bySymbol.get(market.symbol);
-        if (ticker) {
-          result[market.symbol] = providerTicker(ticker);
-        } else {
-          result[market.symbol] = localTicker(market);
+    const missing = new Set(markets.map((m) => m.symbol));
+    const bySymbol = new Map<string, ProviderTicker>();
+
+    // Try Hyperliquid, then OKX, then Binance — fill missing symbols progressively
+    for (const source of [fetchOkxTickers, fetchHyperliquidTickers, fetchBinanceTickers]) {
+      const data = await trySource(source);
+      for (const item of data) {
+        if (missing.has(item.symbol) && !bySymbol.has(item.symbol)) {
+          bySymbol.set(item.symbol, item);
         }
-      });
-    } catch {
-      markets.forEach((market) => {
-        result[market.symbol] = localTicker(market);
-      });
+      }
     }
+
+    markets.forEach((market) => {
+      const ticker = bySymbol.get(market.symbol);
+      if (ticker) {
+        result[market.symbol] = providerTicker(ticker);
+      } else {
+        result[market.symbol] = localTicker(market);
+      }
+    });
     return json({ tickers: result });
   } catch (error) {
     return handleError(error);

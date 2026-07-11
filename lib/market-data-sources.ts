@@ -9,7 +9,7 @@ export type ProviderTicker = {
   highPrice: number;
   lowPrice: number;
   volume: number;
-  source: "okx" | "binance";
+  source: "okx" | "binance" | "hyperliquid";
 };
 
 type OkxResponse<T> = { code: string; msg?: string; data: T[] };
@@ -213,4 +213,104 @@ export async function fetchBinanceCandles(symbol: string, interval: string, limi
     close: Number(item[4])
   }));
   return { source: "binance" as const, symbol, providerSymbol, candles };
+}
+
+/* ── Hyperliquid ── */
+
+const HL_BASE_URL = process.env.HL_API_BASE_URL || "https://api.hyperliquid.xyz";
+
+export function toHyperliquidCoin(symbol: string) {
+  return symbol.replace("-PERP", "").toUpperCase();
+}
+
+export function fromHyperliquidCoin(coin: string) {
+  return `${coin}-PERP`;
+}
+
+type HlMetaAndCtxs = [
+  { universe: { name: string; szDecimals: number; maxLeverage: number; isDelisted?: boolean }[] },
+  { midPx: string; prevDayPx: string; markPx: string; dayNtlVlm: string; dayBaseVlm?: string }[]
+];
+
+export async function fetchHyperliquidTickers(): Promise<ProviderTicker[]> {
+  const endpoint = new URL("/info", HL_BASE_URL);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MARKET_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "metaAndAssetCtxs" }),
+      signal: controller.signal
+    });
+    if (!res.ok) throw new Error(`Hyperliquid ${res.status}`);
+    const [meta, ctxs] = (await res.json()) as HlMetaAndCtxs;
+    const result: ProviderTicker[] = [];
+    for (let i = 0; i < meta.universe.length; i++) {
+      const coin = meta.universe[i];
+      const ctx = ctxs[i];
+      if (!ctx || coin.isDelisted) continue;
+      const price = Number(ctx.midPx);
+      const prevDay = Number(ctx.prevDayPx);
+      const priceChange = Number.isFinite(prevDay) && prevDay > 0 ? price - prevDay : 0;
+      const priceChangePercent = Number.isFinite(prevDay) && prevDay > 0 ? (priceChange / prevDay) * 100 : 0;
+      result.push({
+        symbol: fromHyperliquidCoin(coin.name),
+        providerSymbol: coin.name,
+        price,
+        priceChange,
+        priceChangePercent,
+        highPrice: price,
+        lowPrice: price,
+        volume: Number(ctx.dayNtlVlm || 0),
+        source: "hyperliquid"
+      });
+    }
+    return result;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function fetchHyperliquidTicker(symbol: string): Promise<ProviderTicker> {
+  const coin = toHyperliquidCoin(symbol);
+  const all = await fetchHyperliquidTickers();
+  const found = all.find((t) => t.providerSymbol === coin);
+  if (!found) throw new Error(`Hyperliquid ticker not found for ${coin}`);
+  return found;
+}
+
+const HL_BAR_MAP: Record<string, string> = { "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h", "4h": "4h", "1d": "1d" };
+
+export async function fetchHyperliquidCandles(symbol: string, interval: string, limit: number) {
+  const coin = toHyperliquidCoin(symbol);
+  const bar = HL_BAR_MAP[interval] || "1h";
+  const endTime = Date.now();
+  const msMap: Record<string, number> = { "1m": 60000, "5m": 300000, "15m": 900000, "30m": 1800000, "1h": 3600000, "4h": 14400000, "1d": 86400000 };
+  const ms = msMap[interval] || 3600000;
+  const startTime = endTime - limit * ms;
+  
+  const endpoint = new URL("/info", HL_BASE_URL);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MARKET_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "candleSnapshot", req: { coin, interval: bar, startTime, endTime } }),
+      signal: controller.signal
+    });
+    if (!res.ok) throw new Error(`Hyperliquid ${res.status}`);
+    const raw = (await res.json()) as { t: number; o: string; c: string; h: string; l: string }[];
+    const candles: Candle[] = raw.map((c) => ({
+      time: Math.floor(c.t / 1000),
+      open: Number(c.o),
+      high: Number(c.h),
+      low: Number(c.l),
+      close: Number(c.c)
+    }));
+    return { source: "hyperliquid" as const, symbol, providerSymbol: coin, candles };
+  } finally {
+    clearTimeout(timeout);
+  }
 }

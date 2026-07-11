@@ -7951,29 +7951,21 @@ html.keyboard-open body {
 
 /* Keyboard-open behavior: hide footer + tighten input bar
    (the chat-stack bottom is already shifted up by --keyboard-height) */
-html.keyboard-open .chat-footer,
-html.keyboard-open .fiat-status-banner {
-  display: none !important;
-}
-html.keyboard-open .chat-input-bar {
-  padding: 8px 12px !important;
-}
+html.keyboard-open .chat-footer { display: none !important; }
+html.keyboard-open .chat-input-bar { padding-bottom: 8px !important; }
 html.keyboard-open .chat-stack { grid-template-rows: minmax(0, 1fr) auto !important; }
 .chat-scroller {
   min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
   padding: 16px 16px 20px !important;
   scrollbar-width: none !important;
   width: 100% !important;
   box-sizing: border-box !important;
-}
-.chat-scroller .chat-row {
-  margin-bottom: 14px !important;
-}
-.chat-scroller .chat-row:last-child {
-  margin-bottom: 0 !important;
 }
 .chat-scroller::-webkit-scrollbar { width: 0; height: 0; }
 

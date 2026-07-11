@@ -1,6 +1,6 @@
 import { handleError, json, tooManyRequests } from "@/lib/api";
 import { getDb } from "@/lib/db";
-import { fetchBinanceCandles, fetchOkxCandles, toBinanceSymbol, toOkxInstId, type Candle } from "@/lib/market-data-sources";
+import { fetchBinanceCandles, fetchHyperliquidCandles, fetchOkxCandles, toBinanceSymbol, toOkxInstId, type Candle } from "@/lib/market-data-sources";
 import { consumeIpRate } from "@/lib/rate-limit";
 
 const klinesLimit = Math.max(1, Number(process.env.PERP_SIM_KLINES_LIMIT || 30));
@@ -53,16 +53,21 @@ export async function GET(request: Request) {
       return json({ ...data, okxInstId: data.providerSymbol });
     } catch {
       try {
-        const data = await fetchBinanceCandles(symbol, interval, candleLimit);
-        return json({ ...data, binanceSymbol: data.providerSymbol });
+        const data = await fetchHyperliquidCandles(symbol, interval, candleLimit);
+        return json(data);
       } catch {
-        return json({
-          source: "local-fallback",
-          symbol,
-          okxInstId: toOkxInstId(symbol),
-          binanceSymbol: toBinanceSymbol(symbol),
-          candles: fallbackCandles(symbol)
-        });
+        try {
+          const data = await fetchBinanceCandles(symbol, interval, candleLimit);
+          return json({ ...data, binanceSymbol: data.providerSymbol });
+        } catch {
+          return json({
+            source: "local-fallback",
+            symbol,
+            okxInstId: toOkxInstId(symbol),
+            binanceSymbol: toBinanceSymbol(symbol),
+            candles: fallbackCandles(symbol)
+          });
+        }
       }
     }
   } catch (error) {

@@ -827,7 +827,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
         ) : (
           <>
             {tab === "home" && <HomeTab rows={filteredMarkets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} sort={marketSort} setSort={setMarketSort} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} goTab={switchTab} push={push} kycStatus={kycStatus} totalEquity={assets?.summary.totalEquity ?? 0} availableBalance={assets?.summary.availableBalance ?? user.balance} pnl={assets?.summary.unrealizedPnl ?? 0} favorites={favorites} toggleFavorite={toggleFavorite} />}
-            {tab === "markets" && <MarketsListTab rows={markets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} favorites={favorites} toggleFavorite={toggleFavorite} />}
+            {tab === "markets" && <MarketsListTab rows={markets} tickers={tickers} query={marketQuery} setQuery={setMarketQuery} onSelect={(symbol) => { setCurrentSymbol(symbol); setTab("trade"); clearStack(); pushMobileUrl(tabPath("trade", symbol)); }} />}
             {tab === "trade" && currentMarket && <TradeTab market={currentMarket} tickers={tickers} setCurrentSymbol={(symbol) => { setCurrentSymbol(symbol); pushMobileUrl(tabPath("trade", symbol)); }} markets={markets} openSheet={(d) => { setActiveOrderId(null); setSheetMinimized(false); setOrderSheet(d); }} stake={stake} setStake={setStake} duration={duration} durations={durationOptions} setDuration={setDuration} availableBalance={assets?.summary.availableBalance ?? user.balance} favorites={favorites} toggleFavorite={toggleFavorite} />}
             {tab === "orders" && <OrdersTab openOrders={openOrders} history={history} now={now} onOpenRunningOrder={(order) => { setActiveOrderId(order.id); setOrderSheet(order.direction); setSheetMinimized(false); setTab("trade"); }} />}
             {tab === "account" && <AccountTab user={user} kycStatus={kycStatus} push={push} logout={logout} />}
@@ -1386,14 +1386,17 @@ function CryptoIcon({ asset }: { asset: string }) {
   return (
     <span className={`coin-dot coin-real coin-${tone}`}>
       <img
-        src={`https://assets.coincap.io/assets/icons/${slug}@2x.png`}
+        src={`/icons/${slug}.svg`}
         alt={key}
         loading="lazy"
         onError={(e) => {
           const t = e.currentTarget;
-          t.style.display = "none";
-          const fb = t.nextElementSibling as HTMLElement | null;
-          if (fb) fb.style.display = "flex";
+          t.src = `https://assets.coincap.io/assets/icons/${slug}@2x.png`;
+          t.onerror = () => {
+            t.style.display = "none";
+            const fb = t.nextElementSibling as HTMLElement | null;
+            if (fb) fb.style.display = "flex";
+          };
         }}
       />
       <span className="coin-fb" style={{ display: "none" }}>{key.slice(0, 1)}</span>
@@ -1488,7 +1491,11 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
         </button>
       </div>
       {(() => {
-        const favRows = rows.filter((m) => favorites.has(m.symbol)).slice(0, 5);
+        const favRows = (() => {
+          const faved = rows.filter((m) => favorites.has(m.symbol));
+          if (faved.length > 0) return faved.slice(0, 5);
+          return rows.filter((m) => m.symbol === "BTC-PERP" || m.symbol === "ETH-PERP");
+        })();
         if (!favRows.length) {
           return (
             <div className="home-favorites-empty">
@@ -1524,7 +1531,6 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
                   }}
                   aria-label={`Open ${symbolName(market.symbol)}`}
                 >
-                  <CryptoIcon asset={baseAsset(market.symbol)} />
                   <span className="ml-name">
                     <span className="ml-title"><b>{symbolName(market.symbol)}</b><em className="ml-tag">Perp</em></span>
                     <small className="text-slate-400">Vol <span className="tabular-nums">{volume}</span>M</small>
@@ -1640,7 +1646,6 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
                       }}
                       aria-label={`Select ${symbolName(m.symbol)}`}
                     >
-                      <CryptoIcon asset={baseAsset(m.symbol)} />
                       <span className="ms-row-title">
                         <strong>{symbolName(m.symbol)}</strong>
                         <em className="ms-row-tag">Perp</em>
@@ -2027,7 +2032,21 @@ function writeFavoritesStorage(set: Set<string>) {
   } catch { /* ignore quota */ }
 }
 
-type MarketFilter = "all" | "favorites" | "gainers" | "losers" | "volume" | "perpetual";
+type MarketFilter = "all" | "crypto" | "forex" | "indices" | "metals" | "stocks";
+
+function marketCategory(symbol: string): MarketFilter {
+  const base = symbol.replace("-PERP", "").toUpperCase();
+  const indices = new Set(["SPX", "NDX", "DJI"]);
+  const metals = new Set(["PAXG", "XAU", "XAG", "XPT", "XPD", "XCU"]);
+  const forex = new Set(["EURUSD", "GBPUSD", "USDJPY", "AUDUSD"]);
+  if (indices.has(base)) return "indices";
+  if (metals.has(base)) return "metals";
+  if (forex.has(base)) return "forex";
+  if (cryptoToStock.has(base)) return "stocks";
+  return "crypto";
+}
+
+const cryptoToStock = new Set<string>(["AAPL","TSLA","NVDA","GOOGL","MSFT","AMZN","META","MSTR","SPY","QQQ","AVGO","COIN","HOOD","AMD","INTC","NFLX","PLTR"]);
 
 function syntheticVolume(symbol: string, price: number) {
   /* Deterministic per-symbol pseudo-volume for sorting + display until ticker volume is wired. */
@@ -2037,33 +2056,26 @@ function syntheticVolume(symbol: string, price: number) {
   return Math.abs(price * (1234 + (Math.abs(hash) % 5000))) * factor;
 }
 
-function MarketsListTab({ rows, tickers, query, setQuery, onSelect, favorites, toggleFavorite }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; onSelect: (symbol: string) => void; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
+function MarketsListTab({ rows, tickers, query, setQuery, onSelect }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; onSelect: (symbol: string) => void }) {
   const [filter, setFilter] = useState<MarketFilter>("all");
-
-  function onStarClick(symbol: string, evt: React.MouseEvent) {
-    evt.stopPropagation();
-    toggleFavorite(symbol);
-  }
 
   const filters: { id: MarketFilter; label: string }[] = [
     { id: "all", label: "All" },
-    { id: "favorites", label: "Favorites" },
-    { id: "gainers", label: "Gainers" },
-    { id: "losers", label: "Losers" },
-    { id: "volume", label: "Volume" },
-    { id: "perpetual", label: "Perpetual" }
+    { id: "crypto", label: "Crypto" },
+    { id: "stocks", label: "Stocks" },
+    { id: "indices", label: "Indices" },
+    { id: "metals", label: "Metals" }
   ];
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     let out = rows.filter((m) => !q || m.symbol.toLowerCase().includes(q) || symbolName(m.symbol).toLowerCase().includes(q));
-    if (filter === "favorites") out = out.filter((m) => favorites.has(m.symbol));
-    else if (filter === "gainers") out = out.filter((m) => (tickers[m.symbol]?.change || 0) > 0).sort((a, b) => (tickers[b.symbol]?.change || 0) - (tickers[a.symbol]?.change || 0));
-    else if (filter === "losers") out = out.filter((m) => (tickers[m.symbol]?.change || 0) < 0).sort((a, b) => (tickers[a.symbol]?.change || 0) - (tickers[b.symbol]?.change || 0));
-    else if (filter === "volume") out = [...out].sort((a, b) => syntheticVolume(b.symbol, tickers[b.symbol]?.price || b.price) - syntheticVolume(a.symbol, tickers[a.symbol]?.price || a.price));
-    else if (filter === "perpetual") out = out.filter((m) => m.symbol.endsWith("-PERP"));
+    if (filter === "crypto") out = out.filter((m) => marketCategory(m.symbol) === "crypto");
+    else if (filter === "stocks") out = out.filter((m) => marketCategory(m.symbol) === "stocks");
+    else if (filter === "indices") out = out.filter((m) => marketCategory(m.symbol) === "indices");
+    else if (filter === "metals") out = out.filter((m) => marketCategory(m.symbol) === "metals");
     return out;
-  }, [rows, tickers, query, filter, favorites]);
+  }, [rows, tickers, query, filter]);
 
   return (
     <div className="tab-page markets-list-page">
@@ -2087,7 +2099,6 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect, favorites, t
       <div className="markets-filter-row">
         {filters.map((f) => (
           <button key={f.id} type="button" className={`markets-filter${filter === f.id ? " on" : ""}`} onClick={() => setFilter(f.id)}>
-            {f.id === "favorites" && <Star size={11} fill={filter === "favorites" ? "currentColor" : "none"} strokeWidth={1.8} />}
             {f.label}
           </button>
         ))}
@@ -2100,7 +2111,6 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect, favorites, t
           const price = ticker?.price || market.price;
           const volume = (syntheticVolume(market.symbol, price) / 1_000_000).toFixed(1);
           const tone = change > 0 ? "up" : change < 0 ? "down" : "flat";
-          const fav = favorites.has(market.symbol);
           return (
             <div
               key={market.symbol}
@@ -2116,7 +2126,6 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect, favorites, t
               }}
               aria-label={`Open ${symbolName(market.symbol)}`}
             >
-              <CryptoIcon asset={baseAsset(market.symbol)} />
               <span className="markets-row-name">
                 <span className="markets-row-pair"><b>{symbolName(market.symbol)}</b><em className="markets-row-tag">Perp</em></span>
                 <small>Vol <span className="tabular-nums">{volume}</span>M</small>
@@ -2126,20 +2135,12 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect, favorites, t
                 <b className="tabular-nums">{money(price)}</b>
                 <small className={`tabular-nums change-${tone}`}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</small>
               </span>
-              <button
-                type="button"
-                className={`markets-row-star${fav ? " on" : ""}`}
-                aria-label={fav ? "Remove from favorites" : "Add to favorites"}
-                onClick={(e) => onStarClick(market.symbol, e)}
-              >
-                <Star size={16} fill={fav ? "currentColor" : "none"} strokeWidth={1.8} />
-              </button>
             </div>
           );
         })}
         {!visible.length && (
           <div className="empty-state">
-            {filter === "favorites" ? "No favorites yet — tap the star on any market to save it." : query ? `No markets match "${query}"` : "No markets available"}
+            {query ? `No markets match "${query}"` : "No markets available"}
           </div>
         )}
       </div>
