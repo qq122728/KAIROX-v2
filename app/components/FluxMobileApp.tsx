@@ -7,7 +7,7 @@ import {
   Download, Upload, ArrowLeftRight, Clock,
   LayoutGrid, BarChart3, User as UserIcon,
   Star, BookOpen, LogOut,
-  MessageCircle, Send, Paperclip, MoreHorizontal,
+  MessageCircle, Send, Paperclip,
   Home, ClipboardList, Trophy, X, Banknote, CheckCircle2
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -866,7 +866,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
     <main className="mobile-shell">
       {toast && <div className="mobile-toast-wrap" role="status" aria-live={toast.type === "err" ? "assertive" : "polite"}><div className={`mobile-toast ${toast.type}`}>{toast.text}</div></div>}
       <MobileHeader activeStack={activeStack} pop={pop} currentMarket={currentMarket} tickers={tickers} support={support} activeTab={tab} goTab={switchTab} showToast={showToast} />
-      <section className="mobile-scroll">
+      <section className={`mobile-scroll${activeStack?.id === "support-chat" ? " support-chat-scroll" : ""}`}>
         {activeStack ? (
           <StackContent
             page={activeStack}
@@ -1344,12 +1344,10 @@ function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goT
             <ChevronLeft size={22} strokeWidth={2} />
           </button>
           <div className="chat-header-title">
-            <h2>Online Support</h2>
-            <p><span className="chat-status-dot" aria-hidden="true" />We&rsquo;re online</p>
+            <h2>Support Chat</h2>
+            <p><span className="chat-status-dot" aria-hidden="true" />Online</p>
           </div>
-          <button type="button" className="stack-action" aria-label="More">
-            <MoreHorizontal size={20} strokeWidth={2} />
-          </button>
+          <span className="stack-spacer" aria-hidden="true" />
         </header>
       );
     }
@@ -4129,9 +4127,8 @@ function SupportChatPage() {
   }
 
   return (
-    <div className="stack-page chat-stack">
-      {error && <div className="auth-alert" role="alert" style={{ margin: "8px 16px 0" }}><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
-      <div className="chat-scroller" ref={scrollerRef}
+    <div className="stack-page support-chat-page chat-stack">
+      <div className="chat-messages" ref={scrollerRef}
         style={fiatStatus ? { paddingBottom: 32 } : undefined}
         onScroll={() => {
           const el = scrollerRef.current;
@@ -4158,6 +4155,9 @@ function SupportChatPage() {
           </div>
         ))}
       </div>
+
+      <div className="chat-composer">
+      {error && <div className="auth-alert chat-composer-error" role="alert"><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
 
       {/* Fiat deposit action panel */}
       {fiatStatus && (
@@ -4274,7 +4274,7 @@ function SupportChatPage() {
           <Send size={18} strokeWidth={2} />
         </button>
       </div>
-      <div className="chat-footer">Secure Support Chat</div>
+      </div>
     </div>
   );
 }

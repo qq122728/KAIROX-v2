@@ -8057,7 +8057,6 @@ html.keyboard-open body {
 
 /* Keyboard-open behavior: hide footer + tighten input bar
    (the chat-stack bottom is already shifted up by --keyboard-height) */
-html.keyboard-open .chat-footer,
 html.keyboard-open .fiat-status-banner {
   display: none !important;
 }
@@ -8248,15 +8247,129 @@ html.keyboard-open .chat-stack { grid-template-rows: minmax(0, 1fr) auto !import
 .chat-send:active { transform: translateY(1px) !important; }
 .chat-send:disabled { opacity: 0.4 !important; cursor: not-allowed !important; box-shadow: none !important; }
 
-.chat-footer {
-  text-align: center !important;
-  color: var(--text-muted) !important;
-  font-size: 11px !important;
-  font-weight: 500 !important;
-  padding: 6px 0 calc(6px + env(safe-area-inset-bottom)) !important;
-  background: var(--bg) !important;
-  border-top: 1px solid var(--line) !important;
+/* Support chat: fixed three-layer shell (header / messages / composer). */
+.mobile-scroll.support-chat-scroll {
+  height: calc(var(--app-height, 100dvh) - 56px) !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  padding: 0 !important;
 }
+.support-chat-page.chat-stack {
+  position: static !important;
+  inset: auto !important;
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  height: 100% !important;
+  background: var(--bg) !important;
+  overflow: hidden !important;
+  transition: none !important;
+}
+.support-chat-page .chat-messages {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  padding: 16px 18px !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior: contain !important;
+  scrollbar-width: none !important;
+}
+.support-chat-page .chat-messages::-webkit-scrollbar { width: 0; height: 0; }
+.support-chat-page .chat-composer {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding: 0 12px calc(10px + env(safe-area-inset-bottom)) !important;
+  background: var(--bg) !important;
+}
+.support-chat-page .chat-composer-error { margin: 0 !important; }
+.support-chat-page .fiat-status-banner {
+  min-height: 36px !important;
+  height: 36px !important;
+  margin: 0 !important;
+  padding: 0 12px !important;
+  border-radius: 10px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+.support-chat-page .fiat-status-banner button { padding: 4px 10px !important; }
+.support-chat-page .chat-input-bar {
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) 48px !important;
+  gap: 8px !important;
+  min-height: 56px !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border-top: 0 !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.support-chat-page .chat-attach {
+  width: 44px !important;
+  height: 44px !important;
+  justify-self: center !important;
+  border-radius: 12px !important;
+  background: var(--panel) !important;
+  border: 1px solid var(--line) !important;
+}
+.support-chat-page .chat-input {
+  height: 48px !important;
+  max-height: 48px !important;
+  border-radius: 14px !important;
+  background: #101a2b !important;
+  border: 1px solid rgba(148,163,184,0.18) !important;
+}
+.support-chat-page .chat-send {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 14px !important;
+  background: #2563ff !important;
+  box-shadow: none !important;
+}
+.support-chat-page .chat-send:disabled { opacity: 0.45 !important; }
+.mobile-header-chat .chat-status-dot {
+  background: var(--green) !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+html.keyboard-open .mobile-scroll.support-chat-scroll {
+  height: calc(var(--app-height, 100dvh) - 56px) !important;
+}
+html.keyboard-open .support-chat-page .chat-composer {
+  padding-bottom: 8px !important;
+}
+html.keyboard-open .support-chat-page .fiat-status-banner {
+  display: flex !important;
+}
+
+/* Final baseline: no page-level scroll, no footer, no visual effects. */
+.mobile-header.mobile-header-chat {
+  height: 56px !important;
+  min-height: 56px !important;
+  background: #111d30 !important;
+  border-bottom: 1px solid rgba(148,163,184,0.14) !important;
+}
+.mobile-header-chat .chat-header-title { align-items: flex-start !important; margin-left: 8px !important; }
+.mobile-header-chat .chat-header-title h2 { font-size: 16px !important; font-weight: 650 !important; }
+.mobile-header-chat .chat-header-title p { font-size: 12px !important; }
+.mobile-header-chat .chat-status-dot { box-shadow: none !important; animation: none !important; }
+.support-chat-page .chat-messages { padding: 16px 16px 12px !important; }
+.support-chat-page .chat-row { margin-bottom: 12px !important; animation: support-chat-message-in 0.2s ease-out both; }
+.support-chat-page .chat-row-user .chat-bubble-wrap { max-width: 72% !important; }
+.support-chat-page .chat-bubble-wrap { max-width: 76% !important; gap: 4px !important; }
+.support-chat-page .chat-bubble { border-radius: 18px !important; font-size: 14px !important; }
+.support-chat-page .chat-bubble-user { background: linear-gradient(135deg, #3b82f6 0%, #2563ff 100%) !important; box-shadow: none !important; border-bottom-right-radius: 6px !important; }
+.support-chat-page .chat-bubble-agent { border: 1px solid rgba(148,163,184,0.16) !important; border-bottom-left-radius: 6px !important; }
+.support-chat-page .chat-bubble-meta small { font-size: 12px !important; }
+.support-chat-page .chat-input-bar { grid-template-columns: 48px minmax(0, 1fr) 48px !important; gap: 8px !important; min-height: 56px !important; padding: 0 !important; border: 0 !important; background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+.support-chat-page .chat-input { height: 48px !important; max-height: 48px !important; border-radius: 14px !important; background: #101a2b !important; }
+.support-chat-page .chat-attach { width: 44px !important; height: 44px !important; border-radius: 12px !important; background: var(--panel) !important; border: 1px solid var(--line) !important; }
+.support-chat-page .chat-send { width: 48px !important; height: 48px !important; border-radius: 14px !important; background: #2563ff !important; box-shadow: none !important; transition: transform 0.12s ease, filter 0.12s ease !important; }
+.support-chat-page .chat-send:active { transform: scale(0.96) !important; }
+@keyframes support-chat-message-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ============================================================
    KYC form — soft-dark compliance card style
