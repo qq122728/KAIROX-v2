@@ -11,12 +11,12 @@ const orbitron = Orbitron({
 });
 
 export const metadata: Metadata = {
-  title: "VORX Protocol",
+  title: "KAIROX Protocol",
   description: "Liquidity in motion.",
-  applicationName: "VORX",
+  applicationName: "KAIROX",
   appleWebApp: {
     capable: true,
-    title: "VORX",
+    title: "KAIROX",
     statusBarStyle: "black-translucent"
   },
   formatDetection: {

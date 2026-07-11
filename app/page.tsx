@@ -19,7 +19,7 @@ function LandingPage() {
     <main className="landing-page">
       <div className="landing-content">
         <header className="landing-header">
-          <img className="landing-logo" src="/brand/vorx-main.png" alt="VORX Protocol" />
+          <img className="landing-logo" src="/brand/kairox-main.png" alt="KAIROX Protocol" />
         </header>
 
         <section className="landing-hero">
@@ -29,7 +29,7 @@ function LandingPage() {
             Built for the Future.
           </h1>
           <p className="landing-sub">
-            VORX Protocol is a next-generation digital asset trading platform designed for security, performance, and user control.
+            KAIROX Protocol is a next-generation digital asset trading platform designed for security, performance, and user control.
           </p>
         </section>
 
