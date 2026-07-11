@@ -6,7 +6,9 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: "2mb"
     }
-  }
+  },
+  // Prevent heic2any from being bundled into SSR chunks
+  serverExternalPackages: ["heic2any"],
 };
 
 export default nextConfig;

@@ -14,7 +14,7 @@ async function decodeToImageBitmap(file: File): Promise<ImageBitmap> {
   try {
     return await createImageBitmap(file, BITMAP_OPTS);
   } catch {
-    if (file.type === "image/heic" || file.type === "image/heif") {
+    if ((file.type === "image/heic" || file.type === "image/heif") && typeof window !== "undefined") {
       const heic2any = (await import("heic2any")).default;
       const result = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.92 });
       if (!result) throw new Error("Unable to process this image");
