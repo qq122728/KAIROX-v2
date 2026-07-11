@@ -87,7 +87,7 @@ const defaultDurations: Duration[] = [
 ];
 const dataPollMs = 12_000;
 const requestTimeoutMs = 15_000;
-const supportedProofTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const supportedProofTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 
 class RequestTimeoutError extends Error {
   constructor() {
@@ -2822,16 +2822,13 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
   async function pickProof(file: File | undefined) {
     setError("");
     if (!file) return setProof(null);
-    if (!supportedProofTypes.has(file.type)) return setError("Only JPG, PNG or WebP files are allowed.");
-    if (file.size > 5 * 1024 * 1024) return setError("Proof file must be smaller than 5MB.");
+    if (!supportedProofTypes.has(file.type)) return setError("Unsupported file type");
     try {
-      const compressed = await compressImage(file);
-      if (!supportedProofTypes.has(compressed.type) || compressed.size > 5 * 1024 * 1024) {
-        return setError("Proof file must be a JPG, PNG or WebP image smaller than 5MB.");
-      }
-      setProof(compressed);
+      const result = await compressImage(file);
+      if (!result.ok) return setError(result.error);
+      setProof(result.file);
     } catch {
-      setError("Unable to process proof file. Please try another image.");
+      setError("Unable to process this image");
     }
   }
   async function submit() {
@@ -2840,7 +2837,7 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
     const numericAmount = Number(amount);
     if (!selected?.address) return setError("No active deposit address for this asset/network");
     if (!amount.trim() || !Number.isFinite(numericAmount) || numericAmount <= 0) return setError("Enter a valid deposit amount");
-    if (proof && (!supportedProofTypes.has(proof.type) || proof.size > 5 * 1024 * 1024)) return setError("Proof file must be a JPG, PNG or WebP image smaller than 5MB.");
+    if (proof && proof.size > 5 * 1024 * 1024) return setError("Compressed image is still larger than 5MB");
     setSubmitting(true);
     try {
       const form = new FormData();
@@ -2896,10 +2893,10 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
       </label>
 
       <label className="deposit-upload">
-        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => pickProof(e.target.files?.[0])} hidden />
+        <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(e) => pickProof(e.target.files?.[0])} hidden />
         <Upload size={24} className="deposit-upload-icon" />
         <b>{proof ? proof.name : "Tap to upload proof of payment"}</b>
-        <em>JPG, PNG or WebP (Max 5MB)</em>
+        <em>JPG, PNG, WebP, HEIC or HEIF up to 25MB</em>
       </label>
 
       {error && <div className="form-error">{error}</div>}
@@ -3533,6 +3530,7 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
   const [front, setFront] = useState<File | null>(null);
   const [back, setBack] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const [imageError, setImageError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   async function submit() {
     setError("");
@@ -3601,11 +3599,15 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
         <label className="kyc-upload">
           <input type="file" accept="image/*" onChange={async (e) => {
             const f = e.target.files?.[0];
-            if (f) setFront(await compressImage(f));
+            if (!f) return;
+            setImageError("");
+            const r = await compressImage(f);
+            if (r.ok) setFront(r.file);
+            else setImageError(r.error);
           }} />
           <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
           <span className="kyc-upload-main">{front ? front.name : "Tap to upload front image"}</span>
-          <span className="kyc-upload-sub">JPG, PNG up to 10MB</span>
+          <span className="kyc-upload-sub">JPG, PNG, HEIC up to 25MB</span>
         </label>
       </div>
 
@@ -3614,13 +3616,19 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
         <label className="kyc-upload">
           <input type="file" accept="image/*" onChange={async (e) => {
             const f = e.target.files?.[0];
-            if (f) setBack(await compressImage(f));
+            if (!f) return;
+            setImageError("");
+            const r = await compressImage(f);
+            if (r.ok) setBack(r.file);
+            else setImageError(r.error);
           }} />
           <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
           <span className="kyc-upload-main">{back ? back.name : "Tap to upload back image"}</span>
-          <span className="kyc-upload-sub">JPG, PNG up to 10MB</span>
+          <span className="kyc-upload-sub">JPG, PNG, HEIC up to 25MB</span>
         </label>
       </div>
+
+      {imageError && <p className="auth-field-error">{imageError}</p>}
 
       <div className="kyc-security">
         <ShieldCheck size={20} strokeWidth={1.8} className="kyc-security-icon" aria-hidden="true" />
