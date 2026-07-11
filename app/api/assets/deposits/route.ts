@@ -10,14 +10,21 @@ import { consumeUserRate } from "@/lib/rate-limit";
 const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
 const depositLimit = Math.max(1, Number(process.env.PERP_SIM_DEPOSIT_LIMIT || 10));
 const depositWindowMs = Math.max(1000, Number(process.env.PERP_SIM_DEPOSIT_WINDOW_MS || 60_000));
+const supportedProofTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const maxProofSize = 5 * 1024 * 1024;
 
 function isDuplicateTxHashError(error: unknown) {
   return error instanceof Error && /deposits\.tx_hash|idx_deposits_tx_hash/i.test(error.message);
 }
 
+function isDuplicateClientReqError(error: unknown) {
+  return error instanceof Error && /UNIQUE.*client_req/i.test(error.message);
+}
+
 async function fileToData(file: File | null) {
   if (!file || file.size === 0) return { name: null, mime: null, data: null };
-  if (file.size > 2_000_000) throw new Error("Proof image must be smaller than 2MB");
+  if (!supportedProofTypes.has(file.type)) throw new Error("Only JPG, PNG or WebP files are allowed");
+  if (file.size > maxProofSize) throw new Error("Proof file must be smaller than 5MB");
   const bytes = Buffer.from(await file.arrayBuffer());
   return { name: file.name, mime: file.type || "application/octet-stream", data: `data:${file.type || "application/octet-stream"};base64,${bytes.toString("base64")}` };
 }
@@ -40,6 +47,7 @@ export async function POST(request: Request) {
     if (!limit.allowed) return tooManyRequests("Too many deposit requests. Please slow down.", limit.retryAfterMs);
 
     const form = await request.formData();
+    const clientRequestId = String(form.get("clientRequestId") || "").trim() || null;
     const asset = normalizeAsset(String(form.get("asset") || "USDC"));
     const network = normalizeNetwork(String(form.get("network") || ""));
     const amount = Number(form.get("amount") || 0);
@@ -50,6 +58,16 @@ export async function POST(request: Request) {
     if (txHash) {
       const existingTx = getDb().prepare("SELECT id FROM deposits WHERE tx_hash = ? LIMIT 1").get(txHash) as { id: number } | undefined;
       if (existingTx) return badRequest("Transaction hash has already been submitted");
+    }
+
+    // Idempotency: check existing request with same clientRequestId
+    if (clientRequestId) {
+      const existing = getDb()
+        .prepare("SELECT id, asset, network, amount, tx_hash, status, created_at FROM deposits WHERE user_id = ? AND client_request_id = ?")
+        .get(user.id, clientRequestId) as { id: number; asset: string; network: string; amount: number; tx_hash: string | null; status: string; created_at: string } | undefined;
+      if (existing) {
+        return json({ ok: true, depositId: existing.id, idempotent: true });
+      }
     }
 
     const address = getDb()
@@ -76,10 +94,10 @@ export async function POST(request: Request) {
       inTransaction(() => {
         const result = getDb()
           .prepare(
-            `INSERT INTO deposits (user_id, asset, network, amount, tx_hash, proof_name, proof_data, proof_mime, deposit_address, address_source, status, note)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)`
+            `INSERT INTO deposits (user_id, asset, network, amount, tx_hash, proof_name, proof_data, proof_mime, deposit_address, address_source, status, note, client_request_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
           )
-          .run(user.id, asset, network, amount, txHash, proof.name, proof.data, proof.mime, address.address, address.source, "User submitted deposit");
+          .run(user.id, asset, network, amount, txHash, proof.name, proof.data, proof.mime, address.address, address.source, "User submitted deposit", clientRequestId);
         depositId = Number(result.lastInsertRowid);
         getDb()
           .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'deposit_request', ?, 'pending', ?)")
@@ -87,6 +105,12 @@ export async function POST(request: Request) {
       });
     } catch (error) {
       if (isDuplicateTxHashError(error)) return badRequest("Transaction hash has already been submitted");
+      if (isDuplicateClientReqError(error)) {
+        const winner = getDb()
+          .prepare("SELECT id, asset, network, amount, tx_hash, status, created_at FROM deposits WHERE user_id = ? AND client_request_id = ?")
+          .get(user.id, clientRequestId) as { id: number; asset: string; network: string; amount: number; tx_hash: string | null; status: string; created_at: string } | undefined;
+        if (winner) return json({ ok: true, depositId: winner.id, idempotent: true });
+      }
       throw error;
     }
 

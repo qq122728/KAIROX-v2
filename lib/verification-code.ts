@@ -40,18 +40,24 @@ export function canSendCode(email: string): { allowed: boolean; retryAfterMs?: n
 
 export type CodePurpose = "register" | "login" | "reset_password";
 
+function hashCode(email: string, code: string, purpose: CodePurpose): string {
+  return crypto.createHash("sha256").update(`ec:${email}:${code}:${purpose}`).digest("hex");
+}
+
 export function storeCode(email: string, code: string, purpose: CodePurpose): void {
   const db = getDb();
-  db.prepare("INSERT INTO email_verification_codes (email, code, purpose) VALUES (?, ?, ?)").run(email, code, purpose);
+  const hash = hashCode(email, code, purpose);
+  db.prepare("INSERT INTO email_verification_codes (email, code, purpose) VALUES (?, ?, ?)").run(email, hash, purpose);
 }
 
 export function verifyCode(email: string, code: string, purpose: CodePurpose): boolean {
   const db = getDb();
+  const hash = hashCode(email, code, purpose);
   const row = db
     .prepare(
       "SELECT id FROM email_verification_codes WHERE email = ? AND code = ? AND purpose = ? AND used = 0 AND created_at > datetime('now', '-5 minutes') ORDER BY created_at DESC LIMIT 1"
     )
-    .get(email, code, purpose) as { id: number } | undefined;
+    .get(email, hash, purpose) as { id: number } | undefined;
 
   if (!row) return false;
 

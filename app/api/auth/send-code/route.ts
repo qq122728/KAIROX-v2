@@ -9,9 +9,6 @@ const sendWindowMs = Math.max(1000, Number(process.env.EMAIL_CODE_SEND_WINDOW_MS
 
 export async function POST(request: Request) {
   try {
-    const limit = consumeIpRate(request, "email-code-send", sendLimit, sendWindowMs);
-    if (!limit.allowed) return tooManyRequests("Too many requests. Please try again later.", limit.retryAfterMs);
-
     const body = await readJson<{ email: string; purpose: "register" | "login" }>(request);
     const email = body.email?.trim().toLowerCase();
     const purpose = body.purpose === "login" ? "login" : "register";
@@ -30,6 +27,10 @@ export async function POST(request: Request) {
       if (!exists) return badRequest("No account found with this email");
     }
 
+    // Rate limits: IP-level + email-level (after validation to avoid wasting slots on bad input)
+    const ipLimit = consumeIpRate(request, "email-code-send", sendLimit, sendWindowMs);
+    if (!ipLimit.allowed) return tooManyRequests("Too many requests. Please try again later.", ipLimit.retryAfterMs);
+
     const rateCheck = canSendCode(email);
     if (!rateCheck.allowed) {
       return tooManyRequests(rateCheck.reason || "Please wait", rateCheck.retryAfterMs);
@@ -37,7 +38,11 @@ export async function POST(request: Request) {
 
     const code = generateCode();
     storeCode(email, code, purpose);
-    sendEmailCode(email, code, purpose);
+
+    const result = await sendEmailCode(email, code, purpose);
+    if (!result.ok) {
+      return json({ error: result.error }, 502);
+    }
 
     return json({ ok: true });
   } catch (error) {

@@ -221,7 +221,7 @@ function seedSettings(database: DatabaseSync) {
     min_withdrawal_amount: "10",
     min_withdrawal: "10",
     withdrawal_notice: "Withdrawals are reviewed manually. Contact support if you need help.",
-    about_content: "VORX Protocol is a digital asset trading platform designed for secure account management, efficient trading workflows, funding records, identity verification, and responsive support.",
+    about_content: "KAIROX Protocol is a digital asset trading platform designed for secure account management, efficient trading workflows, funding records, identity verification, and responsive support.",
     terms_content: "By accessing or using this platform, you agree to follow these Terms and all applicable laws and regulations.",
     privacy_content: "We use account information for authentication, KYC verification, funding records, account security, risk control, and customer support.",
     binary_options_config: JSON.stringify([
@@ -612,6 +612,8 @@ function initialize(database: DatabaseSync) {
   addColumn(database, "withdrawals", "asset", "TEXT NOT NULL DEFAULT 'USDC'");
   addColumn(database, "withdrawals", "network", "TEXT");
   addColumn(database, "withdrawals", "processed_by", "INTEGER");
+  addColumn(database, "withdrawals", "client_request_id", "TEXT");
+  database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_withdrawals_client_req ON withdrawals(user_id, client_request_id) WHERE client_request_id IS NOT NULL;");
   addColumn(database, "binary_orders", "manual_result", "TEXT");
   addColumn(database, "binary_orders", "risk_amount", "REAL");
   addColumn(database, "binary_orders", "manual_settle_price", "REAL");
@@ -629,6 +631,8 @@ function initialize(database: DatabaseSync) {
   database.exec("CREATE INDEX IF NOT EXISTS idx_deposits_status_created ON deposits(status, created_at);");
   database.exec("DROP INDEX IF EXISTS idx_deposits_tx_asset_network;");
   database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_deposits_tx_hash ON deposits(tx_hash) WHERE tx_hash IS NOT NULL;");
+  addColumn(database, "deposits", "client_request_id", "TEXT");
+  database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_deposits_client_req ON deposits(user_id, client_request_id) WHERE client_request_id IS NOT NULL;");
   database.exec("CREATE INDEX IF NOT EXISTS idx_kyc_user_created ON kyc_submissions(user_id, created_at);");
   database.exec("CREATE INDEX IF NOT EXISTS idx_kyc_status_created ON kyc_submissions(status, created_at);");
   normalizeStoredDepositNetworks(database);

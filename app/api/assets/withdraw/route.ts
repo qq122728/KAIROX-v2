@@ -25,7 +25,9 @@ export async function POST(request: Request) {
     const settings = getSettings();
     if (!settingBool(settings.withdrawal_enabled || settings.withdrawals_enabled, true)) return badRequest("Withdrawals are currently disabled");
 
-    const body = await readJson<{ asset?: string; amount: number; address: string; network?: string; withdrawalPassword: string }>(request);
+    const body = await readJson<{ asset?: string; amount: number; address: string; network?: string; withdrawalPassword: string; clientRequestId?: string }>(request);
+    const clientRequestId = String(body.clientRequestId || "").trim() || null;
+
     const passwordLimit = consumeUserRate(user.id, "withdrawal-password", withdrawalPasswordLimit, withdrawalPasswordWindowMs);
     if (!passwordLimit.allowed) return tooManyRequests("Too many withdrawal password attempts. Please try again later.", passwordLimit.retryAfterMs);
 
@@ -48,6 +50,16 @@ export async function POST(request: Request) {
       return badRequest("Invalid withdrawal password");
     }
 
+    // Idempotency: check existing request with same clientRequestId
+    if (clientRequestId) {
+      const existing = getDb()
+        .prepare("SELECT id, asset, amount, address, network, status, created_at FROM withdrawals WHERE user_id = ? AND client_request_id = ?")
+        .get(user.id, clientRequestId) as { id: number; asset: string; amount: number; address: string; network: string | null; status: string; created_at: string } | undefined;
+      if (existing) {
+        return json({ ok: true, withdrawalId: existing.id, idempotent: true });
+      }
+    }
+
     let withdrawalId = 0;
     let debitedAsset = asset;
     let insufficientBalance = false;
@@ -63,8 +75,8 @@ export async function POST(request: Request) {
         if (isStableAsset(debitedAsset)) syncUserStableBalance(user.id);
 
         const result = getDb()
-          .prepare("INSERT INTO withdrawals (user_id, asset, amount, address, network, status, note) VALUES (?, ?, ?, ?, ?, 'pending', ?)")
-          .run(user.id, debitedAsset, amount, body.address.trim(), body.network?.trim() || null, "User withdrawal request");
+          .prepare("INSERT INTO withdrawals (user_id, asset, amount, address, network, status, note, client_request_id) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
+          .run(user.id, debitedAsset, amount, body.address.trim(), body.network?.trim() || null, "User withdrawal request", clientRequestId);
         withdrawalId = Number(result.lastInsertRowid);
         getDb()
           .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'withdrawal_request', ?, 'pending', ?)")
@@ -72,6 +84,13 @@ export async function POST(request: Request) {
       });
     } catch (error) {
       if (insufficientBalance) return badRequest("Insufficient available balance");
+      // Unique constraint on (user_id, client_request_id) — race condition: another request won
+      if (clientRequestId && error instanceof Error && /UNIQUE.*client_req/i.test(error.message)) {
+        const winner = getDb()
+          .prepare("SELECT id, asset, amount, address, network, status, created_at FROM withdrawals WHERE user_id = ? AND client_request_id = ?")
+          .get(user.id, clientRequestId) as { id: number; asset: string; amount: number; address: string; network: string | null; status: string; created_at: string } | undefined;
+        if (winner) return json({ ok: true, withdrawalId: winner.id, idempotent: true });
+      }
       throw error;
     }
 

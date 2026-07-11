@@ -9,9 +9,6 @@ const sendWindowMs = Math.max(1000, Number(process.env.EMAIL_CODE_SEND_WINDOW_MS
 
 export async function POST(request: Request) {
   try {
-    const limit = consumeIpRate(request, "reset-code-send", sendLimit, sendWindowMs);
-    if (!limit.allowed) return tooManyRequests("Too many requests. Please try again later.", limit.retryAfterMs);
-
     const body = await readJson<{ email: string }>(request);
     const email = body.email?.trim().toLowerCase();
 
@@ -26,9 +23,12 @@ export async function POST(request: Request) {
 
     // Security: always return the same ambiguous message regardless of email existence
     if (!user) {
-      // If the email doesn't exist, still return ok to avoid user enumeration
       return json({ ok: true });
     }
+
+    // Rate limits after validation
+    const ipLimit = consumeIpRate(request, "reset-code-send", sendLimit, sendWindowMs);
+    if (!ipLimit.allowed) return tooManyRequests("Too many requests. Please try again later.", ipLimit.retryAfterMs);
 
     // Check if this email is locked out from reset_password
     const lockCheck = checkResetPasswordLocked(email);
@@ -43,7 +43,11 @@ export async function POST(request: Request) {
 
     const code = generateCode();
     storeCode(email, code, "reset_password");
-    sendEmailCode(email, code, "reset_password");
+
+    const result = await sendEmailCode(email, code, "reset_password");
+    if (!result.ok) {
+      return json({ error: result.error }, 502);
+    }
 
     return json({ ok: true });
   } catch (error) {

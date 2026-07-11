@@ -31,7 +31,7 @@ type StackPage =
   | { id: "swap"; title: "Swap" }
   | { id: "security"; title: "Security Settings" }
   | { id: "kyc"; title: "KYC Verification" }
-  | { id: "about"; title: "About" | "About VORX" }
+  | { id: "about"; title: "About" | "About KAIROX" }
   | { id: "terms"; title: "Terms of Service" }
   | { id: "privacy"; title: "Privacy Policy" }
   | { id: "support"; title: "Support" }
@@ -41,6 +41,7 @@ type StackPage =
 
 type Market = { id: number; symbol: string; price: number; max_leverage?: number; is_active: number };
 type User = { id?: number; public_uid?: string | null; email: string | null; balance: number; kyc_status?: "none" | "pending" | "approved" | "rejected"; kyc_rejected_reason?: string | null; created_at?: string };
+type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "network-error" | "server-error";
 type ApiBinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; odds: number; risk_amount?: number | null; duration_seconds: number; entry_price: number; expires_at: string; status: "open" | "won" | "lost"; profit?: number | null };
 type Summary = { user: User; markets: Market[]; orders?: ApiBinaryOrder[] };
 type AssetRow = { asset: string; balance: number; locked: number; updated_at?: string; usdPrice?: number | null; usdValue?: number | null; lockedUsdValue?: number | null; totalUsdValue?: number | null };
@@ -85,6 +86,42 @@ const defaultDurations: Duration[] = [
   { label: "300s", seconds: 300, odds: 0.55, lossRate: 0.56 }
 ];
 const dataPollMs = 12_000;
+const requestTimeoutMs = 15_000;
+const supportedProofTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+class RequestTimeoutError extends Error {
+  constructor() {
+    super("Request timed out");
+    this.name = "RequestTimeoutError";
+  }
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = requestTimeoutMs): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) throw new RequestTimeoutError();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function responseErrorMessage(response: Response, fallback: string) {
+  try {
+    const data = await response.json() as { error?: unknown };
+    return typeof data.error === "string" && data.error.trim() ? data.error : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 const durationLabel = (seconds: number) => seconds < 60 ? `${seconds}s` : seconds % 60 === 0 ? `${seconds / 60}m` : `${seconds}s`;
 const binaryDurationsFromSettings = (value?: string): Duration[] => {
@@ -271,8 +308,9 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [forgotCodeCountdown, setForgotCodeCountdown] = useState(0);
   const [forgotSuccess, setForgotSuccess] = useState(false);
   const [forgotPwVisible, setForgotPwVisible] = useState<{ pw: boolean; confirm: boolean }>({ pw: false, confirm: false });
-  const [authChecked, setAuthChecked] = useState(false);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
   const loadingRef = useRef(false);
+  const authGenRef = useRef(0);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function applyPublicSettings(settings: Partial<PublicSettings> = {}) {
@@ -324,26 +362,32 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   async function load() {
     if (loadingRef.current) return;
     loadingRef.current = true;
+    const gen = ++authGenRef.current;
     try {
-      const summaryRes = await fetch("/api/trade/summary", { cache: "no-store" });
+      const summaryRes = await fetchWithTimeout("/api/trade/summary", { cache: "no-store" });
+      if (authGenRef.current !== gen) return; // stale — logout or newer load started
       if (summaryRes.status === 401) {
         setUser(null);
-        setAuthChecked(true);
+        setAuthStatus("unauthenticated");
         return;
       }
       if (!summaryRes.ok) {
-        setUser(null);
-        setAuthChecked(true);
+        setAuthStatus("server-error");
         return;
       }
       const summary = (await summaryRes.json()) as Summary;
+      if (authGenRef.current !== gen) return; // stale after parse
+      if (!summary || typeof summary !== "object" || !summary.user) {
+        setAuthStatus("server-error");
+        return;
+      }
       setUser(summary.user);
       setKycStatus(summary.user.kyc_status || "none");
       setMarkets(summary.markets || []);
       const summaryOrders = summary.orders || [];
       setOrders(summaryOrders.map(mapApiOrder));
       if (!summary.markets.find((m) => m.symbol === currentSymbolRef.current) && summary.markets[0]) setCurrentSymbol(summary.markets[0].symbol);
-      setAuthChecked(true);
+      setAuthStatus("authenticated");
       fetch("/api/market-data/tickers", { cache: "no-store" })
         .then((r) => r.json())
         .then((d) => setTickers(d.tickers || {}))
@@ -357,12 +401,17 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
           }
         })
         .catch(() => {});
-    } catch {
-      setUser(null);
-      setAuthChecked(true);
+    } catch (error) {
+      setAuthStatus(error instanceof SyntaxError ? "server-error" : "network-error");
     } finally {
       loadingRef.current = false;
     }
+  }
+
+  function retryAuth() {
+    if (loadingRef.current) return;
+    setAuthStatus("loading");
+    void load();
   }
 
   useEffect(() => {
@@ -699,9 +748,11 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   }
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    authGenRef.current += 1; // invalidate all in-flight loads
     setUser(null);
+    setAuthStatus("unauthenticated");
     setStack([]);
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
     router.push("/login");
   }
 
@@ -764,7 +815,8 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
     return rows;
   }, [markets, marketQuery, marketSort, tickers]);
 
-  if (!authChecked) return <BootScreen />;
+  if (authStatus === "loading") return <BootScreen />;
+  if (authStatus === "network-error" || authStatus === "server-error") return <AuthStatusScreen status={authStatus} retry={retryAuth} />;
   if (forgotPasswordMode) return (
     <ForgotPasswordScreen
       step={forgotStep}
@@ -791,7 +843,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
       support={support}
     />
   );
-  if (!user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); setLoginMethod("password"); setCodeSent(false); setCodeCountdown(0); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} loginMethod={loginMethod} setLoginMethod={(m) => { setLoginMethod(m); setAuthError(""); setFieldErrors({}); }} sendCode={sendCode} codeSending={codeSending} codeSent={codeSent} codeCountdown={codeCountdown} onForgotPassword={() => setForgotPasswordMode(true)} />;
+  if (authStatus === "unauthenticated" || !user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); setLoginMethod("password"); setCodeSent(false); setCodeCountdown(0); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} loginMethod={loginMethod} setLoginMethod={(m) => { setLoginMethod(m); setAuthError(""); setFieldErrors({}); }} sendCode={sendCode} codeSending={codeSending} codeSent={codeSent} codeCountdown={codeCountdown} onForgotPassword={() => setForgotPasswordMode(true)} />;
 
   return (
     <main className="mobile-shell">
@@ -1096,6 +1148,22 @@ function BootScreen() {
   return <main className="mobile-shell auth-only"><section className="auth-center boot-center"><BrandLogo variant="auth" /><p>Loading account</p></section></main>;
 }
 
+function AuthStatusScreen({ status, retry }: { status: "network-error" | "server-error"; retry: () => void }) {
+  const networkError = status === "network-error";
+  return (
+    <main className="mobile-shell auth-only">
+      <section className="auth-center boot-center">
+        <BrandLogo variant="auth" />
+        <div className="auth-card" role="alert">
+          <h1>{networkError ? "Unable to connect" : "Service temporarily unavailable"}</h1>
+          <p>{networkError ? "Check your connection and try again." : "Please try again shortly."}</p>
+          <button type="button" className="mobile-primary auth-submit" onClick={retry}>Retry</button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function ForgotPasswordScreen({ step, email, setEmail, code, setCode, newPassword, setNewPassword, confirmPassword, setConfirmPassword, error, fieldErrors, clearFieldError, codeSending, codeSent, codeCountdown, sendCode, goStep2, success, onBack, pwVisible, togglePw, support }: {
   step: 1 | 2;
   email: string;
@@ -1256,7 +1324,7 @@ function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goT
     );
   }
   const titles: Record<Tab, { title: string; sub: string }> = {
-    home:    { title: "VORX", sub: "Dashboard" },
+    home:    { title: "KAIROX", sub: "Dashboard" },
     markets: { title: "Markets", sub: "Live perpetual pairs" },
     trade:   { title: "Trade", sub: currentMarket ? `${symbolName(currentMarket.symbol)} Perpetual` : "Perpetual" },
     orders:  { title: "Orders", sub: "Open positions & history" },
@@ -1265,8 +1333,8 @@ function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goT
   const h = titles[activeTab] || titles.home;
   return (
     <header className="mobile-header mobile-topbar">
-      <button type="button" className="topbar-brand" onClick={() => goTab?.("home")} aria-label="VORX Home">
-        <img className="topbar-brand-logo" src="/brand/vorx-symbol.png" alt="" aria-hidden="true" />
+      <button type="button" className="topbar-brand" onClick={() => goTab?.("home")} aria-label="KAIROX Home">
+        <img className="topbar-brand-logo" src="/brand/kairox-symbol.png" alt="" aria-hidden="true" />
         <span className="topbar-brand-text">
           <strong>{h.title}</strong>
           <small>{h.sub}</small>
@@ -1290,41 +1358,41 @@ function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goT
 
 function BrandLogo({ variant = "header" }: { variant?: "header" | "auth" | "auth-full" }) {
   const isAuth = variant === "auth" || variant === "auth-full";
-  // Auth pages use the full main artwork (V + vortex + VORX + PROTOCOL + tagline baked into PNG).
-  // Header uses the smaller symbol PNG + Orbitron-rendered "VORX" text alongside.
+  // Auth pages use the full main artwork (V + vortex + KAIROX + PROTOCOL + tagline baked into PNG).
+  // Header uses the smaller symbol PNG + Orbitron-rendered "KAIROX" text alongside.
   if (isAuth) {
     return (
-      <div className={`brand-lockup brand-lockup-vorx brand-lockup-auth${variant === "auth-full" ? " brand-lockup-full" : ""}`}>
+      <div className={`brand-lockup brand-lockup-kairox brand-lockup-auth${variant === "auth-full" ? " brand-lockup-full" : ""}`}>
         <img
           className="brand-main"
-          src="/brand/vorx-main.png"
-          alt="VORX Protocol"
+          src="/brand/kairox-main.png"
+          alt="KAIROX Protocol"
           onError={(e) => {
             const el = e.currentTarget;
             if (el.dataset.fallback) return;
             el.dataset.fallback = "1";
-            el.src = "/brand/vorx-symbol.svg";
+            el.src = "/brand/kairox-symbol.svg";
           }}
         />
       </div>
     );
   }
   return (
-    <div className="brand-lockup brand-lockup-vorx">
+    <div className="brand-lockup brand-lockup-kairox">
       <img
         className="brand-symbol"
-        src="/brand/vorx-symbol.png"
+        src="/brand/kairox-symbol.png"
         alt=""
         aria-hidden="true"
         onError={(e) => {
           const el = e.currentTarget;
           if (el.dataset.fallback) return;
           el.dataset.fallback = "1";
-          el.src = "/brand/vorx-symbol.svg";
+          el.src = "/brand/kairox-symbol.svg";
         }}
       />
       <span className="brand-copy">
-        <strong className="brand-wordmark">VORX</strong>
+        <strong className="brand-wordmark">KAIROX</strong>
         <small className="brand-sub">PROTOCOL</small>
       </span>
     </div>
@@ -1559,7 +1627,7 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
         <div className="footer-icon"><BookOpen size={22} strokeWidth={1.6} /></div>
         <div className="footer-body">
           <strong>Trading Guide</strong>
-          <small>Learn how VORX Protocol works and start trading.</small>
+          <small>Learn how KAIROX Protocol works and start trading.</small>
         </div>
         <ChevronRight size={18} className="footer-arrow" />
       </button>
@@ -1996,7 +2064,7 @@ function OrderCard({ order, now, onClick }: { order: BinaryOrder; now: number; o
   return <div className="order-card">{inner}</div>;
 }
 
-const MARKETS_FAVORITES_KEY = "vorx_market_favorites_v1";
+const MARKETS_FAVORITES_KEY = "kairox_market_favorites_v1";
 const LEGACY_FAVORITES_KEY = "flux:fav-markets";
 
 function readFavoritesStorage(): Set<string> {
@@ -2331,18 +2399,18 @@ function Sparkline({ symbol, change, className, stretch }: { symbol: string; cha
   );
 }
 
-function VorxAccountAvatar({ variant }: { variant: "verified" | "pending" | "unverified" }) {
+function KairoxAccountAvatar({ variant }: { variant: "verified" | "pending" | "unverified" }) {
   return (
-    <div className={`vorx-avatar vorx-avatar-${variant}`} aria-hidden="true">
+    <div className={`kairox-avatar kairox-avatar-${variant}`} aria-hidden="true">
       <img
-        className="vorx-avatar-symbol"
-        src="/brand/vorx-symbol.png"
+        className="kairox-avatar-symbol"
+        src="/brand/kairox-symbol.png"
         alt=""
         onError={(e) => {
           const el = e.currentTarget;
           if (el.dataset.fallback) return;
           el.dataset.fallback = "1";
-          el.src = "/brand/vorx-symbol.svg";
+          el.src = "/brand/kairox-symbol.svg";
         }}
       />
     </div>
@@ -2351,7 +2419,7 @@ function VorxAccountAvatar({ variant }: { variant: "verified" | "pending" | "unv
 
 function AccountTab({ user, kycStatus, push, logout }: { user: User; kycStatus: string; push: (p: StackPage) => void; logout: () => void }) {
   const uid = displayUid(user);
-  const email = user.email || "user@vorx.local";
+  const email = user.email || "user@kairox.local";
   const displayName = email.split("@")[0] || `UID ${uid}`;
   const avatarLabel = (displayName.match(/[a-z0-9]/i)?.[0] || "U").toUpperCase();
   const kycText = kycStatus === "approved" ? "Verified" : kycStatus === "pending" ? "Reviewing" : kycStatus === "rejected" ? "Rejected" : "Unverified";
@@ -2362,7 +2430,7 @@ function AccountTab({ user, kycStatus, push, logout }: { user: User; kycStatus: 
     { page: { id: "kyc", title: "KYC Verification" }, Icon: BadgeCheck, tone: "yellow" }
   ];
   const legalMenu: MenuRow[] = [
-    { page: { id: "about", title: "About VORX" }, Icon: Info, tone: "muted", brand: true, subtitle: "Version, platform info and legal details" },
+    { page: { id: "about", title: "About KAIROX" }, Icon: Info, tone: "muted", brand: true, subtitle: "Version, platform info and legal details" },
     { page: { id: "terms", title: "Terms of Service" }, Icon: FileText, tone: "muted" },
     { page: { id: "privacy", title: "Privacy Policy" }, Icon: ShieldCheck, tone: "muted" }
   ];
@@ -2375,13 +2443,13 @@ function AccountTab({ user, kycStatus, push, logout }: { user: User; kycStatus: 
       {brand ? (
         <span className="profile-menu-icon profile-menu-icon-brand" aria-hidden="true">
           <img
-            src="/brand/vorx-symbol.png"
+            src="/brand/kairox-symbol.png"
             alt=""
             onError={(e) => {
               const el = e.currentTarget;
               if (el.dataset.fallback) return;
               el.dataset.fallback = "1";
-              el.src = "/brand/vorx-symbol.svg";
+              el.src = "/brand/kairox-symbol.svg";
             }}
           />
         </span>
@@ -2400,7 +2468,7 @@ function AccountTab({ user, kycStatus, push, logout }: { user: User; kycStatus: 
   return (
     <div className="tab-page profile-page">
       <div className="profile-hero">
-        <VorxAccountAvatar variant={kycVariant} />
+        <KairoxAccountAvatar variant={kycVariant} />
         <div className="profile-hero-info">
           <div className="profile-hero-top">
             <h2 className="profile-name">{displayName}</h2>
@@ -2729,6 +2797,16 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
   const [proof, setProof] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const depositReqIdRef = useRef(() => crypto.randomUUID());
+  // Build fingerprint: any change to key fields ⇒ new idempotency key
+  const proofFp = proof ? `${proof.name}|${proof.size}|${proof.type}|${proof.lastModified}` : "";
+  const depositFp = `${coin}|${network}|${amount}|${txHash}|${proofFp}`;
+  const lastDepositFpRef = useRef(depositFp);
+  if (lastDepositFpRef.current !== depositFp && !submitting) {
+    lastDepositFpRef.current = depositFp;
+    depositReqIdRef.current = () => crypto.randomUUID();
+  }
+  const depositRequestId = depositReqIdRef.current();
   const selected = assets?.depositAddresses?.find((item) => displayAsset(item.asset) === displayAsset(coin) && item.network === network);
   const address = selected?.address || "";
   async function copyAddress() {
@@ -2744,27 +2822,44 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
   async function pickProof(file: File | undefined) {
     setError("");
     if (!file) return setProof(null);
-    if (!file.type.startsWith("image/")) return setError("Proof must be an image file");
-    const compressed = await compressImage(file);
-    setProof(compressed);
+    if (!supportedProofTypes.has(file.type)) return setError("Only JPG, PNG or WebP files are allowed.");
+    if (file.size > 5 * 1024 * 1024) return setError("Proof file must be smaller than 5MB.");
+    try {
+      const compressed = await compressImage(file);
+      if (!supportedProofTypes.has(compressed.type) || compressed.size > 5 * 1024 * 1024) {
+        return setError("Proof file must be a JPG, PNG or WebP image smaller than 5MB.");
+      }
+      setProof(compressed);
+    } catch {
+      setError("Unable to process proof file. Please try another image.");
+    }
   }
   async function submit() {
+    if (submitting) return;
     setError("");
     const numericAmount = Number(amount);
     if (!selected?.address) return setError("No active deposit address for this asset/network");
     if (!amount.trim() || !Number.isFinite(numericAmount) || numericAmount <= 0) return setError("Enter a valid deposit amount");
-    if (proof && (!proof.type.startsWith("image/") || proof.size > 2_000_000)) return setError("Proof must be an image under 2MB");
+    if (proof && (!supportedProofTypes.has(proof.type) || proof.size > 5 * 1024 * 1024)) return setError("Proof file must be a JPG, PNG or WebP image smaller than 5MB.");
     setSubmitting(true);
-    const form = new FormData();
-    form.set("asset", selected.asset);
-    form.set("network", network);
-    form.set("amount", amount);
-    form.set("txHash", txHash);
-    if (proof) form.set("proof", proof);
-    const res = await fetch("/api/assets/deposits", { method: "POST", body: form });
-    setSubmitting(false);
-    if (!res.ok) return setError((await res.json()).error || "Deposit submission failed");
-    done();
+    try {
+      const form = new FormData();
+      form.set("asset", selected.asset);
+      form.set("network", network);
+      form.set("amount", amount);
+      form.set("txHash", txHash);
+      form.set("clientRequestId", depositRequestId);
+      if (proof) form.set("proof", proof);
+      const res = await fetchWithTimeout("/api/assets/deposits", { method: "POST", body: form });
+      if (!res.ok) return setError(await responseErrorMessage(res, "Unable to submit deposit. Please try again."));
+      // Success: mark used so next form change produces a fresh idempotency key
+      lastDepositFpRef.current = "";
+      done();
+    } catch (error) {
+      setError(error instanceof RequestTimeoutError ? "Request timed out. Please try again." : "Network error. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
   return (
     <div className="stack-page deposit-flow deposit-address-flow">
@@ -2801,10 +2896,10 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
       </label>
 
       <label className="deposit-upload">
-        <input type="file" accept="image/*" onChange={(e) => pickProof(e.target.files?.[0])} hidden />
+        <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => pickProof(e.target.files?.[0])} hidden />
         <Upload size={24} className="deposit-upload-icon" />
         <b>{proof ? proof.name : "Tap to upload proof of payment"}</b>
-        <em>JPG, PNG or PDF (Max 5MB)</em>
+        <em>JPG, PNG or WebP (Max 5MB)</em>
       </label>
 
       {error && <div className="form-error">{error}</div>}
@@ -2819,9 +2914,18 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
 function WithdrawForm({ coin, network, assets, form, setForm, done }: { coin: string; network: string; assets: AssetData | null; form: { address: string; amount: string; password: string }; setForm: (v: { address: string; amount: string; password: string }) => void; done: (record: WithdrawalRecord) => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [withdrawRequestId, setWithdrawRequestId] = useState(() => crypto.randomUUID());
+  // Regenerate clientRequestId when key fields change
+  const keyFields = `${coin}|${network}|${form.address}|${form.amount}`;
+  const lastFieldsRef = useRef(keyFields);
+  if (lastFieldsRef.current !== keyFields) {
+    lastFieldsRef.current = keyFields;
+    if (!submitting) setWithdrawRequestId(crypto.randomUUID());
+  }
   const available = availableForAsset(assets, coin);
   const minWithdrawal = displayAsset(coin) === "USDC" ? Number(assets?.settings?.min_withdrawal_usdc || assets?.settings?.min_withdrawal_amount || 10) : 0;
   async function submit() {
+    if (submitting) return;
     setError("");
     const numericAmount = Number(form.amount);
     if (!form.address.trim()) return setError("Withdrawal address is required");
@@ -2830,31 +2934,37 @@ function WithdrawForm({ coin, network, assets, form, setForm, done }: { coin: st
     if (numericAmount > available) return setError("Insufficient available balance");
     if (!form.password.trim()) return setError("Withdrawal password is required");
     setSubmitting(true);
-    const res = await fetch("/api/assets/withdraw", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      const res = await fetchWithTimeout("/api/assets/withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          asset: coin,
+          network,
+          amount: Number(form.amount),
+          address: form.address,
+          withdrawalPassword: form.password,
+          clientRequestId: withdrawRequestId
+        })
+      });
+      if (!res.ok) return setError(await responseErrorMessage(res, "Unable to submit withdrawal. Please try again."));
+      const result = await res.json() as { withdrawalId?: number };
+      const record: WithdrawalRecord = {
+        id: Number(result.withdrawalId || Date.now()),
         asset: coin,
         network,
-        amount: Number(form.amount),
-        address: form.address,
-        withdrawalPassword: form.password
-      })
-    });
-    setSubmitting(false);
-    if (!res.ok) return setError((await res.json()).error || "Withdrawal submission failed");
-    const result = await res.json();
-    const record: WithdrawalRecord = {
-      id: Number(result.withdrawalId || Date.now()),
-      asset: coin,
-      network,
-      amount: numericAmount,
-      address: form.address.trim(),
-      status: "pending",
-      created_at: new Date().toISOString()
-    };
-    setForm({ address: "", amount: "10", password: "" });
-    done(record);
+        amount: numericAmount,
+        address: form.address.trim(),
+        status: "pending",
+        created_at: new Date().toISOString()
+      };
+      setForm({ address: "", amount: "10", password: "" });
+      done(record);
+    } catch (error) {
+      setError(error instanceof RequestTimeoutError ? "Request timed out. Please try again." : "Unable to submit withdrawal. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
   return <div className="stack-page"><p className="muted-line">Network: {network} - Available: <span className="tabular-nums">{assetAmount(available, coin)}</span></p><label className="mobile-field"><span>Withdrawal Address</span><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={`Enter ${coin} address`} /></label><label className="mobile-field"><span>Amount ({coin})</span><input type="number" min="0" step="any" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label className="mobile-field"><span>Withdrawal Password</span><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>{error && <div className="form-error">{error}</div>}<button type="button" className="mobile-primary call" disabled={submitting} onClick={submit}>{submitting ? "Submitting..." : "Withdraw"}</button></div>;
 }
@@ -4169,11 +4279,11 @@ function PrivacyPage() {
 function AboutPage() {
   return (
     <div className="stack-page legal-page about-route-page">
-      <img className="about-logo" src="/brand/vorx-symbol.png" alt="VORX" />
-      <h1 className="about-title">VORX Protocol</h1>
+      <img className="about-logo" src="/brand/kairox-symbol.png" alt="KAIROX" />
+      <h1 className="about-title">KAIROX Protocol</h1>
       <p className="about-tagline">Liquidity in motion.</p>
       <p className="about-body">
-        VORX Protocol is a digital asset trading platform designed for secure account management,
+        KAIROX Protocol is a digital asset trading platform designed for secure account management,
         efficient trading workflows, funding records, identity verification, and responsive support.
       </p>
       <div className="about-stats">
@@ -4183,7 +4293,7 @@ function AboutPage() {
       </div>
       <div className="about-version">
         <small>Version 1.0.0</small>
-        <small>© 2026 VORX Protocol</small>
+        <small>© 2026 KAIROX Protocol</small>
       </div>
       <div className="legal-disclaimer about-disclaimer">
         <span>For support or questions, please contact us through the in-app Support center.</span>
