@@ -28,9 +28,6 @@ export async function POST(request: Request) {
     const body = await readJson<{ asset?: string; amount: number; address: string; network?: string; withdrawalPassword: string; clientRequestId?: string }>(request);
     const clientRequestId = String(body.clientRequestId || "").trim() || null;
 
-    const passwordLimit = consumeUserRate(user.id, "withdrawal-password", withdrawalPasswordLimit, withdrawalPasswordWindowMs);
-    if (!passwordLimit.allowed) return tooManyRequests("Too many withdrawal password attempts. Please try again later.", passwordLimit.retryAfterMs);
-
     const asset = normalizeAsset(String(body.asset || "USDC"));
     const amount = Number(body.amount);
     const minUsd = Number(settings.min_withdrawal_usdc || settings.min_withdrawal_amount || 10);
@@ -59,6 +56,9 @@ export async function POST(request: Request) {
         return json({ ok: true, withdrawalId: existing.id, idempotent: true });
       }
     }
+
+    const passwordLimit = consumeUserRate(user.id, "withdrawal-password", withdrawalPasswordLimit, withdrawalPasswordWindowMs);
+    if (!passwordLimit.allowed) return tooManyRequests("Too many withdrawal password attempts. Please try again later.", passwordLimit.retryAfterMs);
 
     let withdrawalId = 0;
     let debitedAsset = asset;

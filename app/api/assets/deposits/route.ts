@@ -43,9 +43,6 @@ export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
     const user = await requireUser();
-    const limit = consumeUserRate(user.id, "deposit", depositLimit, depositWindowMs);
-    if (!limit.allowed) return tooManyRequests("Too many deposit requests. Please slow down.", limit.retryAfterMs);
-
     const form = await request.formData();
     const clientRequestId = String(form.get("clientRequestId") || "").trim() || null;
     const asset = normalizeAsset(String(form.get("asset") || "USDC"));
@@ -69,6 +66,9 @@ export async function POST(request: Request) {
         return json({ ok: true, depositId: existing.id, idempotent: true });
       }
     }
+
+    const limit = consumeUserRate(user.id, "deposit", depositLimit, depositWindowMs);
+    if (!limit.allowed) return tooManyRequests("Too many deposit requests. Please slow down.", limit.retryAfterMs);
 
     const address = getDb()
       .prepare(

@@ -96,8 +96,8 @@ class RequestTimeoutError extends Error {
   }
 }
 
-async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = requestTimeoutMs): Promise<Response> {
-  const controller = new AbortController();
+async function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit, timeoutMs = requestTimeoutMs, requestController?: AbortController): Promise<Response> {
+  const controller = requestController || new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -311,6 +311,8 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [authStatus, setAuthStatus] = useState<AuthStatus>("loading");
   const loadingRef = useRef(false);
   const authGenRef = useRef(0);
+  const authControllerRef = useRef<AbortController | null>(null);
+  const signedOutRef = useRef(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function applyPublicSettings(settings: Partial<PublicSettings> = {}) {
@@ -360,11 +362,14 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   }
 
   async function load() {
-    if (loadingRef.current) return;
+    if (signedOutRef.current) return;
+    authControllerRef.current?.abort();
+    const controller = new AbortController();
+    authControllerRef.current = controller;
     loadingRef.current = true;
     const gen = ++authGenRef.current;
     try {
-      const summaryRes = await fetchWithTimeout("/api/trade/summary", { cache: "no-store" });
+      const summaryRes = await fetchWithTimeout("/api/trade/summary", { cache: "no-store" }, requestTimeoutMs, controller);
       if (authGenRef.current !== gen) return; // stale — logout or newer load started
       if (summaryRes.status === 401) {
         setUser(null);
@@ -402,9 +407,15 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
         })
         .catch(() => {});
     } catch (error) {
+      if (authGenRef.current !== gen) return;
+      if (controller.signal.aborted && !(error instanceof RequestTimeoutError)) return;
+      if (error instanceof DOMException && error.name === "AbortError") return;
       setAuthStatus(error instanceof SyntaxError ? "server-error" : "network-error");
     } finally {
-      loadingRef.current = false;
+      if (authGenRef.current === gen) {
+        loadingRef.current = false;
+        if (authControllerRef.current === controller) authControllerRef.current = null;
+      }
     }
   }
 
@@ -621,6 +632,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
         return setAuthError(message);
       }
     }
+    signedOutRef.current = false;
     await load();
     router.push("/markets");
     setTab("markets");
@@ -654,6 +666,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
       setFieldErrors(next);
       return setAuthError(message);
     }
+    signedOutRef.current = false;
     await load();
     setTab("markets");
     router.push("/markets");
@@ -748,7 +761,11 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   }
 
   async function logout() {
+    signedOutRef.current = true;
+    authControllerRef.current?.abort();
+    authControllerRef.current = null;
     authGenRef.current += 1; // invalidate all in-flight loads
+    loadingRef.current = false;
     setUser(null);
     setAuthStatus("unauthenticated");
     setStack([]);
@@ -2838,16 +2855,17 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
   const [proof, setProof] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const depositReqIdRef = useRef(() => crypto.randomUUID());
+  const depositReqIdRef = useRef(crypto.randomUUID());
   // Build fingerprint: any change to key fields ⇒ new idempotency key
   const proofFp = proof ? `${proof.name}|${proof.size}|${proof.type}|${proof.lastModified}` : "";
   const depositFp = `${coin}|${network}|${amount}|${txHash}|${proofFp}`;
   const lastDepositFpRef = useRef(depositFp);
-  if (lastDepositFpRef.current !== depositFp && !submitting) {
+  useEffect(() => {
+    if (submitting || lastDepositFpRef.current === depositFp) return;
     lastDepositFpRef.current = depositFp;
-    depositReqIdRef.current = () => crypto.randomUUID();
-  }
-  const depositRequestId = depositReqIdRef.current();
+    depositReqIdRef.current = crypto.randomUUID();
+  }, [depositFp, submitting]);
+  const depositRequestId = depositReqIdRef.current;
   const selected = assets?.depositAddresses?.find((item) => displayAsset(item.asset) === displayAsset(coin) && item.network === network);
   const address = selected?.address || "";
   async function copyAddress() {
@@ -2891,7 +2909,8 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
       const res = await fetchWithTimeout("/api/assets/deposits", { method: "POST", body: form });
       if (!res.ok) return setError(await responseErrorMessage(res, "Unable to submit deposit. Please try again."));
       // Success: mark used so next form change produces a fresh idempotency key
-      lastDepositFpRef.current = "";
+      lastDepositFpRef.current = depositFp;
+      depositReqIdRef.current = crypto.randomUUID();
       done();
     } catch (error) {
       setError(error instanceof RequestTimeoutError ? "Request timed out. Please try again." : "Network error. Please try again.");
@@ -2952,14 +2971,16 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
 function WithdrawForm({ coin, network, assets, form, setForm, done }: { coin: string; network: string; assets: AssetData | null; form: { address: string; amount: string; password: string }; setForm: (v: { address: string; amount: string; password: string }) => void; done: (record: WithdrawalRecord) => void }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [withdrawRequestId, setWithdrawRequestId] = useState(() => crypto.randomUUID());
+  const withdrawReqIdRef = useRef(crypto.randomUUID());
   // Regenerate clientRequestId when key fields change
   const keyFields = `${coin}|${network}|${form.address}|${form.amount}`;
   const lastFieldsRef = useRef(keyFields);
-  if (lastFieldsRef.current !== keyFields) {
+  useEffect(() => {
+    if (submitting || lastFieldsRef.current === keyFields) return;
     lastFieldsRef.current = keyFields;
-    if (!submitting) setWithdrawRequestId(crypto.randomUUID());
-  }
+    withdrawReqIdRef.current = crypto.randomUUID();
+  }, [keyFields, submitting]);
+  const withdrawRequestId = withdrawReqIdRef.current;
   const available = availableForAsset(assets, coin);
   const minWithdrawal = displayAsset(coin) === "USDC" ? Number(assets?.settings?.min_withdrawal_usdc || assets?.settings?.min_withdrawal_amount || 10) : 0;
   async function submit() {
