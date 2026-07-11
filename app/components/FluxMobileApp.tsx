@@ -863,10 +863,10 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   if (authStatus === "unauthenticated" || !user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); setLoginMethod("password"); setCodeSent(false); setCodeCountdown(0); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} loginMethod={loginMethod} setLoginMethod={(m) => { setLoginMethod(m); setAuthError(""); setFieldErrors({}); }} sendCode={sendCode} codeSending={codeSending} codeSent={codeSent} codeCountdown={codeCountdown} onForgotPassword={() => setForgotPasswordMode(true)} />;
 
   return (
-    <main className="mobile-shell">
+    <main className={`mobile-shell${activeStack?.id === "support-chat" ? " support-chat-shell" : ""}`}>
       {toast && <div className="mobile-toast-wrap" role="status" aria-live={toast.type === "err" ? "assertive" : "polite"}><div className={`mobile-toast ${toast.type}`}>{toast.text}</div></div>}
       <MobileHeader activeStack={activeStack} pop={pop} currentMarket={currentMarket} tickers={tickers} support={support} activeTab={tab} goTab={switchTab} showToast={showToast} />
-      <section className={`mobile-scroll${activeStack?.id === "support-chat" ? " support-chat-scroll" : ""}`}>
+      <section className={`mobile-scroll${activeStack?.id === "support-chat" ? " support-chat-content" : ""}`}>
         {activeStack ? (
           <StackContent
             page={activeStack}
@@ -1347,7 +1347,6 @@ function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goT
             <h2>Support Chat</h2>
             <p><span className="chat-status-dot" aria-hidden="true" />Online</p>
           </div>
-          <span className="stack-spacer" aria-hidden="true" />
         </header>
       );
     }
@@ -4127,7 +4126,7 @@ function SupportChatPage() {
   }
 
   return (
-    <div className="stack-page support-chat-page chat-stack">
+    <div className="stack-page support-chat-page">
       <div className="chat-messages" ref={scrollerRef}
         style={fiatStatus ? { paddingBottom: 32 } : undefined}
         onScroll={() => {

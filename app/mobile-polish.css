@@ -8374,6 +8374,74 @@ html.keyboard-open .support-chat-page .fiat-status-banner {
 /* ============================================================
    KYC form — soft-dark compliance card style
    ============================================================ */
+
+/* Support Chat final layout: a flex column with exactly three visual layers. */
+.mobile-shell.support-chat-shell {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100dvh !important;
+  overflow: hidden !important;
+}
+.support-chat-shell .mobile-header-chat {
+  position: static !important;
+  flex: 0 0 56px !important;
+  height: 56px !important;
+}
+.support-chat-shell .support-chat-content {
+  display: flex !important;
+  flex: 1 1 0 !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+  background: var(--bg) !important;
+}
+.support-chat-shell .support-chat-page {
+  display: flex !important;
+  flex: 1 1 0 !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  background: var(--bg) !important;
+}
+.support-chat-shell .chat-messages {
+  flex: 1 1 0 !important;
+  overflow: auto !important;
+  padding: 16px !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+.support-chat-shell .chat-composer {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  padding-inline: 12px !important;
+  padding-block: 0 !important;
+  border-block-end: env(safe-area-inset-bottom) solid var(--bg) !important;
+  background: var(--bg) !important;
+}
+.support-chat-shell .fiat-status-banner {
+  flex: 0 0 36px !important;
+  height: 36px !important;
+  margin: 0 !important;
+  padding-inline: 12px !important;
+  border-radius: 10px !important;
+}
+.support-chat-shell .chat-input-bar {
+  flex: 0 0 56px !important;
+  display: grid !important;
+  grid-template-columns: 48px minmax(0, 1fr) 48px !important;
+  gap: 8px !important;
+  align-items: center !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.support-chat-shell .chat-attach { width: 44px !important; height: 44px !important; justify-self: center !important; }
+.support-chat-shell .chat-input { height: 48px !important; max-height: 48px !important; border-radius: 14px !important; background: #101a2b !important; }
+.support-chat-shell .chat-send { width: 48px !important; height: 48px !important; border-radius: 14px !important; box-shadow: none !important; }
+.support-chat-shell .chat-footer { display: none !important; }
 .kyc-stack { padding: 16px 16px 32px !important; display: flex !important; flex-direction: column !important; gap: 16px !important; }
 /* Rejected-resubmit banner: muted amber/red tone, sits above the form. */
 .kyc-reject-banner {
