@@ -85,7 +85,7 @@ function cx(...values: Array<string | false | null | undefined>) {
 export function AdminSidebar({
   activeId = "dashboard",
   groups = defaultAdminNavGroups,
-  brandLabel = "VORX",
+  brandLabel = "KAIROX",
   brandSubtitle = "运营控制中心",
   className,
   onNavigate,

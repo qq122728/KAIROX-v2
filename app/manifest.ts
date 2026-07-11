@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "VORX Protocol",
-    short_name: "VORX",
+    name: "KAIROX Protocol",
+    short_name: "KAIROX",
     description: "Liquidity in motion.",
     start_url: "/",
     scope: "/",
@@ -14,31 +14,31 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["finance", "trading"],
     icons: [
       {
-        src: "/brand/vorx-appicon-192.png",
+        src: "/brand/kairox-appicon-192.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "any"
       },
       {
-        src: "/brand/vorx-appicon-512.png",
+        src: "/brand/kairox-appicon-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "any"
       },
       {
-        src: "/brand/vorx-appicon.png",
+        src: "/brand/kairox-appicon.png",
         sizes: "1024x1024",
         type: "image/png",
         purpose: "any"
       },
       {
-        src: "/brand/vorx-appicon-512.png",
+        src: "/brand/kairox-appicon-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable"
       },
       {
-        src: "/brand/vorx-appicon.png",
+        src: "/brand/kairox-appicon.png",
         sizes: "1024x1024",
         type: "image/png",
         purpose: "maskable"

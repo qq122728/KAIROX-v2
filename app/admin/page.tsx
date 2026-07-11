@@ -1226,7 +1226,7 @@ function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; cu
           <div className="admin-user-modal-form">
             <label>
               <span>新管理员账号</span>
-              <input autoComplete="off" onChange={(event) => setNewUsername(event.target.value)} placeholder="例如 ops-vorx" value={newUsername} />
+              <input autoComplete="off" onChange={(event) => setNewUsername(event.target.value)} placeholder="例如 ops-kairox" value={newUsername} />
             </label>
             <label>
               <span>邮箱</span>

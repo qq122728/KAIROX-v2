@@ -51,7 +51,7 @@ export default function AdminLoginPage() {
       <form className="login-card" onSubmit={submit}>
         <div className="brand">
           <span className="admin-notice">管理入口</span>
-          <span className="logo">VORX 管理后台</span>
+          <span className="logo">KAIROX 管理后台</span>
           <span className="logo-sub">运营控制中心 · 安全登录</span>
         </div>
         <h1 className="title">管理员登录</h1>
