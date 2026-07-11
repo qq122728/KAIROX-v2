@@ -9434,3 +9434,28 @@ a:focus-visible,
   box-sizing: border-box;
   border-color: rgba(120,145,170,0.16);
 }
+
+/* The current release still uses the legacy auth DOM; apply the same containment without DOM changes. */
+.mobile-shell.auth-only {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  padding-inline: 0 !important;
+  box-sizing: border-box !important;
+}
+.mobile-shell.auth-only > .auth-center {
+  width: 100% !important;
+  max-width: 460px !important;
+  min-width: 0 !important;
+  margin-inline: auto !important;
+  padding-inline: clamp(16px, 4vw, 24px) !important;
+  box-sizing: border-box !important;
+}
+.mobile-shell.auth-only .auth-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  margin-inline: 0 !important;
+  box-sizing: border-box !important;
+  border-color: rgba(120,145,170,0.16) !important;
+}
