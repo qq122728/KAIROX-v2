@@ -1145,7 +1145,30 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
 }
 
 function BootScreen() {
-  return <main className="mobile-shell auth-only"><section className="auth-center boot-center"><BrandLogo variant="auth" /><p>Loading account</p></section></main>;
+  const [visible, setVisible] = useState(true);
+  const mountedAt = useRef(Date.now());
+
+  // Fade-out when parent switches away from loading
+  useEffect(() => {
+    const elapsed = Date.now() - mountedAt.current;
+    const minDisplay = 280; // ms — prevent flash
+    const remaining = Math.max(0, minDisplay - elapsed);
+    const timer = setTimeout(() => setVisible(false), remaining);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <main className="mobile-shell auth-only">
+      <section className={`auth-center boot-center boot-splash${visible ? "" : " boot-fade-out"}`}>
+        <img className="landing-logo" src="/brand/kairox-main.png" alt="KAIROX" />
+        <div className="boot-dots" aria-label="Loading">
+          <span className="boot-dot" />
+          <span className="boot-dot" />
+          <span className="boot-dot" />
+        </div>
+      </section>
+    </main>
+  );
 }
 
 function AuthStatusScreen({ status, retry }: { status: "network-error" | "server-error"; retry: () => void }) {
@@ -1781,6 +1804,24 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [mode, close, minimize]);
+
+  // Lock background scroll while sheet is open
+  useEffect(() => {
+    const html = document.documentElement;
+    const savedOverflow = html.style.overflow;
+    const savedScrollTop = html.scrollTop;
+    html.style.overflow = "hidden";
+    html.style.position = "fixed";
+    html.style.width = "100%";
+    html.style.top = `-${savedScrollTop}px`;
+    return () => {
+      html.style.overflow = savedOverflow;
+      html.style.position = "";
+      html.style.width = "";
+      html.style.top = "";
+      html.scrollTop = savedScrollTop;
+    };
+  }, []);
   const titleId = `trade-sheet-title-${mode}`;
   return (
     <div className="sheet-bg" onClick={mode === "place" ? close : undefined}>
