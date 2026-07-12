@@ -3,9 +3,15 @@ import { badRequest, handleError, json, requireSameOrigin } from "@/lib/api";
 import { getDb, inTransaction } from "@/lib/db";
 import { emitRealtime, userRoom } from "@/lib/realtime";
 
-async function fileToData(file: File | null) {
+class KycFileTooLargeError extends Error {
+  constructor(readonly side: "Front" | "Back") {
+    super(side + " image exceeds the 2 MB limit.");
+  }
+}
+
+async function fileToData(file: File | null, side: "Front" | "Back") {
   if (!file || file.size === 0) return { name: null, mime: null, data: null };
-  if (file.size > 2_000_000) throw new Error("KYC image must be smaller than 2MB");
+  if (file.size > 2_000_000) throw new KycFileTooLargeError(side);
   const bytes = Buffer.from(await file.arrayBuffer());
   return { name: file.name, mime: file.type || "application/octet-stream", data: `data:${file.type || "application/octet-stream"};base64,${bytes.toString("base64")}` };
 }
@@ -30,8 +36,8 @@ export async function POST(request: Request) {
     const legalName = String(form.get("legalName") || "").trim();
     const documentType = String(form.get("documentType") || "").trim();
     if (!legalName || !documentType) return badRequest("Legal name and document type are required");
-    const front = await fileToData(form.get("front") instanceof File ? form.get("front") as File : null);
-    const back = await fileToData(form.get("back") instanceof File ? form.get("back") as File : null);
+    const front = await fileToData(form.get("front") instanceof File ? form.get("front") as File : null, "Front");
+    const back = await fileToData(form.get("back") instanceof File ? form.get("back") as File : null, "Back");
 
     let submissionId = 0;
     inTransaction(() => {
@@ -51,6 +57,9 @@ export async function POST(request: Request) {
     emitRealtime("user:update", { room: userRoom(user.id), payload: { type: "kyc:update", status: "pending" } });
     return json({ ok: true, submissionId });
   } catch (error) {
+    if (error instanceof KycFileTooLargeError) {
+      return json({ error: error.message }, 413);
+    }
     return handleError(error);
   }
 }

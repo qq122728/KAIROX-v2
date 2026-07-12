@@ -3596,6 +3596,14 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
       setError("Please upload both sides of your document before submitting.");
       return;
     }
+    if (front.size > 2_000_000) {
+      setError("Front image is too large. Please choose or retake a clearer photo.");
+      return;
+    }
+    if (back.size > 2_000_000) {
+      setError("Back image is too large. Please choose or retake a clearer photo.");
+      return;
+    }
     setError("");
     setSubmitting(true);
     try {
@@ -3692,6 +3700,10 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
             const r = await compressImage(f);
             if (selection !== frontSelectionRef.current) return;
             if (r.ok) {
+              if (r.file.size > 2_000_000) {
+                setImageError("Front image is too large. Please choose or retake a clearer photo.");
+                return;
+              }
               setFront(r.file);
               setFrontUploadId(createUploadId());
             } else {
@@ -3718,6 +3730,10 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
             const r = await compressImage(f);
             if (selection !== backSelectionRef.current) return;
             if (r.ok) {
+              if (r.file.size > 2_000_000) {
+                setImageError("Back image is too large. Please choose or retake a clearer photo.");
+                return;
+              }
               setBack(r.file);
               setBackUploadId(createUploadId());
             } else {

@@ -2,7 +2,7 @@
 
 const SUPPORTED_FORMATS = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const RAW_MAX_BYTES = 25 * 1024 * 1024;
-const COMPRESSED_MAX_BYTES = 5 * 1024 * 1024;
+const COMPRESSED_MAX_BYTES = 2 * 1024 * 1024;
 const SKIP_COMPRESS_BYTES = 200_000;
 const MAX_DIMENSION = 1920;
 const JPEG_QUALITY = 0.78;
@@ -95,13 +95,23 @@ export async function compressImage(file: File): Promise<CompressResult> {
 
     // 5. Compress to JPEG
     const compressed = await canvasToFile(bitmap, file.name, JPEG_QUALITY);
-    bitmap.close();
 
-    // 6. Post-compression size check
+    // 6. Retry a small, bounded number of quality levels before rejecting.
     if (compressed.size > COMPRESSED_MAX_BYTES) {
-      return { ok: false, error: "Compressed image is still larger than 5MB" };
+      const fallback = await canvasToFile(bitmap, file.name, 0.62);
+      if (fallback.size > COMPRESSED_MAX_BYTES) {
+        const finalAttempt = await canvasToFile(bitmap, file.name, 0.48);
+        bitmap.close();
+        if (finalAttempt.size > COMPRESSED_MAX_BYTES) {
+          return { ok: false, error: "Compressed image is still larger than 2MB" };
+        }
+        return { ok: true, file: finalAttempt };
+      }
+      bitmap.close();
+      return { ok: true, file: fallback };
     }
 
+    bitmap.close();
     return { ok: true, file: compressed };
   } catch {
     try { bitmap.close(); } catch { /* ok */ }
