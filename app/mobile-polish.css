@@ -52,6 +52,11 @@
   gap: 10px;
 }
 
+.record-list:has(> .empty-state:only-child) {
+  background: transparent !important;
+  border-color: transparent !important;
+}
+
 .record-line {
   background: #141319;
   border: 1px solid rgba(255, 255, 255, 0.04);
