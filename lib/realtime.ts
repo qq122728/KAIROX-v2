@@ -10,6 +10,7 @@ type RealtimeEvent =
   | "fiat_deposit:requested"
   | "fiat_deposit:submitted"
   | "support_message:created"
+  | "support:message"
   | "settings:update"
   | "market:update";
 

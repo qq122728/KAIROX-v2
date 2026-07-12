@@ -92,6 +92,13 @@ export async function POST(request: Request) {
         room: "admin",
         payload: { type: "support_message:created", userId: user.id, messageId },
       });
+      emitRealtime("support:message", {
+        room: "admin",
+        payload: {
+          userId: user.id,
+          message: { id: messageId, role: "user", text, createdAt: new Date().toISOString(), message_type: "text" },
+        },
+      });
     } catch { /* realtime is best-effort */ }
 
     return json({

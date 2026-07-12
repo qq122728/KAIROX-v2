@@ -3999,8 +3999,11 @@ function SupportChatPage() {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const shouldStickRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastMsgIdRef = useRef<number>(0);
+  const seenMessageIdsRef = useRef<Set<number | string>>(new Set());
+  const notifiedMessageIdsRef = useRef<Set<number | string>>(new Set());
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   // Fiat deposit state
   const [fiatDeposit, setFiatDeposit] = useState<FiatDeposit | null>(null);
@@ -4019,7 +4022,59 @@ function SupportChatPage() {
       .catch(() => {});
   };
 
-  // Load history
+  function mapChatMessage(m: { id: number; role: string; text: string; createdAt: string; message_type?: string; metadata_json?: string | null }): ChatMessage {
+    return {
+      id: m.id,
+      role: m.role as "agent" | "user",
+      text: m.text,
+      time: formatChatTime(new Date(m.createdAt.replace(" ", "T") + (m.createdAt.endsWith("Z") ? "" : "Z"))),
+      messageType: m.message_type || "text",
+      metadata: m.metadata_json ? safeJsonParse(m.metadata_json) : null,
+    };
+  }
+
+  function notifyIncoming(message: ChatMessage) {
+    if (message.role !== "agent" || notifiedMessageIdsRef.current.has(message.id)) return;
+    notifiedMessageIdsRef.current.add(message.id);
+    if (notifiedMessageIdsRef.current.size > 200) notifiedMessageIdsRef.current.clear();
+    if (audioContextRef.current) {
+      try {
+        const ctx = audioContextRef.current;
+        const oscillator = ctx.createOscillator();
+        const gain = ctx.createGain();
+        oscillator.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+        oscillator.connect(gain).connect(ctx.destination);
+        oscillator.start();
+        oscillator.stop(ctx.currentTime + 0.2);
+      } catch { /* autoplay/audio context can be unavailable */ }
+    }
+    if (typeof document !== "undefined" && document.hidden) {
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        const notification = new Notification("KAIROX Support", { body: "New message received." });
+        notification.onclick = () => { window.focus(); notification.close(); };
+      }
+      document.title = `(1) KAIROX`;
+    }
+  }
+
+  async function enableNotifications() {
+    try {
+      const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AudioContextCtor) {
+        audioContextRef.current = new AudioContextCtor();
+        await audioContextRef.current.resume();
+      }
+      if (typeof Notification !== "undefined") {
+        const permission = await Notification.requestPermission();
+        setNotificationsEnabled(permission === "granted");
+      }
+    } catch { /* permission or autoplay can be denied by the browser */ }
+  }
+
+  // Load history once, then receive new messages through the authenticated Socket.IO room.
   useEffect(() => {
     let active = true;
     loadFiatDeposit();
@@ -4028,14 +4083,8 @@ function SupportChatPage() {
       .then((data) => {
         if (!active) return;
         if (data.messages?.length) {
-          const msgs: ChatMessage[] = data.messages.map((m: { id: number; role: string; text: string; createdAt: string; message_type?: string; metadata_json?: string | null }) => ({
-            id: m.id,
-            role: m.role as "agent" | "user",
-            text: m.text,
-            time: formatChatTime(new Date(m.createdAt.replace(" ", "T") + "Z")),
-            messageType: m.message_type || "text",
-            metadata: m.metadata_json ? safeJsonParse(m.metadata_json) : null,
-          }));
+          const msgs: ChatMessage[] = data.messages.map(mapChatMessage);
+          seenMessageIdsRef.current = new Set(msgs.map((message) => message.id));
           setMessages(msgs);
           const last = msgs[msgs.length - 1];
           if (last) lastMsgIdRef.current = typeof last.id === "number" ? last.id : 0;
@@ -4044,31 +4093,43 @@ function SupportChatPage() {
       .catch(() => {})
       .finally(() => { if (active) setLoaded(true); });
 
-    // Poll every 5 seconds
-    pollRef.current = setInterval(() => {
-      loadFiatDeposit();
-      fetch("/api/support/messages")
-        .then((r) => r.json())
-        .then((data) => {
-          if (!data.messages) return;
-          const newMsgs: ChatMessage[] = data.messages.map((m: { id: number; role: string; text: string; createdAt: string; message_type?: string; metadata_json?: string | null }) => ({
-            id: m.id,
-            role: m.role as "agent" | "user",
-            text: m.text,
-            time: formatChatTime(new Date(m.createdAt.replace(" ", "T") + "Z")),
-            messageType: m.message_type || "text",
-            metadata: m.metadata_json ? safeJsonParse(m.metadata_json) : null,
-          }));
-          setMessages(newMsgs);
-          const last = newMsgs[newMsgs.length - 1];
-          if (last && typeof last.id === "number") lastMsgIdRef.current = last.id;
-        })
-        .catch(() => {});
-    }, 5000);
+    let socket: Awaited<ReturnType<typeof connectRealtime>> | null = null;
+    const handleMessage = (payload?: unknown) => {
+      const body = (payload && typeof payload === "object" ? payload : {}) as { message?: { id: number; role: string; text: string; createdAt: string; message_type?: string; metadata_json?: string | null } };
+      if (!body.message || !active) return;
+      const message = mapChatMessage(body.message);
+      if (seenMessageIdsRef.current.has(message.id)) return;
+      seenMessageIdsRef.current.add(message.id);
+      setMessages((prev) => [...prev, message]);
+      notifyIncoming(message);
+    };
+    const handleConnect = () => {
+      if (!active) return;
+      socket?.emit("user:join");
+      fetch("/api/support/messages").then((r) => r.json()).then((data) => {
+        if (!active || !Array.isArray(data.messages)) return;
+        const incoming = data.messages.map(mapChatMessage);
+        seenMessageIdsRef.current = new Set(incoming.map((message: ChatMessage) => message.id));
+        setMessages(incoming);
+      }).catch(() => {});
+    };
+    connectRealtime().then((nextSocket) => {
+      if (!active) { nextSocket.disconnect(); return; }
+      socket = nextSocket;
+      socket.on("support:message", handleMessage);
+      socket.on("connect", handleConnect);
+      if (socket.connected) handleConnect();
+    }).catch(() => {});
 
     return () => {
       active = false;
-      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      if (socket) {
+        socket.off("support:message", handleMessage);
+        socket.off("connect", handleConnect);
+        socket.disconnect();
+      }
+      if (typeof document !== "undefined") document.title = "KAIROX";
+      audioContextRef.current?.close().catch(() => {});
     };
   }, []);
 
@@ -4089,6 +4150,10 @@ function SupportChatPage() {
   async function doSend() {
     const text = draft.trim();
     if (!text || sending) return;
+    const optimisticId = `sending-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const optimisticMessage: ChatMessage = { id: optimisticId, role: "user", text, time: formatChatTime() };
+    seenMessageIdsRef.current.add(optimisticId);
+    setMessages((prev) => [...prev, optimisticMessage]);
     setSending(true);
     setError("");
     try {
@@ -4099,18 +4164,21 @@ function SupportChatPage() {
       });
       const data = await res.json();
       if (!res.ok) {
+        seenMessageIdsRef.current.delete(optimisticId);
+        setMessages((prev) => prev.filter((message) => message.id !== optimisticId));
         setError(data.error || "Failed to send message");
         return;
       }
       setDraft("");
       scrollToBottom();
       if (data.message) {
-        setMessages((prev) => [
-          ...prev,
-          { id: data.message.id, role: "user", text: data.message.text, time: formatChatTime() },
-        ]);
+        const sent = { id: data.message.id, role: "user" as const, text: data.message.text, time: formatChatTime() };
+        seenMessageIdsRef.current.add(sent.id);
+        setMessages((prev) => prev.map((message) => message.id === optimisticId ? sent : message));
       }
     } catch {
+      seenMessageIdsRef.current.delete(optimisticId);
+      setMessages((prev) => prev.filter((message) => message.id !== optimisticId));
       setError("Unable to connect to the server. Please try again.");
     } finally {
       setSending(false);
@@ -4260,6 +4328,12 @@ function SupportChatPage() {
 
       <div className="chat-composer">
       {error && <div className="auth-alert chat-composer-error" role="alert"><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
+
+      {!notificationsEnabled && (
+        <button type="button" onClick={enableNotifications} style={{ margin: "0 16px 8px", width: "calc(100% - 32px)", padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(37,99,255,0.25)", background: "rgba(37,99,255,0.08)", color: "#7da9ff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          Enable support notifications
+        </button>
+      )}
 
       {/* Fiat deposit action panel */}
       {fiatStatus && (

@@ -45,6 +45,17 @@ export async function POST(request: Request) {
       )
       .run(userId, text);
 
+    try {
+      const { emitRealtime, userRoom } = await import("@/lib/realtime");
+      emitRealtime("support:message", {
+        room: userRoom(userId),
+        payload: {
+          userId,
+          message: { id: Number(result.lastInsertRowid), role: "agent", text, createdAt: new Date().toISOString(), message_type: "text" },
+        },
+      });
+    } catch { /* realtime is best-effort */ }
+
     return json({
       ok: true,
       message: {
