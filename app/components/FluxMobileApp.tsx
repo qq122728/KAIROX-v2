@@ -3576,22 +3576,47 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
   const [documentType, setDocumentType] = useState("Passport");
   const [front, setFront] = useState<File | null>(null);
   const [back, setBack] = useState<File | null>(null);
+  const [frontUploadId, setFrontUploadId] = useState<string | null>(null);
+  const [backUploadId, setBackUploadId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [imageError, setImageError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const frontSelectionRef = useRef(0);
+  const backSelectionRef = useRef(0);
+  const createUploadId = () => {
+    if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+    return "kyc-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+  };
   async function submit() {
+    if (legalName.trim().length <= 1) {
+      setError("Please enter your legal name.");
+      return;
+    }
+    if (!front || !frontUploadId || !back || !backUploadId) {
+      setError("Please upload both sides of your document before submitting.");
+      return;
+    }
     setError("");
     setSubmitting(true);
-    const form = new FormData();
-    form.set("legalName", legalName);
-    form.set("documentType", documentType);
-    if (front) form.set("front", front);
-    if (back) form.set("back", back);
-    const res = await fetch("/api/kyc", { method: "POST", body: form });
-    setSubmitting(false);
-    if (!res.ok) return setError((await res.json()).error || "KYC submission failed");
-    setKycStatus("pending");
-    done();
+    try {
+      const form = new FormData();
+      form.set("legalName", legalName);
+      form.set("documentType", documentType);
+      form.set("front", front);
+      form.set("back", back);
+      const res = await fetch("/api/kyc", { method: "POST", body: form });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof payload?.error === "string" ? payload.error : "KYC submission failed");
+        return;
+      }
+      setKycStatus("pending");
+      done();
+    } catch {
+      setError("Unable to submit KYC. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
   if (kycStatus === "pending") {
     return <div className="stack-page"><div className="profile-card"><h2>KYC Under Review</h2><p>Your identity information has been submitted and is waiting for review.</p><span className="kyc-chip pending">pending</span></div></div>;
@@ -3600,7 +3625,7 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
     return <div className="stack-page"><div className="profile-card"><h2>KYC Approved</h2><p>Your identity verification has been approved.</p><span className="kyc-chip approved">approved</span></div></div>;
   }
   const isResubmit = kycStatus === "rejected";
-  const formValid = legalName.trim().length > 1 && !!front && !!back;
+  const formValid = legalName.trim().length > 1 && !!front && !!back && !!frontUploadId && !!backUploadId;
   return (
     <div className="stack-page kyc-stack">
       {isResubmit && (
@@ -3648,9 +3673,18 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
             const f = e.target.files?.[0];
             if (!f) return;
             setImageError("");
+            const selection = frontSelectionRef.current + 1;
+            frontSelectionRef.current = selection;
+            setFront(null);
+            setFrontUploadId(null);
             const r = await compressImage(f);
-            if (r.ok) setFront(r.file);
-            else setImageError(r.error);
+            if (selection !== frontSelectionRef.current) return;
+            if (r.ok) {
+              setFront(r.file);
+              setFrontUploadId(createUploadId());
+            } else {
+              setImageError("Front image: " + r.error);
+            }
           }} />
           <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
           <span className="kyc-upload-main">{front ? front.name : "Tap to upload front image"}</span>
@@ -3665,9 +3699,18 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
             const f = e.target.files?.[0];
             if (!f) return;
             setImageError("");
+            const selection = backSelectionRef.current + 1;
+            backSelectionRef.current = selection;
+            setBack(null);
+            setBackUploadId(null);
             const r = await compressImage(f);
-            if (r.ok) setBack(r.file);
-            else setImageError(r.error);
+            if (selection !== backSelectionRef.current) return;
+            if (r.ok) {
+              setBack(r.file);
+              setBackUploadId(createUploadId());
+            } else {
+              setImageError("Back image: " + r.error);
+            }
           }} />
           <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
           <span className="kyc-upload-main">{back ? back.name : "Tap to upload back image"}</span>
