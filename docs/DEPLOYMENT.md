@@ -466,3 +466,55 @@ Database backup example:
 ```bash
 cp "$PERP_SIM_DB_PATH" "$PERP_SIM_DB_PATH.$(date +%Y%m%d-%H%M%S).bak"
 ```
+
+## Versioned Release and Asset Gates
+
+The production deployment scripts are maintained on the server at
+`/home/hermes/deploy.sh` and `/home/hermes/health-check.sh`. A release must be
+exported from an exact Git commit with `git archive`; the working checkout and
+its `.next` directory are never copied into production.
+
+Before `/home/hermes/current` is switched, the deploy script runs `npm ci`,
+`npm run lint`, and `npm run build`, then extracts every `/_next/static/*.js`
+and `/_next/static/*.css` reference from the built HTML/RSC/manifest output.
+An empty extraction is a hard failure (`Asset verification failed: no
+referenced JS/CSS assets found`). Every extracted path must exist in both the
+release's `.next/static` directory and `/home/hermes/shared/next-static`.
+Failures leave `current`, all PM2 processes, and the previous release
+untouched; no PM2 reload, save, or cleanup is performed.
+
+`health-check.sh` repeats the gate against the live homepage and an RSC
+request, verifies the current release `BUILD_ID`, checks every referenced
+resource for HTTP 200, and confirms that the resolved `/proc/<pid>/cwd` for
+`kairox-next`, `kairox-socket`, and `kairox-settlement` matches
+`readlink -f /home/hermes/current`. Static assets may be immutable-cached, but
+HTML/RSC must remain deploy-consistent. Keep the previous release available so
+rollback is an atomic symlink switch followed by a controlled PM2 reload.
+
+## Blue-Green Process Cutover
+
+`/home/hermes/deploy.sh` starts the new Next.js and Socket.IO processes on
+temporary ports 3100 and 3101 while the existing 3000/3001 processes continue
+serving traffic. It verifies the temporary processes' resolved cwd, homepage,
+static resources, RSC, and Socket.IO polling response before updating the
+internal Nginx upstream include and reloading Nginx. Public hostnames and
+locations do not change.
+
+After the upstream switch succeeds, the temporary processes are renamed to the
+formal PM2 names. The settlement worker is deliberately not started in
+parallel: the worker has no distributed lock or leader election and performs
+database settlement on an interval. It is replaced as a single instance only
+after the web traffic switch. Any pre-switch failure removes only temporary
+processes; any post-switch health failure restores ports 3000/3001, the prior
+`current` link, and the formal PM2 processes before cleanup.
+
+The versioned, non-secret templates are kept in:
+
+- `ops/deploy/deploy.sh`
+- `ops/deploy/health-check.sh`
+- `ops/pm2/kairox-pm2.config.cjs`
+- `ops/nginx/kairox-upstreams.conf.example`
+
+Install or update the server copies only after comparing SHA256 values, then
+run `bash -n`, `nginx -t`, and the temporary-port smoke test. Never commit
+`.env`, database files, logs, `.next`, node_modules, or private keys.
