@@ -29,6 +29,10 @@ test "$real_proc_cwd" = "$real_current"
 
 三个进程均须通过该检查并执行 pm2 save。生产发布不得让旧源码工作区继续承载流量。
 
+### PM2 reload 与首次 cwd 迁移
+
+部署切换 current 后，脚本先读取 PM2 JSON 状态和 `/proc/<pid>/cwd`。如果三个进程已经解析到新的 current，则使用 `pm2 reload --update-env`；如果进程仍运行在上一 release，直接 reload 可能继续保留旧 cwd，因此脚本执行受控的 delete/start，将三个进程从新 current 启动后再验收。该受控替换只在 cwd 不一致时使用，随后执行 `pm2 save`，并输出每个进程的 configured_cwd、resolved_current 和 process_cwd。任何一个进程不一致都会中止部署。
+
 ## 回滚
 
 ~~~bash
