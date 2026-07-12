@@ -52,11 +52,26 @@ type DepositRecord = { id: number; asset: string; network: string; amount: numbe
 type WithdrawalRecord = { id: number; asset: string; network?: string | null; amount: number; address?: string | null; status: string; note?: string | null; created_at: string; processed_at?: string | null };
 type AssetTransaction = { id: number; asset: string; type: string; amount: number; status: string; note?: string | null; created_at: string };
 type PublicSettings = { withdrawals_enabled: string; withdrawal_notice: string; whatsapp_support_url: string; whatsapp_url?: string; telegram_url?: string; min_withdrawal_amount?: string; min_withdrawal_usdc?: string; about_content?: string; terms_content?: string; privacy_content?: string; binary_options_config?: string };
+type AssetNetworkConfig = {
+  id?: number;
+  asset: string;
+  code: string;
+  name: string;
+  icon: string;
+  depositEnabled: boolean;
+  withdrawEnabled: boolean;
+  depositFee: number;
+  withdrawFee: number;
+  minDeposit: number;
+  minWithdraw: number;
+  isActive: boolean;
+};
 type AssetData = {
   user: User;
   settings: PublicSettings;
   summary: { availableBalance: number; marginUsed: number; unrealizedPnl: number; totalEquity: number; valuationStatus?: "complete" | "partial"; valuationWarnings?: string[] };
   assets: AssetRow[];
+  networks?: AssetNetworkConfig[];
   depositAddresses?: { asset: string; network: string; address: string; source: "default" | "custom" }[];
   deposits?: DepositRecord[];
   withdrawals?: WithdrawalRecord[];
@@ -219,15 +234,28 @@ const pickerCoins = (assets: AssetData | null, mode: "deposit" | "withdraw" | "s
 const symbolName = (symbol: string) => symbol.replace("-PERP", "/USDC");
 const baseAsset = (symbol: string) => symbol.split("-")[0];
 const networksForCoin = (coin: string) => {
-  if (coin === "BTC") return ["Bitcoin"];
+  if (coin === "BTC") return ["BITCOIN"];
   if (coin === "SOL") return ["SOL"];
   if (coin === "BNB") return ["BEP20"];
   if (coin === "ETH") return ["ERC20"];
   return networks;
 };
-const depositNetworksForCoin = (assets: AssetData | null, coin: string) => {
-  const active = (assets?.depositAddresses || []).filter((item) => displayAsset(item.asset) === displayAsset(coin)).map((item) => item.network);
-  return active.length ? [...new Set(active)] : networksForCoin(coin);
+const networkConfigsForCoin = (assets: AssetData | null, coin: string, mode: "deposit" | "withdraw") => {
+  const configured = (assets?.networks || []).filter((item) => displayAsset(item.asset) === displayAsset(coin) && item.isActive && (mode === "deposit" ? item.depositEnabled : item.withdrawEnabled));
+  if (configured.length) return configured;
+  return networksForCoin(coin).map((code) => ({
+    asset: displayAsset(coin),
+    code,
+    name: networkDisplayName(code, coin),
+    icon: code.toLowerCase(),
+    depositEnabled: mode === "deposit",
+    withdrawEnabled: mode === "withdraw",
+    depositFee: 0,
+    withdrawFee: 1,
+    minDeposit: 0,
+    minWithdraw: 0,
+    isActive: true
+  }));
 };
 const mapApiOrder = (order: ApiBinaryOrder): BinaryOrder => ({
   id: order.id,
@@ -1559,11 +1587,11 @@ function networkIconSlug(network: string) {
   return "coin";
 }
 
-function NetworkIcon({ network }: { network: string }) {
-  const slug = networkIconSlug(network);
+function NetworkIcon({ network, icon }: { network: string; icon?: string }) {
+  const slug = icon || networkIconSlug(network);
   return (
     <span className={`coin-dot coin-real network-icon network-icon-${slug}`} aria-hidden="true">
-      <img src={`/icons/${slug}.svg`} alt="" loading="lazy" />
+      <img src={`/icons/${slug}.svg`} alt="" loading="lazy" onError={(event) => { const image = event.currentTarget; if (!image.src.endsWith("/icons/coin.svg")) image.src = "/icons/coin.svg"; }} />
     </span>
   );
 }
@@ -2667,22 +2695,22 @@ function AssetPicker({ mode, assets, onPick }: { title: string; mode: "deposit" 
 }
 
 function NetworkPicker({ coin, mode, assets, onPick }: { coin: string; mode: "deposit" | "withdraw"; assets: AssetData | null; onPick: (network: string) => void }) {
-  const rows = mode === "deposit" ? depositNetworksForCoin(assets, coin) : networksForCoin(coin);
+  const rows = networkConfigsForCoin(assets, coin, mode);
   return (
     <div className="stack-page deposit-flow">
       {rows.map((network) => (
-        <button type="button" className="deposit-network-card" key={network} onClick={() => onPick(network)}>
+        <button type="button" className="deposit-network-card" key={network.code} onClick={() => onPick(network.code)}>
           <span className="deposit-network-dot" aria-hidden="true" />
-          <NetworkIcon network={network} />
+          <NetworkIcon network={network.code} icon={network.icon} />
           <span className="deposit-network-meta">
-            <b>{networkDisplayName(network, coin)}</b>
-            <em>{mode === "deposit" ? "Active deposit network" : `Fee: 1 ${coin}`}</em>
+            <b>{network.name} ({network.code})</b>
+            <em>{mode === "deposit" ? `Fee: ${network.depositFee} / Minimum: ${network.minDeposit}` : `Fee: ${network.withdrawFee} / Minimum: ${network.minWithdraw}`}</em>
           </span>
           <ChevronRight size={18} className="deposit-network-arrow" />
         </button>
       ))}
-      {mode === "deposit" && (
-        <p className="deposit-flow-hint">Only send <b>{coin}</b> through the {networkDisplayName(rows[0] || "", coin)} network. Deposits via other networks may be lost.</p>
+      {mode === "deposit" && rows.length > 0 && (
+        <p className="deposit-flow-hint">Only send <b>{coin}</b> through the {rows[0].name} ({rows[0].code}) network. Deposits via other networks may be lost.</p>
       )}
     </div>
   );

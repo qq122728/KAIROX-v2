@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { emitRealtime, userRoom } from "@/lib/realtime";
 import { normalizeAsset } from "@/lib/balances";
 import { normalizeNetwork } from "@/lib/networks";
+import { networkConfigDefaults } from "@/lib/network-config";
 
 const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
 
@@ -62,6 +63,8 @@ export async function POST(request: Request) {
     const address = clean(body.address);
     if (!asset || !network || !address) return badRequest("Asset, network, and address are required");
     if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
+    const defaults = networkConfigDefaults(asset, network);
+    getDb().prepare("INSERT INTO asset_networks (asset, code, name, icon, deposit_enabled, withdraw_enabled, deposit_fee, withdraw_fee, min_deposit, min_withdraw, is_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(asset, code) DO NOTHING").run(defaults.asset, defaults.code, defaults.name, defaults.icon, 1, 1, defaults.depositFee, defaults.withdrawFee, defaults.minDeposit, defaults.minWithdraw, 1);
 
     let resolvedUserId: number | undefined;
     if (body.scope === "default") {

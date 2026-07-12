@@ -5,6 +5,7 @@ import { emitRealtime, userRoom } from "@/lib/realtime";
 import { normalizeAsset } from "@/lib/balances";
 import { sanitizePublicRecords, type PublicRecordRow } from "@/lib/public-records";
 import { normalizeNetwork } from "@/lib/networks";
+import { normalizeNetworkCode } from "@/lib/network-config";
 import { consumeUserRate } from "@/lib/rate-limit";
 
 const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
@@ -52,6 +53,10 @@ export async function POST(request: Request) {
     if (!asset || !network) return badRequest("Asset and network are required");
     if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
     if (!Number.isFinite(amount) || amount <= 0) return badRequest("Invalid deposit amount");
+    const networkCode = normalizeNetworkCode(network);
+    const networkConfig = getDb().prepare("SELECT deposit_enabled, min_deposit FROM asset_networks WHERE asset = ? AND code = ? AND is_active = 1").get(asset, networkCode) as { deposit_enabled: number; min_deposit: number } | undefined;
+    if (!networkConfig || !networkConfig.deposit_enabled) return badRequest("Deposits are disabled on this network");
+    if (Number(networkConfig.min_deposit) > 0 && amount < Number(networkConfig.min_deposit)) return badRequest("Minimum deposit amount is " + Number(networkConfig.min_deposit));
     if (txHash) {
       const existingTx = getDb().prepare("SELECT id FROM deposits WHERE tx_hash = ? LIMIT 1").get(txHash) as { id: number } | undefined;
       if (existingTx) return badRequest("Transaction hash has already been submitted");
@@ -85,7 +90,7 @@ export async function POST(request: Request) {
          WHERE u.user_id = ? AND u.asset = ? AND UPPER(TRIM(u.network)) = ? AND u.is_active = 1
          LIMIT 1`
       )
-      .get(user.id, asset, network, user.id, asset, network) as { address: string; source: string } | undefined;
+      .get(user.id, asset, networkCode, user.id, asset, networkCode) as { address: string; source: string } | undefined;
     if (!address?.address) return badRequest("No active deposit address for this asset/network");
 
     const proof = await fileToData(form.get("proof") instanceof File ? form.get("proof") as File : null);
@@ -97,7 +102,7 @@ export async function POST(request: Request) {
             `INSERT INTO deposits (user_id, asset, network, amount, tx_hash, proof_name, proof_data, proof_mime, deposit_address, address_source, status, note, client_request_id)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`
           )
-          .run(user.id, asset, network, amount, txHash, proof.name, proof.data, proof.mime, address.address, address.source, "User submitted deposit", clientRequestId);
+          .run(user.id, asset, networkCode, amount, txHash, proof.name, proof.data, proof.mime, address.address, address.source, "User submitted deposit", clientRequestId);
         depositId = Number(result.lastInsertRowid);
         getDb()
           .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'deposit_request', ?, 'pending', ?)")

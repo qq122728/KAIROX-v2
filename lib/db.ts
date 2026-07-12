@@ -3,6 +3,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { randomInt } from "node:crypto";
 import path from "node:path";
 import { hashPassword } from "./password";
+import { networkConfigDefaults } from "./network-config";
 
 let db: DatabaseSync | null = null;
 
@@ -642,6 +643,7 @@ function initialize(database: DatabaseSync) {
   addColumn(database, "deposit_addresses", "updated_at", "TEXT");
   addColumn(database, "user_deposit_addresses", "updated_by", "INTEGER");
   addColumn(database, "user_deposit_addresses", "updated_at", "TEXT");
+  database.exec("CREATE TABLE IF NOT EXISTS asset_networks (id INTEGER PRIMARY KEY AUTOINCREMENT, asset TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, icon TEXT NOT NULL DEFAULT 'coin', deposit_enabled INTEGER NOT NULL DEFAULT 1, withdraw_enabled INTEGER NOT NULL DEFAULT 1, deposit_fee REAL NOT NULL DEFAULT 0, withdraw_fee REAL NOT NULL DEFAULT 0, min_deposit REAL NOT NULL DEFAULT 0, min_withdraw REAL NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, UNIQUE(asset, code));");
   addColumn(database, "orders", "actor_id", "INTEGER");
   database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;");
   database.exec("CREATE INDEX IF NOT EXISTS idx_login_attempts_locked_until ON login_attempts(locked_until);");
@@ -684,6 +686,13 @@ function initialize(database: DatabaseSync) {
   insertAddress.run("ETH", "ERC20", "0xDefaultETHAddress000000000000000000000000");
   insertAddress.run("BNB", "BEP20", "0xDefaultBNBAddress000000000000000000000000");
   insertAddress.run("SOL", "SOL", "DefaultSolanaAddress0000000000000000000000");
+
+  const ensureNetwork = database.prepare("INSERT INTO asset_networks (asset, code, name, icon, deposit_enabled, withdraw_enabled, deposit_fee, withdraw_fee, min_deposit, min_withdraw, is_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(asset, code) DO NOTHING");
+  const configuredNetworks = database.prepare("SELECT DISTINCT asset, UPPER(TRIM(network)) AS code FROM deposit_addresses").all() as { asset: string; code: string }[];
+  for (const row of configuredNetworks) {
+    const defaults = networkConfigDefaults(row.asset, row.code);
+    ensureNetwork.run(defaults.asset, defaults.code, defaults.name, defaults.icon, defaults.depositEnabled ? 1 : 0, defaults.withdrawEnabled ? 1 : 0, defaults.depositFee, defaults.withdrawFee, defaults.minDeposit, defaults.minWithdraw, defaults.isActive ? 1 : 0);
+  }
 
   const users = database.prepare("SELECT id, balance FROM users").all() as { id: number; balance: number }[];
   const insertAsset = database.prepare(

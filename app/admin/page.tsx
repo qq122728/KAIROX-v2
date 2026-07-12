@@ -37,6 +37,7 @@ import AdminLayout from "./components/AdminLayout";
 import type { AdminNavGroup, AdminNavItem } from "./components/AdminSidebar";
 import AdminTable, { type AdminTableColumn } from "./components/AdminTable";
 import AdminToolbar, { type AdminToolbarFilter } from "./components/AdminToolbar";
+import NetworkConfigTab from "./components/NetworkConfigTab";
 import EmptyState from "./components/EmptyState";
 import SectionCard from "./components/SectionCard";
 import StatCard from "./components/StatCard";
@@ -109,7 +110,7 @@ type AdminData = {
   orders: Order[];
   withdrawals: Withdrawal[];
 };
-type TabId = "dashboard" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "admins" | "orders" | "markets" | "settings" | "support" | "fiatDeposits" | "fiatBankAccounts";
+type TabId = "dashboard" | "networks" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "admins" | "orders" | "markets" | "settings" | "support" | "fiatDeposits" | "fiatBankAccounts";
 type ModalState =
   | { type: "funds"; user: User }
   | { type: "loginPassword"; user: User }
@@ -650,6 +651,7 @@ export default function AdminPage() {
         { id: "users", label: "用户管理", icon: Users },
         { id: "admins", label: "管理员", icon: UserPlus },
         { id: "depositAddresses", label: "资金地址", icon: Landmark },
+        { id: "networks", label: "网络配置", icon: SlidersHorizontal },
       ],
     },
     {
@@ -674,6 +676,7 @@ export default function AdminPage() {
   const pageMeta: Record<TabId, { title: string; description: string }> = {
     dashboard: { title: "首页", description: "今日待办、平台状态与资金风险总览。" },
     depositAddresses: { title: "资金地址", description: "平台默认地址与用户自定义地址管理。" },
+    networks: { title: "网络配置", description: "统一管理 Deposit 与 Withdraw 共用的网络参数。" },
     deposits: { title: "充值审核", description: "处理用户充值凭证与入账状态。" },
     withdrawals: { title: "提现审核", description: "处理提现申请与冻结资金释放。" },
     kyc: { title: "身份审核", description: "审核用户身份认证材料。" },
@@ -776,6 +779,7 @@ export default function AdminPage() {
         {!loading && data && (
           <>
             {tab === "dashboard" && <Dashboard data={data} lastSyncAt={lastSyncAt} realtimeStatus={realtimeStatus} setTab={setTab} unreadNotifications={unreadNotifications} />}
+            {tab === "networks" && <NetworkConfigTab />}
             {tab === "depositAddresses" && <DepositAddressesTab mutate={mutate} />}
             {tab === "deposits" && <DepositsTab deposits={deposits} all={data.deposits} status={depositStatus} setStatus={setDepositStatus} mutate={mutate} />}
             {tab === "withdrawals" && <WithdrawalsTab withdrawals={withdrawals} all={data.withdrawals} status={withdrawStatus} setStatus={setWithdrawStatus} mutate={mutate} />}
@@ -2309,7 +2313,7 @@ function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
   async function saveAddress() {
     setError("");
     if (!form.asset || !ASSET_NETWORKS[form.asset]) return setError("请选择有效币种");
-    if (!form.network || !ASSET_NETWORKS[form.asset]?.includes(form.network)) return setError(`网络 "${form.network}" 不属于币种 ${form.asset}，请重新选择`);
+    if (!form.network.trim()) return setError("网络代码不能为空");
     if (!form.address.trim()) return setError("充值地址不能为空");
     const res = await fetch("/api/admin/deposit-addresses", {
       method: editing ? "PATCH" : "POST",
@@ -2532,15 +2536,12 @@ function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
             </label>
             <label>
               <span>网络</span>
-              <select
+              <input
                 disabled={!!editing}
-                onChange={(event) => setForm({ ...form, network: event.target.value })}
+                onChange={(event) => setForm({ ...form, network: event.target.value.toUpperCase() })}
+                placeholder="例如 TRC20 / POLYGON"
                 value={form.network}
-              >
-                {(ASSET_NETWORKS[form.asset] || ["TRC20"]).map((net) => (
-                  <option key={net} value={net}>{net}</option>
-                ))}
-              </select>
+              />
             </label>
             <label>
               <span>充值地址</span>
@@ -2570,7 +2571,7 @@ function LegacyDepositAddressesTab() {
   async function saveAddress() {
     setError("");
     if (!form.asset || !ASSET_NETWORKS[form.asset]) return setError("请选择有效币种");
-    if (!form.network || !ASSET_NETWORKS[form.asset]?.includes(form.network)) return setError(`网络 "${form.network}" 不属于币种 ${form.asset}，请重新选择`);
+    if (!form.network.trim()) return setError("网络代码不能为空");
     if (!form.address.trim()) return setError("充值地址不能为空");
     const res = await fetch("/api/admin/deposit-addresses", {
       method: editing ? "PATCH" : "POST",
