@@ -3730,15 +3730,18 @@ function SupportChatAdmin() {
         window.setTimeout(() => setToast(""), 4000);
       }
     };
+    let handleSupportConnect: (() => void) | null = null;
     connectRealtime().then((nextSocket) => {
       if (!active) { nextSocket.disconnect(); return; }
       socket = nextSocket;
+      handleSupportConnect = () => socket?.emit("admin:join");
       socket.on("support:message", onSupportMessage);
-      if (socket.connected) socket.emit("admin:join");
+      socket.on("connect", handleSupportConnect);
+      if (socket.connected) handleSupportConnect();
     }).catch(() => {});
     return () => {
       active = false;
-      if (socket) { socket.off("support:message", onSupportMessage); socket.disconnect(); }
+      if (socket) { socket.off("support:message", onSupportMessage); if (handleSupportConnect) socket.off("connect", handleSupportConnect); socket.disconnect(); }
     };
   }, [selectedUserId]);
 
