@@ -20,7 +20,7 @@ const configuredSocketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
 function getSocketUrl() {
   if (configuredSocketUrl) return configuredSocketUrl;
   if (typeof window === "undefined") return "http://127.0.0.1:3001";
-  return `${window.location.protocol}//${window.location.hostname}:3001`;
+  return `${window.location.protocol}//${window.location.host}`;
 }
 
 function loadSocketScript() {
