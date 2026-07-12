@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowUpDown, BadgeCheck, ChevronLeft, ChevronRight, FileText, Headphones, Info, LockKeyhole, ShieldCheck,
   Search, Bell, Gem, Eye, EyeOff, ArrowUpRight, Mail,
@@ -331,6 +332,11 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const authControllerRef = useRef<AbortController | null>(null);
   const signedOutRef = useRef(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [toastPortalReady, setToastPortalReady] = useState(false);
+
+  useEffect(() => {
+    setToastPortalReady(true);
+  }, []);
 
   function applyPublicSettings(settings: Partial<PublicSettings> = {}) {
     setSupport({ telegram: settings.telegram_url?.trim() || "", whatsapp: (settings.whatsapp_support_url || settings.whatsapp_url || "").trim() });
@@ -847,7 +853,15 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
 
   return (
     <main className={`mobile-shell${activeStack?.id === "support-chat" ? " support-chat-shell" : ""}`}>
-      {toast && <div className="mobile-toast-wrap" role="status" aria-live={toast.type === "err" ? "assertive" : "polite"}><div className={toast.type === "ok" ? "mobile-toast ok" : "mobile-toast " + toast.type}>{toast.type === "ok" && <CheckCircle2 size={16} strokeWidth={2.2} aria-hidden="true" />}<span>{toast.text}</span></div></div>}
+      {toastPortalReady && toast ? createPortal(
+        <div className="mobile-toast-wrap" role="status" aria-live={toast.type === "err" ? "assertive" : "polite"}>
+          <div className={toast.type === "ok" ? "mobile-toast ok" : "mobile-toast " + toast.type}>
+            {toast.type === "ok" && <CheckCircle2 size={16} strokeWidth={2.2} aria-hidden="true" />}
+            <span>{toast.text}</span>
+          </div>
+        </div>,
+        document.body
+      ) : null}
       <MobileHeader activeStack={activeStack} pop={pop} currentMarket={currentMarket} tickers={tickers} support={support} activeTab={tab} goTab={switchTab} showToast={showToast} />
       <section className={`mobile-scroll${activeStack?.id === "support-chat" ? " support-chat-content" : ""}`}>
         {activeStack ? (
