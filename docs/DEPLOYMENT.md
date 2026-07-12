@@ -466,3 +466,27 @@ Database backup example:
 ```bash
 cp "$PERP_SIM_DB_PATH" "$PERP_SIM_DB_PATH.$(date +%Y%m%d-%H%M%S).bak"
 ```
+
+## Versioned Release and Asset Gates
+
+The production deployment scripts are maintained on the server at
+`/home/hermes/deploy.sh` and `/home/hermes/health-check.sh`. A release must be
+exported from an exact Git commit with `git archive`; the working checkout and
+its `.next` directory are never copied into production.
+
+Before `/home/hermes/current` is switched, the deploy script runs `npm ci`,
+`npm run lint`, and `npm run build`, then extracts every `/_next/static/*.js`
+and `/_next/static/*.css` reference from the built HTML/RSC/manifest output.
+An empty extraction is a hard failure (`Asset verification failed: no
+referenced JS/CSS assets found`). Every extracted path must exist in both the
+release's `.next/static` directory and `/home/hermes/shared/next-static`.
+Failures leave `current`, all PM2 processes, and the previous release
+untouched; no PM2 reload, save, or cleanup is performed.
+
+`health-check.sh` repeats the gate against the live homepage and an RSC
+request, verifies the current release `BUILD_ID`, checks every referenced
+resource for HTTP 200, and confirms that the resolved `/proc/<pid>/cwd` for
+`kairox-next`, `kairox-socket`, and `kairox-settlement` matches
+`readlink -f /home/hermes/current`. Static assets may be immutable-cached, but
+HTML/RSC must remain deploy-consistent. Keep the previous release available so
+rollback is an atomic symlink switch followed by a controlled PM2 reload.
