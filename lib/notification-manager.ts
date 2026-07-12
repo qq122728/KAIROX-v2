@@ -37,6 +37,8 @@ const COPY: Record<string, [string, string, string]> = {
   "fiat_deposit:submitted": ["Fiat transfer submitted", "Fiat transfer details were submitted.", "fiat_deposit"],
   "support_message:created": ["New support message", "A new support message is waiting.", "support_message"],
   "support_message:reply": ["New support reply", "Support sent you a new message.", "support_message"],
+  "security:password_changed": ["Password changed", "Your login password was changed.", "security"],
+  "security:withdrawal_password_changed": ["Withdrawal password changed", "Your withdrawal password was changed.", "security"],
 };
 
 export function persistBusinessNotification(event: string, options: { room?: string; payload?: Record<string, unknown> } = {}) {

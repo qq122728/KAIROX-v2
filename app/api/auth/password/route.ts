@@ -2,6 +2,7 @@ import { invalidateOtherUserSessions, requireUser } from "@/lib/auth";
 import { badRequest, handleError, json, readJson } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/password";
+import { emitRealtime, userRoom } from "@/lib/realtime";
 
 type PasswordPayload = {
   currentPassword?: string;
@@ -27,6 +28,7 @@ async function changePassword(request: Request) {
 
   getDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(newPassword), user.id);
   await invalidateOtherUserSessions(user.id);
+  emitRealtime("user:update", { room: userRoom(user.id), payload: { type: "security:password_changed" } });
   return json({ ok: true });
 }
 
