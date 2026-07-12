@@ -3605,9 +3605,21 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
       form.set("front", front);
       form.set("back", back);
       const res = await fetch("/api/kyc", { method: "POST", body: form });
-      const payload = await res.json().catch(() => ({}));
+      const payload = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(typeof payload?.error === "string" ? payload.error : "KYC submission failed");
+        const message =
+          res.status === 401
+            ? "Session expired. Please sign in again."
+            : res.status === 413
+              ? "Image files are too large."
+              : res.status === 409
+                ? "A KYC review is already pending."
+                : typeof payload?.error === "string"
+                  ? payload.error
+                  : res.status >= 500
+                    ? "Unable to submit verification. Please try again."
+                    : "Unable to submit verification. Please try again.";
+        setError(message);
         return;
       }
       setKycStatus("pending");
