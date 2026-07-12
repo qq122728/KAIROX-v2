@@ -115,6 +115,29 @@
   min-width: 0;
 }
 
+/* Unified empty state: supporting copy, not a heading or list row. */
+.empty-state {
+  align-items: center;
+  color: var(--text-sub, #9AA3AF) !important;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  justify-content: flex-start;
+  line-height: 20px !important;
+  margin-top: 0;
+  min-height: 120px;
+  padding: 32px 16px 24px;
+  text-align: center;
+}
+
+.empty-state--inline {
+  display: block;
+  min-height: auto;
+  padding: 16px 0;
+  text-align: left;
+}
+
 .withdraw-detail {
   gap: 16px;
 }
@@ -3769,6 +3792,13 @@ section.trade-ticket.settings-card {
   text-align: center;
   color: rgba(255,255,255,0.40);
   font-size: 13px;
+}
+.ms-empty.empty-state--inline {
+  background: transparent;
+  border: 0;
+  min-height: auto;
+  padding: 16px 0;
+  text-align: left;
 }
 
 /* Hide legacy pair-menu dropdown (replaced by .market-selector) */
