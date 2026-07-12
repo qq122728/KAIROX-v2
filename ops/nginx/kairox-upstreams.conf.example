@@ -1,0 +1,4 @@
+# Install as /etc/nginx/conf.d/kairox-upstreams.conf.
+# deploy.sh updates only these internal backend ports; public routes remain unchanged.
+upstream kairox_next_backend { server 127.0.0.1:3000; }
+upstream kairox_socket_backend { server 127.0.0.1:3001; }

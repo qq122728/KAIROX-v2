@@ -490,3 +490,31 @@ resource for HTTP 200, and confirms that the resolved `/proc/<pid>/cwd` for
 `readlink -f /home/hermes/current`. Static assets may be immutable-cached, but
 HTML/RSC must remain deploy-consistent. Keep the previous release available so
 rollback is an atomic symlink switch followed by a controlled PM2 reload.
+
+## Blue-Green Process Cutover
+
+`/home/hermes/deploy.sh` starts the new Next.js and Socket.IO processes on
+temporary ports 3100 and 3101 while the existing 3000/3001 processes continue
+serving traffic. It verifies the temporary processes' resolved cwd, homepage,
+static resources, RSC, and Socket.IO polling response before updating the
+internal Nginx upstream include and reloading Nginx. Public hostnames and
+locations do not change.
+
+After the upstream switch succeeds, the temporary processes are renamed to the
+formal PM2 names. The settlement worker is deliberately not started in
+parallel: the worker has no distributed lock or leader election and performs
+database settlement on an interval. It is replaced as a single instance only
+after the web traffic switch. Any pre-switch failure removes only temporary
+processes; any post-switch health failure restores ports 3000/3001, the prior
+`current` link, and the formal PM2 processes before cleanup.
+
+The versioned, non-secret templates are kept in:
+
+- `ops/deploy/deploy.sh`
+- `ops/deploy/health-check.sh`
+- `ops/pm2/kairox-pm2.config.cjs`
+- `ops/nginx/kairox-upstreams.conf.example`
+
+Install or update the server copies only after comparing SHA256 values, then
+run `bash -n`, `nginx -t`, and the temporary-port smoke test. Never commit
+`.env`, database files, logs, `.next`, node_modules, or private keys.
