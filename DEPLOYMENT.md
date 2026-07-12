@@ -1,3 +1,87 @@
+# KAIROX 当前生产发布标准（2026-07-12）
+
+> 本节是当前生产规范，优先级高于下方历史 VORX/旧端口说明。业务代码、数据库 schema 和运行中的 release 不在部署时修改。
+
+## Release 构建与原子切换
+
+1. 从批准的 commit 使用 git archive <commit> 导出到新的 /home/hermes/releases/<release>/。
+2. release 内独立执行 npm ci、npm run lint、npm run build；不得复制 dirty 工作区或复用源码仓库 .next。
+3. 创建 logs/ 并确认由 hermes 可写；加载 /home/hermes/shared/.env.local。
+4. 构建成功、JS/CSS 引用完整性检查通过后，使用临时软链接原子切换 /home/hermes/current。
+5. 不删除正在运行 release 的 .next、不运行静态资源清理、不删除上一 release。
+6. 同步 /home/hermes/shared/next-static/ 时只增量复制，保留历史 hashed chunk。
+
+## PM2 进程与 cwd
+
+正式进程必须全部在线：
+
+- kairox-next：Next.js，端口 3000
+- kairox-socket：realtime/socket-server.mjs，端口 3001
+- kairox-settlement：realtime/settlement-worker.mjs
+
+PM2 配置声明的 cwd 固定为 /home/hermes/current。验收时比较真实路径：
+
+~~~bash
+real_current="$(readlink -f /home/hermes/current)"
+real_proc_cwd="$(readlink -f /proc/<pid>/cwd)"
+test "$real_proc_cwd" = "$real_current"
+~~~
+
+三个进程均须通过该检查并执行 pm2 save。生产发布不得让旧源码工作区继续承载流量。
+
+## 回滚
+
+~~~bash
+previous="/home/hermes/releases/<previous-release>"
+ln -sfn "$previous" /home/hermes/current
+pm2 reload kairox-next --update-env
+pm2 reload kairox-socket --update-env
+pm2 reload kairox-settlement --update-env
+pm2 save
+/home/hermes/health-check.sh --quiet
+~~~
+
+若首次 cwd 迁移需要重建进程，必须先验证新 release 健康，再停止旧进程；不得先停止唯一生产服务。回滚不删除数据库 schema、phone 列、索引或 release。
+
+## KYC 请求体限制
+
+生产 Nginx 主域名 /api/kyc 使用独立限制：
+
+~~~nginx
+location = /api/kyc {
+    client_max_body_size 5m;
+    proxy_pass http://127.0.0.1:3000;
+}
+~~~
+
+KYC 前端和 API 单文件上限均为 2 MB；5 MB 是 multipart 总请求保护。Nginx 备份文件必须放在 sites-enabled 之外，避免被加载为活动配置。
+
+## 发布前后门禁
+
+~~~bash
+npm ci
+npm run lint
+npm run build
+git diff --check
+nginx -t
+/home/hermes/health-check.sh --quiet
+~~~
+
+必须验证：
+
+- 首页、/login、/register 返回 HTTP 200
+- /login、/register HTML/RSC 为 no-store
+- /_next/static/* 返回 immutable 长缓存
+- HTML、RSC、manifest 引用的全部 JS/CSS 存在且公网返回 200
+- shared static 缺失数为 0
+- 连续首页请求无 502/503
+- 日志无 ChunkLoadError、manifest 缺失或 Server Action mismatch
+- PM2 三进程 online，真实 cwd 与 resolved current 一致
+
+部署完成后保留当前 release 作为回滚点，并记录 commit、Build ID、release、健康检查结果。
+
+---
+
 # VORX Protocol — 部署文档
 
 最后更新: 2026-07-09
