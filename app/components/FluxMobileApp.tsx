@@ -1549,6 +1549,25 @@ function CryptoIcon({ asset }: { asset: string }) {
 }
 
 
+function networkIconSlug(network: string) {
+  const key = network.trim().toUpperCase();
+  if (key === "TRC20") return "trx";
+  if (key === "ERC20" || key === "ETHEREUM") return "eth";
+  if (key === "BITCOIN" || key === "BTC") return "btc";
+  if (key === "SOL" || key === "SOLANA") return "sol";
+  if (key === "BEP20" || key === "BSC") return "bnb";
+  return "coin";
+}
+
+function NetworkIcon({ network }: { network: string }) {
+  const slug = networkIconSlug(network);
+  return (
+    <span className={`coin-dot coin-real network-icon network-icon-${slug}`} aria-hidden="true">
+      <img src={`/icons/${slug}.svg`} alt="" loading="lazy" />
+    </span>
+  );
+}
+
 function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity, pnl, favorites, toggleFavorite }: { rows: Market[]; tickers: Tickers; query: string; setQuery: (v: string) => void; sort: "hot" | "gainers" | "losers"; setSort: (v: "hot" | "gainers" | "losers") => void; onSelect: (symbol: string) => void; goTab: (t: Tab) => void; push: (p: StackPage) => void; kycStatus: string; totalEquity: number; availableBalance: number; pnl: number; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
   const quickActions: { icon: string; label: string; action: () => void }[] = [
     { icon: "arrow-down", label: "Deposit",  action: () => push({ id: "deposit-asset",  title: "Deposit" }) },
@@ -2654,7 +2673,7 @@ function NetworkPicker({ coin, mode, assets, onPick }: { coin: string; mode: "de
       {rows.map((network) => (
         <button type="button" className="deposit-network-card" key={network} onClick={() => onPick(network)}>
           <span className="deposit-network-dot" aria-hidden="true" />
-          <CryptoIcon asset={coin} />
+          <NetworkIcon network={network} />
           <span className="deposit-network-meta">
             <b>{networkDisplayName(network, coin)}</b>
             <em>{mode === "deposit" ? "Active deposit network" : `Fee: 1 ${coin}`}</em>
