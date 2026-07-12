@@ -4103,17 +4103,29 @@ function SupportChatPage() {
       setMessages((prev) => [...prev, message]);
       notifyIncoming(message);
     };
+    const handleConnect = () => {
+      if (!active) return;
+      socket?.emit("user:join");
+      fetch("/api/support/messages").then((r) => r.json()).then((data) => {
+        if (!active || !Array.isArray(data.messages)) return;
+        const incoming = data.messages.map(mapChatMessage);
+        seenMessageIdsRef.current = new Set(incoming.map((message: ChatMessage) => message.id));
+        setMessages(incoming);
+      }).catch(() => {});
+    };
     connectRealtime().then((nextSocket) => {
       if (!active) { nextSocket.disconnect(); return; }
       socket = nextSocket;
       socket.on("support:message", handleMessage);
-      if (socket.connected) socket.emit("user:join");
+      socket.on("connect", handleConnect);
+      if (socket.connected) handleConnect();
     }).catch(() => {});
 
     return () => {
       active = false;
       if (socket) {
         socket.off("support:message", handleMessage);
+        socket.off("connect", handleConnect);
         socket.disconnect();
       }
       if (typeof document !== "undefined") document.title = "KAIROX";
