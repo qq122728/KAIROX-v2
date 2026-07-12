@@ -19,7 +19,7 @@ function LandingPage() {
     <main className="landing-page">
       <div className="landing-content">
         <header className="landing-header">
-          <img className="landing-logo" src="/brand/kairox-main.png" alt="KAIROX Protocol" />
+          <img className="landing-logo" src="/brand/kairox-main.png" alt="KAIROX" />
         </header>
 
         <section className="landing-hero">
@@ -29,7 +29,7 @@ function LandingPage() {
             Built for the Future.
           </h1>
           <p className="landing-sub">
-            KAIROX Protocol is a next-generation digital asset trading platform designed for security, performance, and user control.
+            KAIROX Markets is a next-generation digital asset trading platform designed for security, performance, and user control.
           </p>
         </section>
 
@@ -49,7 +49,7 @@ function LandingPage() {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </Link>
           <Link href="/login" className="landing-cta landing-cta-secondary">
-            <span>Log In</span>
+            <span>Login</span>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 5l7 7-7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
           </Link>
         </section>

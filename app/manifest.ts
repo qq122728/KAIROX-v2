@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "KAIROX Protocol",
+    name: "KAIROX Markets",
     short_name: "KAIROX",
     description: "Liquidity in motion.",
     start_url: "/",
