@@ -847,7 +847,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
 
   return (
     <main className={`mobile-shell${activeStack?.id === "support-chat" ? " support-chat-shell" : ""}`}>
-      {toast && <div className="mobile-toast-wrap" role="status" aria-live={toast.type === "err" ? "assertive" : "polite"}><div className={`mobile-toast ${toast.type}`}>{toast.text}</div></div>}
+      {toast && <div className="mobile-toast-wrap" role="status" aria-live={toast.type === "err" ? "assertive" : "polite"}><div className={toast.type === "ok" ? "mobile-toast ok" : "mobile-toast " + toast.type}>{toast.type === "ok" && <CheckCircle2 size={16} strokeWidth={2.2} aria-hidden="true" />}<span>{toast.text}</span></div></div>}
       <MobileHeader activeStack={activeStack} pop={pop} currentMarket={currentMarket} tickers={tickers} support={support} activeTab={tab} goTab={switchTab} showToast={showToast} />
       <section className={`mobile-scroll${activeStack?.id === "support-chat" ? " support-chat-content" : ""}`}>
         {activeStack ? (
@@ -2568,7 +2568,7 @@ function StackContent(props: { page: StackPage; user: User; assets: AssetData | 
   if (page.id === "swap") return <SwapPage assets={props.assets} swap={props.swap} setSwap={props.setSwap} showToast={showToast} refreshData={props.refreshData} />;
   if (page.id === "asset-overview") return <AssetsTab assets={props.assets} push={push} />;
   if (page.id === "security") return <SecurityPage expanded={props.expandedSecurity} setExpanded={props.setExpandedSecurity} showToast={showToast} />;
-  if (page.id === "kyc") return <KycPage kycStatus={props.kycStatus} rejectedReason={props.user.kyc_rejected_reason} setKycStatus={props.setKycStatus} done={() => { showToast("ok", "KYC submitted"); clearStack(); }} />;
+  if (page.id === "kyc") return <KycPage kycStatus={props.kycStatus} rejectedReason={props.user.kyc_rejected_reason} setKycStatus={props.setKycStatus} push={push} done={() => { showToast("ok", "KYC submitted"); clearStack(); }} />;
   if (page.id === "support") return <SupportPage support={props.support} push={push} />;
   if (page.id === "support-chat") return <SupportChatPage />;
   if (page.id === "fiat-deposit") return <FiatDepositScreen push={push} showToast={showToast} />;
@@ -3571,7 +3571,7 @@ function SecurityChangeSuccessModal({ kind, onClose }: { kind: "login" | "withdr
   );
 }
 
-function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus: string; rejectedReason?: string | null; setKycStatus: (v: "none" | "pending" | "approved" | "rejected") => void; done: () => void }) {
+function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycStatus: string; rejectedReason?: string | null; setKycStatus: (v: "none" | "pending" | "approved" | "rejected") => void; push: (p: StackPage) => void; done: () => void }) {
   const [legalName, setLegalName] = useState("");
   const [documentType, setDocumentType] = useState("Passport");
   const [front, setFront] = useState<File | null>(null);
@@ -3638,11 +3638,39 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, done }: { kycStatus:
       setSubmitting(false);
     }
   }
-  if (kycStatus === "pending") {
-    return <div className="stack-page"><div className="profile-card"><h2>KYC Under Review</h2><p>Your identity information has been submitted and is waiting for review.</p><span className="kyc-chip pending">pending</span></div></div>;
-  }
-  if (kycStatus === "approved") {
-    return <div className="stack-page"><div className="profile-card"><h2>KYC Approved</h2><p>Your identity verification has been approved.</p><span className="kyc-chip approved">approved</span></div></div>;
+  if (kycStatus === "pending" || kycStatus === "approved") {
+    const isApproved = kycStatus === "approved";
+    return (
+      <div className="stack-page kyc-status-page">
+        <section className={isApproved ? "kyc-status-card is-approved" : "kyc-status-card is-review"}>
+          <div className="kyc-status-icon" aria-hidden="true">
+            {isApproved ? <ShieldCheck size={32} strokeWidth={1.8} /> : <Clock size={32} strokeWidth={1.8} />}
+          </div>
+          <div className="kyc-status-heading">
+            <span className={isApproved ? "kyc-status-badge approved" : "kyc-status-badge review"}>
+              {isApproved ? <ShieldCheck size={14} strokeWidth={2.2} /> : <Clock size={14} strokeWidth={2.2} />}
+              {isApproved ? "Approved" : "Under Review"}
+            </span>
+            <h2>{isApproved ? "Identity verified" : "Verification in progress"}</h2>
+            <p>{isApproved ? "Your identity verification has been approved." : "Your identity verification is under review."}</p>
+          </div>
+          <div className="kyc-review-steps" aria-label="KYC review progress">
+            <div className="kyc-review-step complete"><span><CheckCircle2 size={15} /></span><small>Submitted</small></div>
+            <div className={isApproved ? "kyc-review-line complete" : "kyc-review-line active"} />
+            <div className={isApproved ? "kyc-review-step complete" : "kyc-review-step active"}><span>{isApproved ? <CheckCircle2 size={15} /> : <Clock size={15} />}</span><small>Under Review</small></div>
+            <div className={isApproved ? "kyc-review-line complete" : "kyc-review-line"} />
+            <div className={isApproved ? "kyc-review-step complete" : "kyc-review-step"}><span>{isApproved ? <CheckCircle2 size={15} /> : <ShieldCheck size={15} />}</span><small>Approved</small></div>
+          </div>
+          <div className="kyc-status-details">
+            <div><Clock size={16} aria-hidden="true" /><span>{isApproved ? "Verification completed." : "Usually within 24 hours or 1–2 business days."}</span></div>
+            <div><Info size={16} aria-hidden="true" /><span>{isApproved ? "You can now use all eligible account features." : "Some withdrawals may remain limited until review is complete. You will be notified when your status changes."}</span></div>
+          </div>
+          <button type="button" className="kyc-support-button" onClick={() => push({ id: "support", title: "Support" })}>
+            <Headphones size={17} strokeWidth={1.9} /> Contact Support
+          </button>
+        </section>
+      </div>
+    );
   }
   const isResubmit = kycStatus === "rejected";
   const formValid = legalName.trim().length > 1 && !!front && !!back && !!frontUploadId && !!backUploadId;
