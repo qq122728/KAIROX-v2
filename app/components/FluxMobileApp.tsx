@@ -1768,7 +1768,7 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
                     </div>
                   );
                 })}
-                {!filteredMarkets.length && <div className="ms-empty">No markets match your search.</div>}
+                {!filteredMarkets.length && <div className="ms-empty empty-state--inline">No markets match your search.</div>}
               </div>
             </div>
           </>
@@ -2264,7 +2264,7 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect }: { rows: Ma
           );
         })}
         {!visible.length && (
-          <div className="empty-state">
+          <div className={`empty-state${query ? " empty-state--inline" : ""}`}>
             {query ? `No markets match "${query}".` : "No markets available yet."}
           </div>
         )}
