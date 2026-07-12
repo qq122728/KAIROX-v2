@@ -11,12 +11,12 @@ const orbitron = Orbitron({
 });
 
 export const metadata: Metadata = {
-  title: "KAIROX Protocol",
+  title: "KAIROX Markets",
   description: "Liquidity in motion.",
-  applicationName: "KAIROX",
+  applicationName: "KAIROX Markets",
   appleWebApp: {
     capable: true,
-    title: "KAIROX",
+    title: "KAIROX Markets",
     statusBarStyle: "black-translucent"
   },
   formatDetection: {

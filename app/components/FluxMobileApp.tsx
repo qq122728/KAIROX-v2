@@ -1016,7 +1016,7 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
     return register();
   };
   const title = mode === "login"
-    ? { h: "Welcome back", p: "Sign in to continue trading" }
+    ? { h: "Welcome back", p: "Login to continue trading" }
     : registerStep === 1
       ? { h: "Create Account", p: "Set up your account to start trading" }
       : { h: "Security Setup", p: "Protect your future withdrawals" };
@@ -1046,7 +1046,7 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
             activeIdentifierType === "email" ? <AuthField id="auth-email" label="Email address" type="email" value={form.email} onChange={(v) => updateField("email", v, "email")} icon={<Mail size={18} />} error={fieldErrors.email} placeholder="Enter your email" autoComplete="username" /> : (
               <div className="auth-phone-row">
                 <button type="button" aria-label={`Country / Region ${selectedCountry.name} ${form.countryCode || selectedCountry.dialCode}`} className={`auth-country-trigger${fieldErrors.countryCode ? " error" : ""}`} onClick={() => { setCountryPickerOpen(true); setCountrySearch(""); }}><span>{selectedCountry.flag}</span><span>{form.countryCode || selectedCountry.dialCode}</span><ChevronRight size={15} /></button>
-                <AuthField id="auth-phone" label="Phone number" type="tel" inputMode="tel" autoCorrect="off" spellCheck={false} value={form.phone} onChange={(v) => updateField("phone", v, "phone")} icon={<Mail size={18} />} error={fieldErrors.phone} placeholder="Phone number" autoComplete="tel" />
+                <AuthField id="auth-phone" label="Phone number" type="tel" inputMode="tel" autoCorrect="off" spellCheck={false} value={form.phone} onChange={(v) => updateField("phone", v, "phone")} icon={<Mail size={18} />} error={fieldErrors.phone} placeholder="Enter your phone number" autoComplete="tel" />
               </div>
             )
           )}
@@ -1145,14 +1145,14 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
             <button type="button" className="link-button auth-back" onClick={goPrevStep}>← Back to Account Info</button>
           )}
           {!(mode === "register" && registerStep === 2) && (
-            <button type="button" className="link-button auth-switch" onClick={() => setMode(mode === "login" ? "register" : "login")}>{mode === "login" ? <>No account? <em>Create one</em></> : <>Have an account? <em>Sign in</em></>}</button>
+            <button type="button" className="link-button auth-switch" onClick={() => setMode(mode === "login" ? "register" : "login")}>{mode === "login" ? <>No account? <em>Create Account</em></> : <>Have an account? <em>Login</em></>}</button>
           )}
         </form>
         {countryPickerOpen && (
           <div className="auth-country-backdrop" role="presentation" onClick={() => setCountryPickerOpen(false)}>
             <section className="auth-country-sheet" role="dialog" aria-label="Choose country or region" onClick={(event) => event.stopPropagation()}>
               <div className="auth-country-sheet-head"><h2>Choose country or region</h2><button type="button" onClick={() => setCountryPickerOpen(false)} aria-label="Close">×</button></div>
-              <input className="auth-country-search" value={countrySearch} onChange={(event) => setCountrySearch(event.target.value)} placeholder="Search country or code" autoComplete="off" />
+              <input className="auth-country-search" value={countrySearch} onChange={(event) => setCountrySearch(event.target.value)} placeholder="Search country or code" aria-label="Search country or calling code" autoComplete="off" />
               <div className="auth-country-list">{filteredCountries.map((country) => <button type="button" className="auth-country-option" key={country.code} onClick={() => { setAuthCountryIso(country.code); writeAuthCountryIso(country.code); setForm({ ...form, countryCode: country.dialCode }); clearFieldError("countryCode"); setCountryPickerOpen(false); }}><span className="auth-country-flag">{country.flag}</span><span className="auth-country-name">{country.name}</span><span className="auth-country-iso">{country.code}</span><span>{country.dialCode}</span>{selectedCountry.code === country.code && form.countryCode === country.dialCode && <span aria-label="Selected">✓</span>}</button>)}</div>
             </section>
           </div>
@@ -1239,7 +1239,7 @@ function ForgotPasswordScreen({ step, email, setEmail, code, setCode, newPasswor
             <p>Your password has been updated. Please log in again.</p>
           </div>
           <div className="auth-card">
-            <button type="button" className="mobile-primary auth-submit" onClick={onBack}>Back to Log In</button>
+            <button type="button" className="mobile-primary auth-submit" onClick={onBack}>Back to Login</button>
           </div>
         </section>
       </main>
@@ -1324,7 +1324,7 @@ function ForgotPasswordScreen({ step, email, setEmail, code, setCode, newPasswor
               <button type="submit" className="mobile-primary auth-submit">Reset Password</button>
             </>
           )}
-          <button type="button" className="link-button auth-switch" onClick={onBack}>← Back to Log In</button>
+            <button type="button" className="link-button auth-switch" onClick={onBack}>← Back to Login</button>
           {support.whatsapp && (
             <div style={{ textAlign: "center", marginTop: 8 }}>
               <span style={{ color: "#6e88a4", fontSize: 12 }}>Can&rsquo;t access your email? </span>
@@ -1383,7 +1383,7 @@ function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goT
         <button type="button" className="top-glass-btn" onClick={() => goTab?.("markets")} aria-label="Search markets">
           <Search size={18} strokeWidth={1.8} />
         </button>
-        <button type="button" className="top-glass-btn top-glass-btn-bell" onClick={() => showToast?.("info", "No new notifications")} aria-label="Notifications">
+        <button type="button" className="top-glass-btn top-glass-btn-bell" onClick={() => showToast?.("info", "No new notifications.")} aria-label="Notifications">
           <Bell size={18} strokeWidth={1.8} />
           <span className="top-bell-dot" aria-hidden="true" />
         </button>
@@ -1405,7 +1405,7 @@ function BrandLogo({ variant = "header" }: { variant?: "header" | "auth" | "auth
         <img
           className="brand-main"
           src="/brand/kairox-main.png"
-          alt="KAIROX Protocol"
+          alt="KAIROX"
           onError={(e) => {
             const el = e.currentTarget;
             if (el.dataset.fallback) return;
@@ -1432,7 +1432,7 @@ function BrandLogo({ variant = "header" }: { variant?: "header" | "auth" | "auth
       />
       <span className="brand-copy">
         <strong className="brand-wordmark">KAIROX</strong>
-        <small className="brand-sub">PROTOCOL</small>
+        <small className="brand-sub">MARKETS</small>
       </span>
     </div>
   );
@@ -1661,12 +1661,12 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
           </div>
         );
       })()}
-      {!rows.length && <div className="empty-state">No markets available</div>}
+      {!rows.length && <div className="empty-state">No markets available yet.</div>}
       <button type="button" className="footer-card" onClick={() => push({ id: "about", title: "About" })}>
         <div className="footer-icon"><BookOpen size={22} strokeWidth={1.6} /></div>
         <div className="footer-body">
           <strong>Trading Guide</strong>
-          <small>Learn how KAIROX Protocol works and start trading.</small>
+          <small>Learn how KAIROX Markets works and start trading.</small>
         </div>
         <ChevronRight size={18} className="footer-arrow" />
       </button>
@@ -1768,7 +1768,7 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
                     </div>
                   );
                 })}
-                {!filteredMarkets.length && <div className="ms-empty">No markets match</div>}
+                {!filteredMarkets.length && <div className="ms-empty">No markets match your search.</div>}
               </div>
             </div>
           </>
@@ -1777,11 +1777,11 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
       <div className="trade-cta">
         <button type="button" className="trade-cta-btn call" onClick={() => openSheet("call")}>
           <span className="trade-cta-arrow">↗</span>
-          <span className="trade-cta-label"><b>CALL</b><em>Buy higher</em></span>
+          <span className="trade-cta-label"><b>CALL</b><em>Higher price</em></span>
         </button>
         <button type="button" className="trade-cta-btn put" onClick={() => openSheet("put")}>
           <span className="trade-cta-arrow">↘</span>
-          <span className="trade-cta-label"><b>PUT</b><em>Sell lower</em></span>
+          <span className="trade-cta-label"><b>PUT</b><em>Lower price</em></span>
         </button>
       </div>
     </div>
@@ -2265,7 +2265,7 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect }: { rows: Ma
         })}
         {!visible.length && (
           <div className="empty-state">
-            {query ? `No markets match "${query}"` : "No markets available"}
+            {query ? `No markets match "${query}".` : "No markets available yet."}
           </div>
         )}
       </div>
@@ -2286,7 +2286,7 @@ function OrdersTab({ openOrders, history, now, onOpenRunningOrder }: { openOrder
         {orders.map((order) => (
           <OrderCard key={order.id} order={order} now={now} onClick={order.status === "open" ? () => onOpenRunningOrder(order) : undefined} />
         ))}
-        {!orders.length && <div className="empty-state">{view === "open" ? "No open positions" : "No order history"}</div>}
+        {!orders.length && <div className="empty-state">{view === "open" ? "No open orders yet." : "No order history yet."}</div>}
       </div>
     </div>
   );
@@ -2426,8 +2426,9 @@ function statusTone(status: string): "completed" | "pending" | "settled" | "fail
   return "settled";
 }
 function statusLabel(status: string) {
-  const tone = statusTone(status);
-  return tone === "completed" ? "Completed" : tone === "pending" ? "Pending" : tone === "failed" ? "Failed" : "Settled";
+  const key = (status || "").toLowerCase();
+  const labels: Record<string, string> = { pending: "Pending", processing: "Processing", approved: "Approved", completed: "Completed", success: "Completed", done: "Completed", rejected: "Rejected", cancelled: "Cancelled", canceled: "Cancelled", failed: "Failed" };
+  return labels[key] || "Pending";
 }
 function formatActivityTime(iso: string) {
   if (!iso) return "";
@@ -2573,8 +2574,8 @@ function StackContent(props: { page: StackPage; user: User; assets: AssetData | 
   }
   if (page.id === "deposit-network") return <NetworkPicker coin={selectedCoin} mode="deposit" assets={props.assets} onPick={(network) => { setSelectedNetwork(network); push({ id: "deposit-address", title: `${selectedCoin} (${network}) Deposit` }); }} />;
   if (page.id === "withdraw-network") return <NetworkPicker coin={selectedCoin} mode="withdraw" assets={props.assets} onPick={(network) => { setSelectedNetwork(network); push({ id: "withdraw-form", title: `Withdraw ${selectedCoin}` }); }} />;
-  if (page.id === "deposit-address") return <DepositAddress coin={selectedCoin} network={selectedNetwork} assets={props.assets} showToast={showToast} done={() => { showToast("info", "Deposit submitted for system review"); clearStack(); }} />;
-  if (page.id === "withdraw-form") return <WithdrawForm coin={selectedCoin} network={selectedNetwork} assets={props.assets} form={props.withdrawForm} setForm={props.setWithdrawForm} done={(record) => { showToast("ok", "Withdrawal request submitted"); replaceStack({ id: "withdraw-detail", title: "Withdrawal Details", record }); }} />;
+  if (page.id === "deposit-address") return <DepositAddress coin={selectedCoin} network={selectedNetwork} assets={props.assets} showToast={showToast} done={() => { showToast("info", "Deposit submitted for review."); clearStack(); }} />;
+  if (page.id === "withdraw-form") return <WithdrawForm coin={selectedCoin} network={selectedNetwork} assets={props.assets} form={props.withdrawForm} setForm={props.setWithdrawForm} done={(record) => { showToast("ok", "Withdrawal request submitted successfully."); replaceStack({ id: "withdraw-detail", title: "Withdrawal Details", record }); }} />;
   if (page.id === "withdraw-detail") return <WithdrawalDetail record={page.record} />;
   if (page.id === "deposit-history") return <RecordList kind="deposits" assets={props.assets} />;
   if (page.id === "withdraw-history") return <RecordList kind="withdrawals" assets={props.assets} push={push} />;
@@ -2582,7 +2583,7 @@ function StackContent(props: { page: StackPage; user: User; assets: AssetData | 
   if (page.id === "swap") return <SwapPage assets={props.assets} swap={props.swap} setSwap={props.setSwap} showToast={showToast} refreshData={props.refreshData} />;
   if (page.id === "asset-overview") return <AssetsTab assets={props.assets} push={push} />;
   if (page.id === "security") return <SecurityPage expanded={props.expandedSecurity} setExpanded={props.setExpandedSecurity} showToast={showToast} />;
-  if (page.id === "kyc") return <KycPage kycStatus={props.kycStatus} rejectedReason={props.user.kyc_rejected_reason} setKycStatus={props.setKycStatus} push={push} done={() => { showToast("ok", "KYC submitted"); clearStack(); }} />;
+  if (page.id === "kyc") return <KycPage kycStatus={props.kycStatus} rejectedReason={props.user.kyc_rejected_reason} setKycStatus={props.setKycStatus} push={push} done={() => { showToast("ok", "KYC submitted successfully."); clearStack(); }} />;
   if (page.id === "support") return <SupportPage support={props.support} push={push} />;
   if (page.id === "support-chat") return <SupportChatPage />;
   if (page.id === "fiat-deposit") return <FiatDepositScreen push={push} showToast={showToast} />;
@@ -2644,7 +2645,8 @@ function networkDisplayName(network: string, coin: string) {
 
 function StatusChip({ status }: { status: string }) {
   const key = status.toLowerCase();
-  return <span className={`status-chip ${key}`}>{status}</span>;
+  const labels: Record<string, string> = { pending: "Pending", processing: "Processing", approved: "Approved", completed: "Completed", rejected: "Rejected", cancelled: "Cancelled", canceled: "Cancelled", failed: "Failed" };
+  return <span className={`status-chip ${key}`}>{labels[key] || "Pending"}</span>;
 }
 
 function fundingRecordLabel(type: string) {
@@ -2663,14 +2665,14 @@ function fundingRecordLabel(type: string) {
 function RecordList({ kind, assets, push }: { kind: "deposits" | "withdrawals" | "transactions"; assets: AssetData | null; push?: (p: StackPage) => void }) {
   if (kind === "deposits") {
     const rows = assets?.deposits || [];
-    return <div className="stack-page"><div className="record-list">{rows.map((row) => <div className="record-line" key={row.id}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network} - {compactDateTime(row.created_at)}</small>{row.tx_hash && <small className="record-hash">TX {row.tx_hash}</small>}</div>)}{!rows.length && <div className="empty-state">No deposit records</div>}</div></div>;
+    return <div className="stack-page"><div className="record-list">{rows.map((row) => <div className="record-line" key={row.id}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network} - {compactDateTime(row.created_at)}</small>{row.tx_hash && <small className="record-hash">TX {row.tx_hash}</small>}</div>)}{!rows.length && <div className="empty-state">No deposit records yet.</div>}</div></div>;
   }
   if (kind === "withdrawals") {
     const rows = assets?.withdrawals || [];
-    return <div className="stack-page"><div className="record-list">{rows.map((row) => <button type="button" className="record-line record-button" key={row.id} onClick={() => push?.({ id: "withdraw-detail", title: "Withdrawal Details", record: row })}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network || "Network"} - {compactDateTime(row.created_at)}</small>{row.address && <small className="record-hash">{row.address}</small>}<span className="record-arrow">{">"}</span></button>)}{!rows.length && <div className="empty-state">No withdrawal records</div>}</div></div>;
+    return <div className="stack-page"><div className="record-list">{rows.map((row) => <button type="button" className="record-line record-button" key={row.id} onClick={() => push?.({ id: "withdraw-detail", title: "Withdrawal Details", record: row })}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network || "Network"} - {compactDateTime(row.created_at)}</small>{row.address && <small className="record-hash">{row.address}</small>}<span className="record-arrow">{">"}</span></button>)}{!rows.length && <div className="empty-state">No withdrawal records yet.</div>}</div></div>;
   }
   const rows = assets?.transactions || [];
-  return <div className="stack-page"><div className="record-list">{rows.map((row) => <div className="record-line" key={row.id}><div><b>{fundingRecordLabel(row.type)}</b><StatusChip status={row.status} /></div><small className={`tabular-nums ${row.amount >= 0 ? "good" : "bad"}`}>{assetAmount(row.amount, row.asset, true)}</small>{row.note && <small>{row.note}</small>}<small>{compactDateTime(row.created_at)}</small></div>)}{!rows.length && <div className="empty-state">No funding records</div>}</div></div>;
+  return <div className="stack-page"><div className="record-list">{rows.map((row) => <div className="record-line" key={row.id}><div><b>{fundingRecordLabel(row.type)}</b><StatusChip status={row.status} /></div><small className={`tabular-nums ${row.amount >= 0 ? "good" : "bad"}`}>{assetAmount(row.amount, row.asset, true)}</small>{row.note && <small>{row.note}</small>}<small>{compactDateTime(row.created_at)}</small></div>)}{!rows.length && <div className="empty-state">No funding records yet.</div>}</div></div>;
 }
 
 function DetailRow({ label, value, mono = false }: { label: string; value?: string | number | null; mono?: boolean }) {
@@ -2872,9 +2874,9 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
     try {
       if (!navigator.clipboard) throw new Error("Clipboard unavailable");
       await navigator.clipboard.writeText(address);
-      showToast("ok", "Address copied");
+      showToast("ok", "Address copied successfully.");
     } catch {
-      showToast("err", "Copy failed");
+      showToast("err", "Unable to copy the address. Please try again.");
     }
   }
   async function pickProof(file: File | undefined) {
@@ -2912,7 +2914,7 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
       depositReqIdRef.current = crypto.randomUUID();
       done();
     } catch (error) {
-      setError(error instanceof RequestTimeoutError ? "Request timed out. Please try again." : "Network error. Please try again.");
+      setError(error instanceof RequestTimeoutError ? "Request timed out. Please try again." : "Unable to connect to the server. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -2955,7 +2957,7 @@ function DepositAddress({ coin, network, assets, showToast, done }: { coin: stri
         <input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(e) => pickProof(e.target.files?.[0])} hidden />
         <Upload size={24} className="deposit-upload-icon" />
         <b>{proof ? proof.name : "Tap to upload proof of payment"}</b>
-        <em>JPG, PNG, WebP, HEIC or HEIF up to 25MB</em>
+        <em>JPG, PNG, WebP, HEIC or HEIF, up to 25MB. Large images will be compressed automatically.</em>
       </label>
 
       {error && <div className="form-error">{error}</div>}
@@ -3338,7 +3340,7 @@ function SwapSuccessModal({ receipt, onClose, showToast }: { receipt: SwapReceip
   function copyHash() {
     navigator.clipboard?.writeText(receipt.txHash).then(
       () => showToast("ok", "Copied"),
-      () => showToast("err", "Copy failed")
+      () => showToast("err", "Unable to copy the address. Please try again.")
     );
   }
   return (
@@ -3557,7 +3559,7 @@ function SecurityChangeSuccessModal({ kind, onClose }: { kind: "login" | "withdr
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const title = kind === "login" ? "Password Changed Successfully!" : "Withdrawal Password Updated!";
+  const title = kind === "login" ? "Password changed successfully." : "Withdrawal password updated successfully.";
   const body = kind === "login"
     ? "Your login password has been updated successfully."
     : "Your withdrawal password has been updated successfully.";
@@ -3754,7 +3756,7 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
           }} />
           <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
           <span className="kyc-upload-main">{front ? front.name : "Tap to upload front image"}</span>
-          <span className="kyc-upload-sub">JPG, PNG, HEIC up to 25MB</span>
+          <span className="kyc-upload-sub">JPG, PNG, WebP, HEIC or HEIF, up to 25MB. Large images will be compressed automatically.</span>
         </label>
       </div>
 
@@ -3784,7 +3786,7 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
           }} />
           <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
           <span className="kyc-upload-main">{back ? back.name : "Tap to upload back image"}</span>
-          <span className="kyc-upload-sub">JPG, PNG, HEIC up to 25MB</span>
+          <span className="kyc-upload-sub">JPG, PNG, WebP, HEIC or HEIF, up to 25MB. Large images will be compressed automatically.</span>
         </label>
       </div>
 
@@ -3925,7 +3927,7 @@ function FiatDepositScreen({ push, showToast }: { push: (p: StackPage) => void; 
         push({ id: "support-chat", title: "Online Support" });
       }
     } catch {
-      setError("Network error. Please try again.");
+      setError("Unable to connect to the server. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -4109,7 +4111,7 @@ function SupportChatPage() {
         ]);
       }
     } catch {
-      setError("Network error. Please try again.");
+      setError("Unable to connect to the server. Please try again.");
     } finally {
       setSending(false);
     }
@@ -4160,7 +4162,7 @@ function SupportChatPage() {
       clearProof();
       loadFiatDeposit();
     } catch {
-      setError("Network error");
+      setError("Unable to connect to the server. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -4450,10 +4452,10 @@ function AboutPage() {
   return (
     <div className="stack-page legal-page about-route-page">
       <img className="about-logo" src="/brand/kairox-symbol.png" alt="KAIROX" />
-      <h1 className="about-title">KAIROX Protocol</h1>
+      <h1 className="about-title">KAIROX Markets</h1>
       <p className="about-tagline">Liquidity in motion.</p>
       <p className="about-body">
-        KAIROX Protocol is a digital asset trading platform designed for secure account management,
+        KAIROX Markets is a digital asset trading platform designed for secure account management,
         efficient trading workflows, funding records, identity verification, and responsive support.
       </p>
       <div className="about-stats">
@@ -4463,7 +4465,7 @@ function AboutPage() {
       </div>
       <div className="about-version">
         <small>Version 1.0.0</small>
-        <small>© 2026 KAIROX Protocol</small>
+        <small>© 2026 KAIROX Markets</small>
       </div>
       <div className="legal-disclaimer about-disclaimer">
         <span>For support or questions, please contact us through the in-app Support center.</span>

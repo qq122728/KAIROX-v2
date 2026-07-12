@@ -12,10 +12,10 @@ export default function AboutRoutePage() {
       </header>
       <div className="stack-page legal-page about-route-page">
         <img className="about-logo" src="/brand/kairox-symbol.png" alt="KAIROX" />
-        <h1 className="about-title">KAIROX Protocol</h1>
+        <h1 className="about-title">KAIROX Markets</h1>
         <p className="about-tagline">Liquidity in motion.</p>
         <p className="about-body">
-          KAIROX Protocol is a digital asset trading platform designed for secure account management,
+          KAIROX Markets is a digital asset trading platform designed for secure account management,
           efficient trading workflows, funding records, identity verification, and responsive support.
         </p>
         <div className="about-stats">

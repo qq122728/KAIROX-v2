@@ -3457,7 +3457,7 @@ function FiatBankAccountsAdmin() {
 
     const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await res.json();
-    if (!res.ok) { setError(data.error || "Failed"); return; }
+    if (!res.ok) { setError(data.error || "操作失败"); return; }
     setFormOpen(false);
     load();
   };
@@ -3529,15 +3529,15 @@ function FiatBankAccountsAdmin() {
               style={{ padding: "8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5" }} />
           </div>
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button onClick={doSave} style={{ padding: "8px 20px", borderRadius: 8, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}>Save</button>
-            <button onClick={() => setFormOpen(false)} style={{ padding: "8px 20px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer" }}>Cancel</button>
+            <button onClick={doSave} style={{ padding: "8px 20px", borderRadius: 8, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontWeight: 600 }}>保存</button>
+            <button onClick={() => setFormOpen(false)} style={{ padding: "8px 20px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer" }}>取消</button>
           </div>
         </div>
       )}
 
       <div style={{ display: "grid", gap: 8 }}>
-        {!loaded && <div style={{ color: "#6e88a4" }}>Loading...</div>}
-        {loaded && accounts.length === 0 && <div style={{ color: "#6e88a4" }}>No bank accounts configured.</div>}
+        {!loaded && <div style={{ color: "#6e88a4" }}>加载中...</div>}
+        {loaded && accounts.length === 0 && <div style={{ color: "#6e88a4" }}>暂无已配置的银行账户。</div>}
         {accounts.map((a: Record<string, unknown>) => (
           <div key={String(a.id)} style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: `1px solid ${a.is_active ? "rgba(255,255,255,0.08)" : "rgba(239,68,68,0.15)"}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ flex: 1 }}>
@@ -3594,7 +3594,7 @@ function FiatDepositsAdmin() {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: id }),
     });
     const data = await res.json();
-    if (!res.ok) { alert(data.error || "Failed"); return; }
+    if (!res.ok) { alert(data.error || "操作失败"); return; }
     load();
   };
 
@@ -3605,7 +3605,7 @@ function FiatDepositsAdmin() {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: id, remark }),
     });
     const data = await res.json();
-    if (!res.ok) { alert(data.error || "Failed"); return; }
+    if (!res.ok) { alert(data.error || "操作失败"); return; }
     load();
   };
 
@@ -3617,11 +3617,11 @@ function FiatDepositsAdmin() {
           <option value="">全部状态</option>
           {["requested","bank_sent","submitted","confirmed","rejected"].map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}
         </select>
-        <button onClick={load} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "#8899B0", cursor: "pointer" }}>Refresh</button>
+        <button onClick={load} style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "#8899B0", cursor: "pointer" }}>刷新</button>
       </div>
       <div style={{ display: "grid", gap: 8 }}>
-        {!loaded && <div style={{ color: "#6e88a4" }}>Loading...</div>}
-        {loaded && deposits.length === 0 && <div style={{ color: "#6e88a4" }}>No fiat deposits found.</div>}
+        {!loaded && <div style={{ color: "#6e88a4" }}>加载中...</div>}
+        {loaded && deposits.length === 0 && <div style={{ color: "#6e88a4" }}>暂无法币入金记录。</div>}
         {deposits.map((d: Record<string, unknown>) => (
           <div key={String(d.id)} style={{ padding: "12px 14px", borderRadius: 8, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
@@ -3641,8 +3641,8 @@ function FiatDepositsAdmin() {
             </div>
             {d.status === "submitted" && (
               <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                <button onClick={() => doConfirm(Number(d.id))} style={{ padding: "4px 14px", borderRadius: 6, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Confirm</button>
-                <button onClick={() => doReject(Number(d.id))} style={{ padding: "4px 14px", borderRadius: 6, background: "rgba(239,68,68,0.15)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer", fontSize: 12 }}>Reject</button>
+                <button onClick={() => doConfirm(Number(d.id))} style={{ padding: "4px 14px", borderRadius: 6, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>确认</button>
+                <button onClick={() => doReject(Number(d.id))} style={{ padding: "4px 14px", borderRadius: 6, background: "rgba(239,68,68,0.15)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer", fontSize: 12 }}>拒绝</button>
               </div>
             )}
             {(() => { const r = String(d.admin_remark || ""); return r ? <div style={{ fontSize: 11, color: "#6e88a4", marginTop: 4 }}>Remark: {r}</div> : null; })()}
@@ -3802,7 +3802,7 @@ function SupportChatAdmin() {
         body: JSON.stringify({ userId: selectedUserId, text }),
       });
       const data = await res.json();
-      if (!res.ok) { alert(data.error || "Failed"); return; }
+      if (!res.ok) { alert(data.error || "操作失败"); return; }
       setDraft("");
       // Refresh messages
       fetch(`/api/admin/support/messages?userId=${selectedUserId}`)
@@ -3939,17 +3939,17 @@ function SupportChatAdmin() {
                             setConfirmAmount(String(d.estimated_usdt || ""));
                             setHighValueVerified(false);
                           }} style={{ padding: "4px 12px", borderRadius: 6, background: "#16A34A", color: "#fff", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
-                            Confirm
+                            确认
                           </button>
                           <button onClick={async () => {
                             const remark = prompt("Rejection reason:");
                             if (!remark) return;
                             const r = await fetch("/api/admin/fiat-deposit/reject", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: d.id, remark }) });
                             const rd = await r.json();
-                            if (!r.ok) { alert(rd.error || "Failed"); return; }
+                            if (!r.ok) { alert(rd.error || "操作失败"); return; }
                             loadData();
                           }} style={{ padding: "4px 12px", borderRadius: 6, background: "rgba(239,68,68,0.15)", color: "#DC2626", border: "1px solid rgba(239,68,68,0.2)", cursor: "pointer", fontSize: 11 }}>
-                            Reject
+                            拒绝
                           </button>
                         </div>
                       )}
@@ -3970,7 +3970,7 @@ function SupportChatAdmin() {
                   {/* Reference rate */}
                   <div style={{ marginBottom: 6, padding: "6px 8px", borderRadius: 6, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", fontSize: 11 }}>
                     {refRateLoading ? (
-                      <span style={{ color: "#6e88a4" }}>Loading reference rate...</span>
+                      <span style={{ color: "#6e88a4" }}>加载参考汇率...</span>
                     ) : refRateError ? (
                       <span style={{ color: "#DC2626" }}>{refRateError}</span>
                     ) : refRate ? (
@@ -4004,18 +4004,18 @@ function SupportChatAdmin() {
                     <button onClick={async () => {
                       if (!sendBankForm.bankAccountId) { alert("Select a bank account"); return; }
                       if (!sendBankForm.exchangeRate) { alert("Enter exchange rate"); return; }
-                      if (!sendBankForm.bankReferenceCode.trim()) { alert("Enter bank reference code"); return; }
+                      if (!sendBankForm.bankReferenceCode.trim()) { alert("请输入银行参考编号"); return; }
                       const r = await fetch("/api/admin/fiat-deposit/send-bank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: sendBankForm.depositId, bankAccountId: sendBankForm.bankAccountId, exchangeRate: Number(sendBankForm.exchangeRate), rateSpread: Number(sendBankForm.rateSpread), bankReferenceCode: sendBankForm.bankReferenceCode.trim() }) });
                       const rd = await r.json();
-                      if (!r.ok) { alert(rd.error || "Failed"); return; }
+                      if (!r.ok) { alert(rd.error || "操作失败"); return; }
                       setSendBankOpen(false);
                       setRefRate(null); setRefRateError("");
                       loadData();
                     }} style={{ padding: "4px 12px", borderRadius: 6, background: "#2563FF", color: "#fff", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-                      Confirm & Send
+                      确认并发送
                     </button>
                     <button onClick={() => { setSendBankOpen(false); setRefRate(null); setRefRateError(""); }} style={{ padding: "4px 12px", borderRadius: 6, background: "transparent", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", fontSize: 12 }}>
-                      Cancel
+                      取消
                     </button>
                   </div>
                 </div>
@@ -4024,7 +4024,7 @@ function SupportChatAdmin() {
               {confirmModal && (
                 <div onClick={() => { setConfirmModal(null); setConfirmLoading(false); setHighValueVerified(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
                   <div onClick={(e) => e.stopPropagation()} style={{ width: 380, maxWidth: "90vw", borderRadius: 12, background: "rgba(30,41,59,0.98)", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", padding: 20 }}>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: "#e0eaf5", marginBottom: 16 }}>Confirm Fiat Deposit</div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: "#e0eaf5", marginBottom: 16 }}>确认法币入金</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 12, color: "#8899B0", marginBottom: 14 }}>
                       <div>Deposit: <span style={{ color: "#c0d0e0" }}>#{confirmModal.depositId}</span></div>
                       <div>User: <span style={{ color: "#c0d0e0" }}>{confirmModal.username}</span></div>
@@ -4071,7 +4071,7 @@ function SupportChatAdmin() {
                     <div style={{ display: "flex", gap: 8 }}>
                       <button disabled={confirmLoading} onClick={() => { setConfirmModal(null); setConfirmLoading(false); setHighValueVerified(false); }}
                         style={{ flex: 1, padding: "8px", borderRadius: 8, background: "rgba(255,255,255,0.06)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-                        Cancel
+                      取消
                       </button>
                       <button disabled={confirmLoading || (Number.isFinite(Number(confirmAmount)) && Number(confirmAmount) > 10000 && !highValueVerified)} onClick={async () => {
                         const amount = Number(confirmAmount);
@@ -4085,13 +4085,13 @@ function SupportChatAdmin() {
                         try {
                           const r = await fetch("/api/admin/fiat-deposit/confirm", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ depositId: confirmModal.depositId, confirmedUsdt: amount }) });
                           const rd = await r.json();
-                          if (!r.ok) { alert(rd.error || "Failed"); setConfirmLoading(false); return; }
+                          if (!r.ok) { alert(rd.error || "操作失败"); setConfirmLoading(false); return; }
                           setConfirmModal(null); setConfirmLoading(false);
                           loadData();
-                        } catch { alert("Network error"); setConfirmLoading(false); }
+                        } catch { alert("无法连接服务器，请重试"); setConfirmLoading(false); }
                       }}
                         style={{ flex: 1, padding: "8px", borderRadius: 8, background: confirmLoading ? "#444" : "#16A34A", color: "#fff", border: "none", cursor: confirmLoading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700 }}>
-                        {confirmLoading ? "Confirming..." : "Confirm Credit"}
+                        {confirmLoading ? "确认中..." : "确认入账"}
                       </button>
                     </div>
                   </div>
