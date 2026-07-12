@@ -9565,3 +9565,43 @@ a:focus-visible,
 .top-notification-head button{border:0;background:none;color:#7fb0ff;font-size:11px;cursor:pointer}.top-notification-head button:disabled{opacity:.45;cursor:default}
 .top-notification-list{max-height:calc(60vh - 48px);overflow-y:auto}.top-notification-empty{padding:28px 16px;text-align:center;color:#7890aa;font-size:13px}
 .top-notification-item{display:grid;gap:3px;width:100%;padding:11px 14px;border:0;border-bottom:1px solid rgba(255,255,255,.06);background:transparent;color:#dce8f5;text-align:left;cursor:pointer}.top-notification-item b{font-size:12px}.top-notification-item span{font-size:11px;line-height:1.35;color:#8fa5bd}.top-notification-item.is-read{opacity:.55}
+
+/* Withdraw form: keep mobile fields in a single, predictable column. */
+@media (max-width: 768px) {
+  .withdraw-form-page {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .withdraw-form-page .mobile-field {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 0 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 0 16px !important;
+  }
+
+  .withdraw-form-page .mobile-field > span {
+    display: block !important;
+    margin: 0 0 8px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    line-height: 18px !important;
+    color: var(--text-sub) !important;
+  }
+
+  .withdraw-form-page .mobile-field > input {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .withdraw-form-page > .mobile-primary {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+  }
+}
