@@ -3711,49 +3711,35 @@ function SupportChatAdmin() {
   // Load messages when user selected
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Poll conversations + messages every 3s
+  // Support messages arrive through the authenticated admin Socket.IO room.
   useEffect(() => {
-    let beepCooldown = false;
-    const timer = setInterval(async () => {
-      // Refresh conversations
-      try {
-        const cr = await fetch("/api/admin/support/conversations");
-        const cd = await cr.json();
-        if (cd.conversations) setConversations(cd.conversations);
-      } catch {}
-      if (!selectedUserId) return;
-      try {
-        const mr = await fetch(`/api/admin/support/messages?userId=${selectedUserId}`);
-        const md = await mr.json();
-        if (md.messages) {
-          const msgs = md.messages as Array<{ id: number; role: string; text: string; createdAt: string; message_type?: string }>;
-          // Detect new messages
-          if (lastMsgIdRef.current > 0) {
-            const newMsgs = msgs.filter((m) => m.id > lastMsgIdRef.current);
-            const hasUserMsg = newMsgs.some((m) => m.role === "user");
-            const hasFiat = newMsgs.some((m) => m.message_type === "fiat_request" || m.message_type === "fiat_transfer");
-            if ((hasUserMsg || hasFiat) && !beepCooldown) {
-              beepCooldown = true;
-              setTimeout(() => { beepCooldown = false; }, 2000);
-              if (hasFiat) {
-                playFiatBeep();
-                setToast("New fiat deposit request");
-              } else {
-                playBeep();
-                setToast("New support message");
-              }
-              setTimeout(() => setToast(""), 4000);
-            }
-          }
-          // Track highest ID
-          if (msgs.length > 0) {
-            lastMsgIdRef.current = Math.max(lastMsgIdRef.current, msgs[msgs.length - 1].id);
-          }
-          setMessages(msgs);
-        }
-      } catch {}
-    }, 3000);
-    return () => clearInterval(timer);
+    let active = true;
+    let socket: Awaited<ReturnType<typeof connectRealtime>> | null = null;
+    const onSupportMessage = (payload?: unknown) => {
+      const body = (payload && typeof payload === "object" ? payload : {}) as { userId?: number; message?: { id: number; role: string; text: string; createdAt: string; message_type?: string } };
+      if (!active || !body.message || !body.userId) return;
+      const message = body.message;
+      if (selectedUserId === body.userId) {
+        setMessages((prev) => prev.some((item) => item.id === message.id) ? prev : [...prev, message as typeof prev[number]]);
+        lastMsgIdRef.current = Math.max(lastMsgIdRef.current, message.id);
+      }
+      void fetch("/api/admin/support/conversations").then((r) => r.json()).then((d) => { if (active && d.conversations) setConversations(d.conversations); }).catch(() => {});
+      if (message.role === "user") {
+        playBeep();
+        setToast("New support message");
+        window.setTimeout(() => setToast(""), 4000);
+      }
+    };
+    connectRealtime().then((nextSocket) => {
+      if (!active) { nextSocket.disconnect(); return; }
+      socket = nextSocket;
+      socket.on("support:message", onSupportMessage);
+      if (socket.connected) socket.emit("admin:join");
+    }).catch(() => {});
+    return () => {
+      active = false;
+      if (socket) { socket.off("support:message", onSupportMessage); socket.disconnect(); }
+    };
   }, [selectedUserId]);
 
   useEffect(() => {
@@ -3804,11 +3790,7 @@ function SupportChatAdmin() {
       const data = await res.json();
       if (!res.ok) { alert(data.error || "操作失败"); return; }
       setDraft("");
-      // Refresh messages
-      fetch(`/api/admin/support/messages?userId=${selectedUserId}`)
-        .then((r) => r.json())
-        .then((d) => { if (d.messages) setMessages(d.messages); })
-        .catch(() => {});
+      if (data.message) setMessages((prev) => prev.some((item) => item.id === data.message.id) ? prev : [...prev, data.message]);
     } finally {
       setSending(false);
     }
