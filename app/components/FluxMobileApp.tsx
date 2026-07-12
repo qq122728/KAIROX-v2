@@ -14,6 +14,7 @@ import {
 import { useRouter } from "next/navigation";
 import { MarketChartPanel } from "./MarketData";
 import { connectRealtime } from "./realtime-client";
+import { notificationManager, type ClientNotification } from "../lib/notification-manager";
 import { displayUid } from "@/lib/uid";
 import { compressImage } from "@/app/lib/compressImage";
 import { normalizePhone } from "@/lib/auth-identifier";
@@ -298,6 +299,8 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [duration, setDuration] = useState(defaultDurations[0]);
   const [now, setNow] = useState(Date.now());
   const [toast, setToast] = useState<{ type: "ok" | "err" | "info"; text: string } | null>(null);
+  const [notifications, setNotifications] = useState<ClientNotification[]>([]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [support, setSupport] = useState({ telegram: "", whatsapp: "" });
   const [publicSettings, setPublicSettings] = useState<Partial<PublicSettings>>({});
   const [withdrawForm, setWithdrawForm] = useState({ address: "", amount: "10", password: "" });
@@ -337,6 +340,28 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   useEffect(() => {
     setToastPortalReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) { setNotifications([]); return; }
+    fetch("/api/notifications", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((d) => {
+      if (Array.isArray(d?.notifications)) setNotifications(d.notifications);
+    }).catch(() => {});
+    const unsubscribe = notificationManager.subscribe((notification) => {
+      setNotifications((prev) => [notification, ...prev.filter((item) => item.id !== notification.id)].slice(0, 50));
+      showToast("info", notification.title);
+    });
+    return () => { unsubscribe(); };
+  }, [user?.id]);
+
+  async function markNotificationRead(id: number) {
+    setNotifications((prev) => prev.map((item) => item.id === id ? { ...item, readAt: item.readAt || new Date().toISOString() } : item));
+    await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).catch(() => {});
+  }
+
+  async function markAllNotificationsRead() {
+    setNotifications((prev) => prev.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })));
+    await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) }).catch(() => {});
+  }
 
   function applyPublicSettings(settings: Partial<PublicSettings> = {}) {
     setSupport({ telegram: settings.telegram_url?.trim() || "", whatsapp: (settings.whatsapp_support_url || settings.whatsapp_url || "").trim() });
@@ -482,6 +507,10 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
     let socket: Awaited<ReturnType<typeof connectRealtime>> | null = null;
     let active = true;
     const reload = () => load();
+    const handleNotificationEvent = (payload?: unknown) => {
+      const notification = (payload && typeof payload === "object" ? (payload as { notification?: ClientNotification }).notification : null);
+      if (notification) notificationManager.receive(notification);
+    };
     connectRealtime()
       .then((nextSocket) => {
         if (!active) {
@@ -496,6 +525,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
         socket.on("binary:settled", reload);
         socket.on("settings:update", reload);
         socket.on("market:update", reload);
+        socket.on("notification:event", handleNotificationEvent);
         socket.on("deposit-addresses:update", reload);
       })
       .catch(() => {});
@@ -508,6 +538,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
         socket.off("binary:settled", reload);
         socket.off("settings:update", reload);
         socket.off("market:update", reload);
+        socket.off("notification:event", handleNotificationEvent);
         socket.off("deposit-addresses:update", reload);
         socket.disconnect();
       }
@@ -862,7 +893,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
         </div>,
         document.body
       ) : null}
-      <MobileHeader activeStack={activeStack} pop={pop} currentMarket={currentMarket} tickers={tickers} support={support} activeTab={tab} goTab={switchTab} showToast={showToast} />
+      <MobileHeader activeStack={activeStack} pop={pop} currentMarket={currentMarket} tickers={tickers} support={support} activeTab={tab} goTab={switchTab} showToast={showToast} notifications={notifications} notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} markNotificationRead={markNotificationRead} markAllNotificationsRead={markAllNotificationsRead} />
       <section className={`mobile-scroll${activeStack?.id === "support-chat" ? " support-chat-content" : ""}`}>
         {activeStack ? (
           <StackContent
@@ -1337,7 +1368,7 @@ function ForgotPasswordScreen({ step, email, setEmail, code, setCode, newPasswor
   );
 }
 
-function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goTab, showToast }: { activeStack?: StackPage; pop: () => void; currentMarket?: Market; tickers: Tickers; support: { telegram: string; whatsapp: string }; activeTab: Tab; goTab?: (tab: Tab) => void; showToast?: (type: "ok" | "err" | "info", text: string) => void }) {
+function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goTab, showToast, notifications = [], notificationsOpen = false, setNotificationsOpen, markNotificationRead, markAllNotificationsRead }: { activeStack?: StackPage; pop: () => void; currentMarket?: Market; tickers: Tickers; support: { telegram: string; whatsapp: string }; activeTab: Tab; goTab?: (tab: Tab) => void; showToast?: (type: "ok" | "err" | "info", text: string) => void; notifications?: ClientNotification[]; notificationsOpen?: boolean; setNotificationsOpen?: (value: boolean) => void; markNotificationRead?: (id: number) => void; markAllNotificationsRead?: () => void }) {
   if (activeStack) {
     if (activeStack.id === "support-chat") {
       return (
@@ -1383,10 +1414,16 @@ function MobileHeader({ activeStack, pop, currentMarket, tickers, activeTab, goT
         <button type="button" className="top-glass-btn" onClick={() => goTab?.("markets")} aria-label="Search markets">
           <Search size={18} strokeWidth={1.8} />
         </button>
-        <button type="button" className="top-glass-btn top-glass-btn-bell" onClick={() => showToast?.("info", "No new notifications.")} aria-label="Notifications">
-          <Bell size={18} strokeWidth={1.8} />
-          <span className="top-bell-dot" aria-hidden="true" />
-        </button>
+        <div className="top-notification-wrap">
+          <button type="button" className="top-glass-btn top-glass-btn-bell" onClick={() => setNotificationsOpen?.(!notificationsOpen)} aria-label={`Notifications${notifications.filter((item) => !item.readAt).length ? ` (${notifications.filter((item) => !item.readAt).length} unread)` : ""}`} aria-expanded={notificationsOpen}>
+            <Bell size={18} strokeWidth={1.8} />
+            {notifications.some((item) => !item.readAt) && <span className="top-bell-dot" aria-hidden="true" />}
+          </button>
+          {notificationsOpen && <div className="top-notification-panel" role="dialog" aria-label="Notifications">
+            <div className="top-notification-head"><strong>Notifications</strong><button type="button" onClick={() => markAllNotificationsRead?.()} disabled={!notifications.some((item) => !item.readAt)}>Mark all read</button></div>
+            <div className="top-notification-list">{notifications.length === 0 ? <div className="top-notification-empty">No notifications yet.</div> : notifications.map((item) => <button type="button" key={item.id} className={`top-notification-item${item.readAt ? " is-read" : ""}`} onClick={() => markNotificationRead?.(item.id)}><b>{item.title}</b><span>{item.body}</span></button>)}</div>
+          </div>}
+        </div>
         <button type="button" className="top-glass-btn" onClick={() => goTab?.("account")} aria-label="Account">
           <UserIcon size={18} strokeWidth={1.8} />
         </button>
@@ -4001,8 +4038,6 @@ function SupportChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastMsgIdRef = useRef<number>(0);
   const seenMessageIdsRef = useRef<Set<number | string>>(new Set());
-  const notifiedMessageIdsRef = useRef<Set<number | string>>(new Set());
-  const audioContextRef = useRef<AudioContext | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   // Fiat deposit state
@@ -4033,45 +4068,9 @@ function SupportChatPage() {
     };
   }
 
-  function notifyIncoming(message: ChatMessage) {
-    if (message.role !== "agent" || notifiedMessageIdsRef.current.has(message.id)) return;
-    notifiedMessageIdsRef.current.add(message.id);
-    if (notifiedMessageIdsRef.current.size > 200) notifiedMessageIdsRef.current.clear();
-    if (audioContextRef.current) {
-      try {
-        const ctx = audioContextRef.current;
-        const oscillator = ctx.createOscillator();
-        const gain = ctx.createGain();
-        oscillator.frequency.value = 880;
-        gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.08, ctx.currentTime + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
-        oscillator.connect(gain).connect(ctx.destination);
-        oscillator.start();
-        oscillator.stop(ctx.currentTime + 0.2);
-      } catch { /* autoplay/audio context can be unavailable */ }
-    }
-    if (typeof document !== "undefined" && document.hidden) {
-      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-        const notification = new Notification("KAIROX Support", { body: "New message received." });
-        notification.onclick = () => { window.focus(); notification.close(); };
-      }
-      document.title = `(1) KAIROX`;
-    }
-  }
-
   async function enableNotifications() {
-    try {
-      const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (AudioContextCtor) {
-        audioContextRef.current = new AudioContextCtor();
-        await audioContextRef.current.resume();
-      }
-      if (typeof Notification !== "undefined") {
-        const permission = await Notification.requestPermission();
-        setNotificationsEnabled(permission === "granted");
-      }
-    } catch { /* permission or autoplay can be denied by the browser */ }
+    await notificationManager.enable();
+    setNotificationsEnabled(true);
   }
 
   // Load history once, then receive new messages through the authenticated Socket.IO room.
@@ -4101,7 +4100,6 @@ function SupportChatPage() {
       if (seenMessageIdsRef.current.has(message.id)) return;
       seenMessageIdsRef.current.add(message.id);
       setMessages((prev) => [...prev, message]);
-      notifyIncoming(message);
     };
     const handleConnect = () => {
       if (!active) return;
@@ -4129,7 +4127,6 @@ function SupportChatPage() {
         socket.disconnect();
       }
       if (typeof document !== "undefined") document.title = "KAIROX";
-      audioContextRef.current?.close().catch(() => {});
     };
   }, []);
 

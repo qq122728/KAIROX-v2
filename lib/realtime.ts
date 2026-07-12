@@ -11,6 +11,7 @@ type RealtimeEvent =
   | "fiat_deposit:submitted"
   | "support_message:created"
   | "support:message"
+  | "notification:event"
   | "settings:update"
   | "market:update";
 
@@ -30,7 +31,7 @@ function resolveSocketInternalSecret() {
   return configuredSecret || defaultSocketInternalSecret;
 }
 
-export function emitRealtime(event: RealtimeEvent, options: EmitOptions = {}) {
+export function emitRealtimeRaw(event: RealtimeEvent, options: EmitOptions = {}) {
   let socketInternalSecret: string;
   try {
     socketInternalSecret = resolveSocketInternalSecret();
@@ -46,6 +47,11 @@ export function emitRealtime(event: RealtimeEvent, options: EmitOptions = {}) {
   }).catch(() => {
     // Realtime is best-effort; HTTP API mutations must still succeed if the socket service is offline.
   });
+}
+
+export function emitRealtime(event: RealtimeEvent, options: EmitOptions = {}) {
+  void import("./notification-manager").then(({ persistBusinessNotification }) => persistBusinessNotification(event, options)).catch(() => {});
+  emitRealtimeRaw(event, options);
 }
 
 export function userRoom(userId: number | string) {

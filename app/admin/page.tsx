@@ -498,25 +498,21 @@ export default function AdminPage() {
     };
     const handleDisconnect = () => startPolling();
     const handleConnectError = () => startPolling();
-    const handleAdminUpdate = async (payload?: unknown) => {
-      const body = (typeof payload === "object" && payload ? payload : {}) as AdminRealtimePayload;
-      const type = typeof body.type === "string" ? body.type : "";
-      /* Push the panel entry BEFORE any await so a slow/failed load() can't drop it.
-         Bell logic that does NOT need data lookup also runs immediately. */
-      if (type && panelTypes.has(type)) {
-        const eventId = body.withdrawalId ?? body.depositId ?? body.submissionId ?? body.orderId ?? body.positionId ?? body.userId ?? "unknown";
-        const id = `${type}:${eventId}`;
-        const snapPre = dataRef.current;
-        const { title, meta, tabId } = buildNotificationContent(type, body, snapPre);
-        pushNotification({ id, type, title, meta, tabId, ts: Date.now(), read: false });
-        if (alwaysRingTypes.has(type) && !notifiedEventsRef.current.has(id)) {
-          notifiedEventsRef.current.add(id);
-          if (notifiedEventsRef.current.size > 120) notifiedEventsRef.current.clear();
-          void playNotificationBell(type);
-        }
-      }
-      /* Refresh tables after notification. */
+    const handleAdminUpdate = async () => {
       await load();
+    };
+    const handleNotificationEvent = (payload?: unknown) => {
+      const raw = (payload && typeof payload === "object" ? (payload as { notification?: Record<string, unknown> }).notification : null);
+      if (!raw) return;
+      const id = String(raw.id || "");
+      if (!id) return;
+      const entityType = String(raw.entityType || "");
+      const tabId = entityType === "deposit" ? "deposits" : entityType === "withdrawal" ? "withdrawals" : entityType === "kyc" ? "kyc" : entityType === "support_message" ? "support" : entityType === "fiat_deposit" ? "fiatDeposits" : entityType === "binary_order" ? "orders" : undefined;
+      pushNotification({ id, type: String(raw.type || "notification"), title: String(raw.title || "Notification"), meta: String(raw.body || ""), tabId, ts: Date.now(), read: false });
+      if (!notifiedEventsRef.current.has(id)) {
+        notifiedEventsRef.current.add(id);
+        void playNotificationBell(String(raw.type || ""));
+      }
     };
     setRealtimeStatus("connecting");
     connectTimer = setTimeout(startPolling, 5000);
@@ -531,6 +527,7 @@ export default function AdminPage() {
         socket.on("disconnect", handleDisconnect);
         socket.on("connect_error", handleConnectError);
         socket.on("admin:update", handleAdminUpdate);
+        socket.on("notification:event", handleNotificationEvent);
         socket.on("binary:expired", reload);
         socket.on("binary:settled", reload);
         socket.on("deposit-addresses:update", reload);
@@ -546,6 +543,7 @@ export default function AdminPage() {
         socket.off("disconnect", handleDisconnect);
         socket.off("connect_error", handleConnectError);
         socket.off("admin:update", handleAdminUpdate);
+        socket.off("notification:event", handleNotificationEvent);
         socket.off("binary:expired", reload);
         socket.off("binary:settled", reload);
         socket.off("deposit-addresses:update", reload);
@@ -3724,11 +3722,6 @@ function SupportChatAdmin() {
         lastMsgIdRef.current = Math.max(lastMsgIdRef.current, message.id);
       }
       void fetch("/api/admin/support/conversations").then((r) => r.json()).then((d) => { if (active && d.conversations) setConversations(d.conversations); }).catch(() => {});
-      if (message.role === "user") {
-        playBeep();
-        setToast("New support message");
-        window.setTimeout(() => setToast(""), 4000);
-      }
     };
     let handleSupportConnect: (() => void) | null = null;
     connectRealtime().then((nextSocket) => {
