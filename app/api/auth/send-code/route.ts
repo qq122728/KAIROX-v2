@@ -1,3 +1,4 @@
+/** @deprecated Register/login verification codes are no longer used by the current Auth flow; reset-code routes remain active. */
 import { badRequest, handleError, json, readJson, tooManyRequests } from "@/lib/api";
 import { sendEmailCode } from "@/lib/email";
 import { canSendCode, generateCode, storeCode } from "@/lib/verification-code";

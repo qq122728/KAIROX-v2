@@ -9459,3 +9459,6 @@ a:focus-visible,
   box-sizing: border-box !important;
   border-color: rgba(120,145,170,0.16) !important;
 }
+.auth-phone-row { display: grid; grid-template-columns: minmax(88px, 0.42fr) minmax(0, 1fr); gap: 8px; width: 100%; min-width: 0; }
+.auth-phone-row > * { min-width: 0; }
+.auth-phone-row input { font-size: 16px; }

@@ -596,6 +596,7 @@ function initialize(database: DatabaseSync) {
   addColumn(database, "fiat_deposits", "proof_mime", "TEXT");
   addColumn(database, "fiat_deposits", "bank_reference_code", "TEXT");
   addColumn(database, "users", "email", "TEXT");
+  addColumn(database, "users", "phone", "TEXT");
   addColumn(database, "users", "public_uid", "TEXT");
   addColumn(database, "users", "withdrawal_password_hash", "TEXT");
   addColumn(database, "users", "remark", "TEXT");
@@ -607,6 +608,7 @@ function initialize(database: DatabaseSync) {
   addColumn(database, "users", "kyc_latest_submission_id", "INTEGER");
   addColumn(database, "users", "nickname", "TEXT");
   addColumn(database, "users", "invite_code_used", "TEXT");
+  database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone) WHERE phone IS NOT NULL");
   addColumn(database, "asset_transactions", "asset", "TEXT NOT NULL DEFAULT 'USDC'");
   addColumn(database, "asset_transactions", "actor_id", "INTEGER");
   addColumn(database, "withdrawals", "asset", "TEXT NOT NULL DEFAULT 'USDC'");

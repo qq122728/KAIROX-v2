@@ -1,3 +1,4 @@
+/** @deprecated Legacy verification-code login route retained for backwards compatibility; new clients use /api/auth/login. */
 import { createSession } from "@/lib/auth";
 import { badRequest, handleError, json, readJson, tooManyRequests } from "@/lib/api";
 import { assertLoginAllowed, clearLoginFailures, recordLoginFailure } from "@/lib/login-rate-limit";
