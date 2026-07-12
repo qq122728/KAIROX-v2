@@ -10,7 +10,9 @@ export function normalizePhone(value: unknown, countryCode?: unknown): string {
   const raw = String(value ?? "").trim();
   if (!raw) throw new Error("Phone number is required");
   const cc = String(countryCode ?? "").trim();
-  const combined = raw.startsWith("+") ? raw : `${cc.startsWith("+") ? cc : `+${cc}`}${raw}`;
+  const normalizedRaw = raw.replace(/[\s()\-]/g, "");
+  const prefix = cc.startsWith("+") ? cc : "+" + cc;
+  const combined = normalizedRaw.startsWith("+") ? normalizedRaw : prefix + normalizedRaw.replace(/^0+/, "");
   if (!cc && !raw.startsWith("+")) throw new Error("Country code is required");
   const parsed = parsePhoneNumberFromString(combined);
   if (!parsed || !parsed.isValid()) throw new Error("Enter a valid phone number with country code");

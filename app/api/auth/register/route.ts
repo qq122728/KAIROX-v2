@@ -31,7 +31,10 @@ export async function POST(request: Request) {
       inviteCode?: string;
       referralCode?: string;
     }>(request);
-    const identifierType = body.identifierType || (body.email ? "email" : "phone");
+    if (body.identifierType !== "email" && body.identifierType !== "phone") return badRequest("Choose email or phone registration");
+    const identifierType = body.identifierType;
+    if (identifierType === "email" && body.phone != null && String(body.phone).trim()) return badRequest("Phone must be empty for email registration");
+    if (identifierType === "phone" && body.email != null && String(body.email).trim()) return badRequest("Email must be empty for phone registration");
     let email: string | null = null;
     let phone: string | null = null;
     try {

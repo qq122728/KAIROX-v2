@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       recordLoginFailure("user", request, login);
       return badRequest("Invalid email/phone number or password");
     }
-    if (row.login_enabled === 0) return badRequest("Account login is disabled");
+    if (row.login_enabled === 0) return badRequest("Invalid email/phone number or password");
     clearLoginFailures("user", request, login);
     await createSession(row.id, "user");
     return json({ ok: true });

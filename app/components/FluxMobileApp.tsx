@@ -79,6 +79,22 @@ const routeStateFromPath = (pathname: string): { tab: Tab; symbol?: string } | n
 };
 const coins = ["USDC", "BTC", "ETH", "SOL"];
 const coinSet = new Set(coins);
+type CountryOption = { code: string; name: string; dialCode: string; flag: string };
+const authCountries: CountryOption[] = [
+  { code: "US", name: "United States", dialCode: "+1", flag: "🇺🇸" }, { code: "CA", name: "Canada", dialCode: "+1", flag: "🇨🇦" },
+  { code: "GB", name: "United Kingdom", dialCode: "+44", flag: "🇬🇧" }, { code: "DE", name: "Germany", dialCode: "+49", flag: "🇩🇪" }, { code: "FR", name: "France", dialCode: "+33", flag: "🇫🇷" }, { code: "IT", name: "Italy", dialCode: "+39", flag: "🇮🇹" }, { code: "ES", name: "Spain", dialCode: "+34", flag: "🇪🇸" }, { code: "NL", name: "Netherlands", dialCode: "+31", flag: "🇳🇱" }, { code: "CH", name: "Switzerland", dialCode: "+41", flag: "🇨🇭" }, { code: "SE", name: "Sweden", dialCode: "+46", flag: "🇸🇪" }, { code: "NO", name: "Norway", dialCode: "+47", flag: "🇳🇴" }, { code: "DK", name: "Denmark", dialCode: "+45", flag: "🇩🇰" }, { code: "FI", name: "Finland", dialCode: "+358", flag: "🇫🇮" }, { code: "IE", name: "Ireland", dialCode: "+353", flag: "🇮🇪" }, { code: "AT", name: "Austria", dialCode: "+43", flag: "🇦🇹" }, { code: "BE", name: "Belgium", dialCode: "+32", flag: "🇧🇪" }, { code: "LU", name: "Luxembourg", dialCode: "+352", flag: "🇱🇺" },
+  { code: "AU", name: "Australia", dialCode: "+61", flag: "🇦🇺" }, { code: "NZ", name: "New Zealand", dialCode: "+64", flag: "🇳🇿" }, { code: "JP", name: "Japan", dialCode: "+81", flag: "🇯🇵" }, { code: "KR", name: "South Korea", dialCode: "+82", flag: "🇰🇷" }, { code: "SG", name: "Singapore", dialCode: "+65", flag: "🇸🇬" }, { code: "HK", name: "Hong Kong", dialCode: "+852", flag: "🇭🇰" }, { code: "TW", name: "Taiwan", dialCode: "+886", flag: "🇹🇼" },
+  { code: "AE", name: "United Arab Emirates", dialCode: "+971", flag: "🇦🇪" }, { code: "IL", name: "Israel", dialCode: "+972", flag: "🇮🇱" }, { code: "UZ", name: "Uzbekistan", dialCode: "+998", flag: "🇺🇿" }, { code: "MY", name: "Malaysia", dialCode: "+60", flag: "🇲🇾" }
+];
+const DEFAULT_AUTH_COUNTRY = "MY";
+function readAuthCountryIso() {
+  if (typeof window === "undefined") return DEFAULT_AUTH_COUNTRY;
+  const stored = window.localStorage.getItem("kairox-auth-country");
+  return authCountries.some((country) => country.code === stored) ? stored! : DEFAULT_AUTH_COUNTRY;
+}
+function writeAuthCountryIso(code: string) {
+  if (typeof window !== "undefined") window.localStorage.setItem("kairox-auth-country", code);
+}
 const networks = ["TRC20", "ERC20"];
 const defaultDurations: Duration[] = [
   { label: "30s", seconds: 30, odds: 0.3, lossRate: 0.31 },
@@ -287,12 +303,15 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [swap, setSwap] = useState({ from: "USDC", to: "BTC", amount: "100" });
   const [kycStatus, setKycStatus] = useState<"none" | "pending" | "approved" | "rejected">("none");
   const [expandedSecurity, setExpandedSecurity] = useState<"login" | "withdraw" | null>("login");
-  const [authForm, setAuthForm] = useState({ email: "", phone: "", countryCode: "", password: "", confirmPassword: "", name: "", withdrawPassword: "", confirmWithdrawPassword: "", invite: "" });
+  const [authCountryIso, setAuthCountryIso] = useState(readAuthCountryIso);
+  const initialAuthCountry = authCountries.find((country) => country.code === authCountryIso) || authCountries.find((country) => country.code === DEFAULT_AUTH_COUNTRY)!;
+  const [authForm, setAuthForm] = useState({ email: "", phone: "", countryCode: initialAuthCountry.dialCode, password: "", confirmPassword: "", name: "", withdrawPassword: "", confirmWithdrawPassword: "", invite: "" });
   const [authError, setAuthError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<"email" | "phone" | "countryCode" | "password" | "confirmPassword" | "withdrawPassword" | "confirmWithdrawPassword", string>>>({});
   const [pwVisible, setPwVisible] = useState<Record<string, boolean>>({});
   const [registerStep, setRegisterStep] = useState<1 | 2>(1);
   const [registerIdentifierType, setRegisterIdentifierType] = useState<"email" | "phone">("email");
+  const [loginIdentifierType, setLoginIdentifierType] = useState<"email" | "phone">("email");
   const [forgotPasswordMode, setForgotPasswordMode] = useState(false);
   const [forgotStep, setForgotStep] = useState<1 | 2>(1);
   const [forgotEmail, setForgotEmail] = useState("");
@@ -528,8 +547,15 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
     const errs: typeof fieldErrors = {};
     if (stage === "login-password" || stage === "register-1") {
       if (stage === "login-password") {
-        const identifier = authForm.email.trim();
-        if (!identifier) errs.email = "Email or phone number is required";
+        if (loginIdentifierType === "email") {
+          const email = authForm.email.trim();
+          if (!email) errs.email = "Email is required";
+          else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errs.email = "Invalid email format";
+        } else {
+          if (!authForm.countryCode.trim()) errs.countryCode = "Country / Region is required";
+          if (!authForm.phone.trim()) errs.phone = "Phone number is required";
+          else { try { normalizePhone(authForm.phone, authForm.countryCode); } catch (error) { errs.phone = error instanceof Error ? error.message : "Enter a valid phone number"; } }
+        }
       } else if (registerIdentifierType === "email") {
         const email = authForm.email.trim();
         if (!email) errs.email = "Email is required";
@@ -579,7 +605,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ identifier: authForm.email.trim(), password: authForm.password })
+      body: JSON.stringify({ identifier: loginIdentifierType === "email" ? authForm.email.trim().toLowerCase() : normalizePhone(authForm.phone, authForm.countryCode), password: authForm.password })
     });
     if (!res.ok) {
       const message = (await res.json()).error || "Invalid email/phone number or password";
@@ -817,7 +843,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
       support={support}
     />
   );
-  if (authStatus === "unauthenticated" || !user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} registerIdentifierType={registerIdentifierType} setRegisterIdentifierType={(m) => { setRegisterIdentifierType(m); setAuthError(""); setFieldErrors({}); }} onForgotPassword={() => setForgotPasswordMode(true)} />;
+  if (authStatus === "unauthenticated" || !user) return <AuthScreen mode={authMode} setMode={(m) => { setAuthMode(m); setAuthError(""); setFieldErrors({}); setRegisterStep(1); }} form={authForm} setForm={(next) => { setAuthForm(next); }} fieldErrors={fieldErrors} clearFieldError={(k) => setFieldErrors((prev) => { if (!prev[k]) return prev; const out = { ...prev }; delete out[k]; return out; })} pwVisible={pwVisible} togglePw={(k) => setPwVisible((p) => ({ ...p, [k]: !p[k] }))} error={authError} login={login} register={register} registerStep={registerStep} goNextStep={goNextRegisterStep} goPrevStep={goPrevRegisterStep} support={support} registerIdentifierType={registerIdentifierType} setRegisterIdentifierType={(m) => { setRegisterIdentifierType(m); setAuthError(""); setFieldErrors({}); }} loginIdentifierType={loginIdentifierType} setLoginIdentifierType={(m) => { setLoginIdentifierType(m); setAuthError(""); setFieldErrors({}); }} authCountryIso={authCountryIso} setAuthCountryIso={(code) => { setAuthCountryIso(code); writeAuthCountryIso(code); }} onForgotPassword={() => loginIdentifierType === "phone" ? setAuthError("Phone-only accounts without a linked email must contact support to recover access.") : setForgotPasswordMode(true)} />;
 
   return (
     <main className={`mobile-shell${activeStack?.id === "support-chat" ? " support-chat-shell" : ""}`}>
@@ -890,10 +916,10 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
 
 type AuthFieldKey = "email" | "phone" | "countryCode" | "password" | "confirmPassword" | "withdrawPassword" | "confirmWithdrawPassword";
 
-function AuthField({ id, label, type, value, onChange, icon, error, optional, placeholder, autoComplete, canToggle, visible, onToggleVisible, right }: {
+function AuthField({ id, label, type, value, onChange, icon, error, optional, placeholder, autoComplete, inputMode, autoCorrect, spellCheck, canToggle, visible, onToggleVisible, right }: {
   id: string;
   label: string;
-  type: "text" | "email" | "password";
+  type: "text" | "email" | "password" | "tel";
   value: string;
   onChange: (v: string) => void;
   icon: React.ReactNode;
@@ -901,6 +927,9 @@ function AuthField({ id, label, type, value, onChange, icon, error, optional, pl
   optional?: boolean;
   placeholder?: string;
   autoComplete?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  autoCorrect?: string;
+  spellCheck?: boolean;
   canToggle?: boolean;
   visible?: boolean;
   onToggleVisible?: () => void;
@@ -913,7 +942,7 @@ function AuthField({ id, label, type, value, onChange, icon, error, optional, pl
       <div className="auth-field-label"><span>{label}</span>{optional && <em>(Optional)</em>}</div>
       <div className={`auth-input-wrap${hasError ? " error" : ""}`}>
         <span className="auth-input-icon" aria-hidden="true">{icon}</span>
-        <input id={id} name={id} type={effectiveType} autoComplete={autoComplete} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
+        <input id={id} name={id} type={effectiveType} inputMode={inputMode} autoCorrect={autoCorrect} spellCheck={spellCheck} autoComplete={autoComplete} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
         {canToggle && (
           <button type="button" className="auth-input-eye" aria-label={visible ? "Hide password" : "Show password"} onClick={onToggleVisible}>
             <Eye size={18} style={{ opacity: visible ? 1 : 0.55 }} />
@@ -927,7 +956,7 @@ function AuthField({ id, label, type, value, onChange, icon, error, optional, pl
   );
 }
 
-function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError, pwVisible, togglePw, error, login, register, registerStep, goNextStep, goPrevStep, support, registerIdentifierType, setRegisterIdentifierType, onForgotPassword }: {
+function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError, pwVisible, togglePw, error, login, register, registerStep, goNextStep, goPrevStep, support, registerIdentifierType, setRegisterIdentifierType, loginIdentifierType, setLoginIdentifierType, authCountryIso, setAuthCountryIso, onForgotPassword }: {
   mode: "login" | "register";
   setMode: (mode: "login" | "register") => void;
   form: { email: string; phone: string; countryCode: string; password: string; confirmPassword: string; name: string; withdrawPassword: string; confirmWithdrawPassword: string; invite: string };
@@ -945,8 +974,23 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
   support: { telegram: string; whatsapp: string };
   registerIdentifierType: "email" | "phone";
   setRegisterIdentifierType: (m: "email" | "phone") => void;
+  loginIdentifierType: "email" | "phone";
+  setLoginIdentifierType: (m: "email" | "phone") => void;
+  authCountryIso: string;
+  setAuthCountryIso: (code: string) => void;
   onForgotPassword: () => void;
 }) {
+  const [countryPickerOpen, setCountryPickerOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState("");
+  const activeIdentifierType = mode === "login" ? loginIdentifierType : registerIdentifierType;
+  const selectedCountry = authCountries.find((country) => country.code === authCountryIso) || authCountries.find((country) => country.code === DEFAULT_AUTH_COUNTRY)!;
+  const filteredCountries = authCountries.filter((country) => `${country.name} ${country.code} ${country.dialCode}`.toLowerCase().includes(countrySearch.trim().toLowerCase()));
+  const changeIdentifierType = (next: "email" | "phone") => {
+    if (mode === "login") setLoginIdentifierType(next); else setRegisterIdentifierType(next);
+    const nextCountry = authCountries.find((country) => country.code === authCountryIso) || authCountries.find((country) => country.code === DEFAULT_AUTH_COUNTRY)!;
+    setForm({ ...form, email: "", phone: "", countryCode: next === "phone" ? nextCountry.dialCode : form.countryCode });
+    clearFieldError("email"); clearFieldError("phone"); clearFieldError("countryCode");
+  };
   const updateField = <K extends keyof typeof form>(key: K, value: typeof form[K], errKey?: AuthFieldKey) => {
     setForm({ ...form, [key]: value });
     if (errKey) clearFieldError(errKey);
@@ -978,17 +1022,17 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
         </div>
         <form className="auth-card" onSubmit={onSubmit}>
           {error && <div className="auth-alert" role="alert"><span className="auth-alert-icon" aria-hidden="true">!</span><span>{error}</span></div>}
-          {mode === "register" && registerStep === 1 && (
-            <div className="auth-method-tabs" aria-label="Registration method">
-              <button type="button" className={`auth-method-tab${registerIdentifierType === "email" ? " active" : ""}`} onClick={() => { setRegisterIdentifierType("email"); setForm({ ...form, email: "", phone: "", countryCode: "" }); clearFieldError("email"); clearFieldError("phone"); clearFieldError("countryCode"); }}>Email</button>
-              <button type="button" className={`auth-method-tab${registerIdentifierType === "phone" ? " active" : ""}`} onClick={() => { setRegisterIdentifierType("phone"); setForm({ ...form, email: "", phone: "", countryCode: "" }); clearFieldError("email"); clearFieldError("phone"); clearFieldError("countryCode"); }}>Phone</button>
+          {((mode === "register" && registerStep === 1) || mode === "login") && (
+            <div className="auth-method-tabs" aria-label={mode === "login" ? "Sign-in method" : "Registration method"}>
+              <button type="button" className={`auth-method-tab${activeIdentifierType === "email" ? " active" : ""}`} onClick={() => changeIdentifierType("email")}>Email</button>
+              <button type="button" className={`auth-method-tab${activeIdentifierType === "phone" ? " active" : ""}`} onClick={() => changeIdentifierType("phone")}>Phone</button>
             </div>
           )}
           {(mode === "login" || (mode === "register" && registerStep === 1)) && (
-            mode === "login" || registerIdentifierType === "email" ? <AuthField id="auth-email" label={mode === "login" ? "Email or phone number" : "Email address"} type={mode === "login" ? "text" : "email"} value={form.email} onChange={(v) => updateField("email", v, "email")} icon={<Mail size={18} />} error={fieldErrors.email} placeholder={mode === "login" ? "Enter your email or phone number" : "Enter your email"} autoComplete="username" /> : (
+            activeIdentifierType === "email" ? <AuthField id="auth-email" label="Email address" type="email" value={form.email} onChange={(v) => updateField("email", v, "email")} icon={<Mail size={18} />} error={fieldErrors.email} placeholder="Enter your email" autoComplete="username" /> : (
               <div className="auth-phone-row">
-                <AuthField id="auth-country-code" label="Country code" type="text" value={form.countryCode} onChange={(v) => updateField("countryCode", v, "countryCode")} icon={<span>+</span>} error={fieldErrors.countryCode} placeholder="+1" autoComplete="tel-country-code" />
-                <AuthField id="auth-phone" label="Phone number" type="text" value={form.phone} onChange={(v) => updateField("phone", v, "phone")} icon={<Mail size={18} />} error={fieldErrors.phone} placeholder="Phone number" autoComplete="tel" />
+                <button type="button" aria-label={`Country / Region ${selectedCountry.name} ${form.countryCode || selectedCountry.dialCode}`} className={`auth-country-trigger${fieldErrors.countryCode ? " error" : ""}`} onClick={() => { setCountryPickerOpen(true); setCountrySearch(""); }}><span>{selectedCountry.flag}</span><span>{form.countryCode || selectedCountry.dialCode}</span><ChevronRight size={15} /></button>
+                <AuthField id="auth-phone" label="Phone number" type="tel" inputMode="tel" autoCorrect="off" spellCheck={false} value={form.phone} onChange={(v) => updateField("phone", v, "phone")} icon={<Mail size={18} />} error={fieldErrors.phone} placeholder="Phone number" autoComplete="tel" />
               </div>
             )
           )}
@@ -1071,7 +1115,7 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
           {mode === "register" && registerStep === 2 && (
             <AuthField
               id="auth-invite"
-              label="Invite Code"
+              label="Referral Code"
               type="text"
               optional
               value={form.invite}
@@ -1090,6 +1134,15 @@ function AuthScreen({ mode, setMode, form, setForm, fieldErrors, clearFieldError
             <button type="button" className="link-button auth-switch" onClick={() => setMode(mode === "login" ? "register" : "login")}>{mode === "login" ? <>No account? <em>Create one</em></> : <>Have an account? <em>Sign in</em></>}</button>
           )}
         </form>
+        {countryPickerOpen && (
+          <div className="auth-country-backdrop" role="presentation" onClick={() => setCountryPickerOpen(false)}>
+            <section className="auth-country-sheet" role="dialog" aria-label="Choose country or region" onClick={(event) => event.stopPropagation()}>
+              <div className="auth-country-sheet-head"><h2>Choose country or region</h2><button type="button" onClick={() => setCountryPickerOpen(false)} aria-label="Close">×</button></div>
+              <input className="auth-country-search" value={countrySearch} onChange={(event) => setCountrySearch(event.target.value)} placeholder="Search country or code" autoComplete="off" />
+              <div className="auth-country-list">{filteredCountries.map((country) => <button type="button" className="auth-country-option" key={country.code} onClick={() => { setAuthCountryIso(country.code); writeAuthCountryIso(country.code); setForm({ ...form, countryCode: country.dialCode }); clearFieldError("countryCode"); setCountryPickerOpen(false); }}><span className="auth-country-flag">{country.flag}</span><span className="auth-country-name">{country.name}</span><span className="auth-country-iso">{country.code}</span><span>{country.dialCode}</span>{selectedCountry.code === country.code && form.countryCode === country.dialCode && <span aria-label="Selected">✓</span>}</button>)}</div>
+            </section>
+          </div>
+        )}
       </section>
     </main>
   );

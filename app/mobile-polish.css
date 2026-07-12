@@ -9462,3 +9462,15 @@ a:focus-visible,
 .auth-phone-row { display: grid; grid-template-columns: minmax(88px, 0.42fr) minmax(0, 1fr); gap: 8px; width: 100%; min-width: 0; }
 .auth-phone-row > * { min-width: 0; }
 .auth-phone-row input { font-size: 16px; }
+.auth-country-trigger { min-height: 48px; align-self: end; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; padding: 0 10px; color: var(--text-primary, #f3f7fb); background: #101d2b; border: 1px solid rgba(120,145,170,.16); border-radius: 14px; font-size: 14px; cursor: pointer; }
+.auth-country-trigger.error { border-color: #ef6b7a; }
+.auth-country-backdrop { position: fixed; inset: 0; z-index: 100; display: flex; align-items: flex-end; justify-content: center; background: rgba(3,9,16,.58); padding: 0; }
+.auth-country-sheet { width: min(100%, 460px); max-height: 70dvh; padding: 16px 16px calc(16px + env(safe-area-inset-bottom)); background: #0d1a28; border: 1px solid rgba(120,145,170,.18); border-bottom: 0; border-radius: 18px 18px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,.24); }
+.auth-country-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.auth-country-sheet-head h2 { margin: 0; font-size: 16px; }
+.auth-country-sheet-head button { width: 40px; height: 40px; border: 0; background: transparent; color: inherit; font-size: 26px; }
+.auth-country-search { width: 100%; height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid rgba(120,145,170,.18); background: #101d2b; color: inherit; font-size: 16px; box-sizing: border-box; }
+.auth-country-list { overflow-y: auto; max-height: calc(70dvh - 126px); margin-top: 10px; }
+.auth-country-option { width: 100%; min-height: 52px; display: grid; grid-template-columns: 28px minmax(0,1fr) auto auto 20px; gap: 8px; align-items: center; border: 0; border-bottom: 1px solid rgba(120,145,170,.08); background: transparent; color: inherit; text-align: left; font-size: 14px; }
+.auth-country-flag { font-size: 20px; }
+.auth-country-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
