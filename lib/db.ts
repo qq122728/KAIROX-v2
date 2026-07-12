@@ -511,6 +511,22 @@ function initialize(database: DatabaseSync) {
   );
   `);
 
+  database.exec(`CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    audience TEXT NOT NULL CHECK(audience IN ('user', 'admin')),
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT "",
+    entity_type TEXT,
+    entity_id TEXT,
+    payload_json TEXT,
+    read_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );`);
+  database.exec("CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(audience, user_id, id);");
+  database.exec("CREATE INDEX IF NOT EXISTS idx_notifications_unread ON notifications(audience, user_id, read_at);");
   database.exec("CREATE INDEX IF NOT EXISTS idx_email_codes_email ON email_verification_codes(email, created_at);");
   database.exec("CREATE INDEX IF NOT EXISTS idx_support_messages_user_created ON support_messages(user_id, created_at);");
 
