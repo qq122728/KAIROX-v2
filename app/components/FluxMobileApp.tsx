@@ -1552,10 +1552,10 @@ function CryptoIcon({ asset }: { asset: string }) {
       <img
         src={`/icons/${slug}.svg`}
         alt={key}
-        loading="lazy"
+        loading="eager"
         onError={(e) => {
           const t = e.currentTarget;
-          t.src = `https://assets.coincap.io/assets/icons/${slug}@2x.png`;
+          if (!t.src.endsWith("/icons/coin.svg")) t.src = "/icons/coin.svg";
           t.onerror = () => {
             t.style.display = "none";
             const fb = t.nextElementSibling as HTMLElement | null;
@@ -1583,7 +1583,7 @@ function NetworkIcon({ network, icon }: { network: string; icon?: string }) {
   const slug = icon || networkIconSlug(network);
   return (
     <span className={`coin-dot coin-real network-icon network-icon-${slug}`} aria-hidden="true">
-      <img src={`/icons/${slug}.svg`} alt="" loading="lazy" onError={(event) => { const image = event.currentTarget; if (!image.src.endsWith("/icons/coin.svg")) image.src = "/icons/coin.svg"; }} />
+      <img src={`/icons/${slug}.svg`} alt="" loading="eager" onError={(event) => { const image = event.currentTarget; if (!image.src.endsWith("/icons/coin.svg")) image.src = "/icons/coin.svg"; }} />
     </span>
   );
 }
