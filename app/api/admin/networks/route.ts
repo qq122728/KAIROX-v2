@@ -3,7 +3,7 @@ import { badRequest, handleError, json, readJson } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { networkConfigDefaults, normalizeNetworkCode } from "@/lib/network-config";
 
-const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
+
 
 type NetworkPayload = {
   id?: number;
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
     const body = await readJson<NetworkPayload>(request);
     const asset = clean(body.asset).toUpperCase();
     const code = normalizeNetworkCode(clean(body.code));
-    if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
+    if (!asset || !getDb().prepare("SELECT 1 FROM assets WHERE code = ?").get(asset)) return badRequest("Unsupported asset");
     if (!code) return badRequest("Network code is required");
     if (![body.depositFee, body.withdrawFee, body.minDeposit, body.minWithdraw].every(isNonNegativeNumber)) return badRequest("Network fees and minimums must be non-negative numbers");
     const defaults = networkConfigDefaults(asset, code);

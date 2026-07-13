@@ -5,8 +5,6 @@ import { hashPassword } from "@/lib/password";
 import { emitRealtime, userRoom } from "@/lib/realtime";
 import { ensureUserAssetRow, isStableAsset, normalizeAsset, syncUserStableBalance } from "@/lib/balances";
 
-const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
-
 type UserPatch = {
   userId: number | string;
   delta?: number;
@@ -58,7 +56,7 @@ export async function PATCH(request: Request) {
     }
     const asset = normalizeAsset(body.asset || "USDC");
     if (!/^[A-Z0-9]{2,12}$/.test(asset)) return badRequest("Invalid asset");
-    if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
+    if (!getDb().prepare("SELECT 1 FROM assets WHERE code = ? AND is_active = 1").get(asset)) return badRequest("Unsupported asset");
 
     if (typeof body.delta === "number" && Number.isFinite(body.delta) && body.delta !== 0) {
       if (targetUser.id === admin.id) return badRequest("Admins cannot adjust their own funds");

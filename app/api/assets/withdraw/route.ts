@@ -9,7 +9,7 @@ import { getAssetUsdPrice } from "@/lib/swap";
 import { consumeUserRate } from "@/lib/rate-limit";
 import { normalizeNetworkCode } from "@/lib/network-config";
 
-const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
+
 const withdrawalPasswordLimit = Number(process.env.PERP_SIM_WITHDRAW_PASSWORD_LIMIT || 5);
 const withdrawalPasswordWindowMs = Number(process.env.PERP_SIM_WITHDRAW_PASSWORD_WINDOW_MS || 10 * 60 * 1000);
 
@@ -34,7 +34,8 @@ export async function POST(request: Request) {
     const amount = Number(body.amount);
     const minUsd = Number(settings.min_withdrawal_usdc || settings.min_withdrawal_amount || 10);
     if (!asset) return badRequest("Asset is required");
-    if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
+    const assetConfig = getDb().prepare("SELECT withdraw_enabled, is_active FROM assets WHERE code = ?").get(asset) as { withdraw_enabled: number; is_active: number } | undefined;
+    if (!assetConfig || !assetConfig.is_active || !assetConfig.withdraw_enabled) return badRequest("Withdrawals are disabled for this asset");
     if (!networkCode) return badRequest("Withdrawal network is required");
     if (!Number.isFinite(amount) || amount <= 0) return badRequest("Invalid withdrawal amount");
     const networkConfig = getDb().prepare("SELECT withdraw_enabled, min_withdraw FROM asset_networks WHERE asset = ? AND code = ? AND is_active = 1").get(asset, networkCode) as { withdraw_enabled: number; min_withdraw: number } | undefined;

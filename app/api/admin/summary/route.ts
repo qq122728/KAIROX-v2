@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import { handleError, json } from "@/lib/api";
 import { listMarkets, listOpenPositions, listOrders, listPriceTicks } from "@/lib/trading";
 import { getSettings } from "@/lib/settings";
+import { assetConfigFromRow } from "@/lib/asset-config";
 
 export async function GET() {
   try {
@@ -19,8 +20,9 @@ export async function GET() {
       )
       .all();
     const assetRows = getDb()
-      .prepare("SELECT user_id, asset, balance, locked FROM user_assets WHERE asset IN ('USDC', 'BTC', 'ETH', 'SOL') ORDER BY asset")
+      .prepare("SELECT ua.user_id, ua.asset, ua.balance, ua.locked FROM user_assets ua JOIN assets a ON a.code = ua.asset ORDER BY ua.asset")
       .all();
+    const assets = (getDb().prepare("SELECT * FROM assets ORDER BY sort_order, id").all() as Record<string, unknown>[]).map(assetConfigFromRow);
     const ledger = getDb()
       .prepare(
         `SELECT t.*, u.public_uid AS user_public_uid, u.username, u.email
@@ -106,6 +108,7 @@ export async function GET() {
         created_at: admin.created_at
       },
       settings: getSettings(),
+      assets,
       users,
       assetRows,
       ledger,
