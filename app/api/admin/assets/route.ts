@@ -1,0 +1,18 @@
+import { requireAdmin } from "@/lib/auth";
+import { badRequest, handleError, json, readJson } from "@/lib/api";
+import { getDb } from "@/lib/db";
+import { assetConfigFromRow, normalizeAssetCode } from "@/lib/asset-config";
+
+type Body = { id?: number; code?: string; symbol?: string; name?: string; icon?: string; sortOrder?: number; depositEnabled?: boolean; withdrawEnabled?: boolean; tradeEnabled?: boolean; isActive?: boolean };
+const clean = (v: unknown) => String(v ?? "").trim();
+function validate(body: Body) {
+  const code = normalizeAssetCode(body.code);
+  if (!code || !/^[A-Z0-9_-]{2,20}$/.test(code)) return "Valid asset code is required";
+  if (!clean(body.name)) return "Asset name is required";
+  const sort = Number(body.sortOrder ?? 0);
+  if (!Number.isInteger(sort) || sort < 0) return "Sort order must be a non-negative integer";
+  return null;
+}
+export async function GET() { try { await requireAdmin(); return json({ assets: (getDb().prepare("SELECT * FROM assets ORDER BY sort_order, id").all() as Record<string, unknown>[]).map(assetConfigFromRow) }); } catch (e) { return handleError(e); } }
+export async function POST(request: Request) { try { await requireAdmin(); const body = await readJson<Body>(request); const error = validate(body); if (error) return badRequest(error); const code = normalizeAssetCode(body.code); getDb().prepare("INSERT INTO assets (code,symbol,name,icon,sort_order,deposit_enabled,withdraw_enabled,trade_enabled,is_active,updated_at) VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(code) DO UPDATE SET symbol=excluded.symbol,name=excluded.name,icon=excluded.icon,sort_order=excluded.sort_order,deposit_enabled=excluded.deposit_enabled,withdraw_enabled=excluded.withdraw_enabled,trade_enabled=excluded.trade_enabled,is_active=excluded.is_active,updated_at=CURRENT_TIMESTAMP").run(code, clean(body.symbol) || code, clean(body.name), clean(body.icon) || "coin", Number(body.sortOrder ?? 0), body.depositEnabled === false ? 0 : 1, body.withdrawEnabled === false ? 0 : 1, body.tradeEnabled === false ? 0 : 1, body.isActive === false ? 0 : 1); return json({ ok: true }); } catch (e) { return handleError(e); } }
+export async function PATCH(request: Request) { try { await requireAdmin(); const body = await readJson<Body>(request); if (!body.id) return badRequest("Asset ID is required"); const current = getDb().prepare("SELECT * FROM assets WHERE id=?").get(body.id) as Record<string, unknown> | undefined; if (!current) return badRequest("Asset does not exist"); const error = validate({ ...current, ...body, code: body.code ?? current.code, name: body.name ?? current.name, sortOrder: body.sortOrder ?? current.sort_order } as Body); if (error) return badRequest(error); getDb().prepare("UPDATE assets SET code=?,symbol=?,name=?,icon=?,sort_order=?,deposit_enabled=?,withdraw_enabled=?,trade_enabled=?,is_active=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").run(normalizeAssetCode(body.code ?? current.code), clean(body.symbol ?? current.symbol), clean(body.name ?? current.name), clean(body.icon ?? current.icon) || "coin", Number(body.sortOrder ?? current.sort_order), typeof body.depositEnabled === "boolean" ? (body.depositEnabled ? 1 : 0) : Number(current.deposit_enabled), typeof body.withdrawEnabled === "boolean" ? (body.withdrawEnabled ? 1 : 0) : Number(current.withdraw_enabled), typeof body.tradeEnabled === "boolean" ? (body.tradeEnabled ? 1 : 0) : Number(current.trade_enabled), typeof body.isActive === "boolean" ? (body.isActive ? 1 : 0) : Number(current.is_active), body.id); return json({ ok: true }); } catch (e) { return handleError(e); } }

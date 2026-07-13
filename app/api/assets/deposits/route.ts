@@ -8,7 +8,7 @@ import { normalizeNetwork } from "@/lib/networks";
 import { normalizeNetworkCode } from "@/lib/network-config";
 import { consumeUserRate } from "@/lib/rate-limit";
 
-const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
+
 const depositLimit = Math.max(1, Number(process.env.PERP_SIM_DEPOSIT_LIMIT || 10));
 const depositWindowMs = Math.max(1000, Number(process.env.PERP_SIM_DEPOSIT_WINDOW_MS || 60_000));
 const supportedProofTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -51,7 +51,8 @@ export async function POST(request: Request) {
     const amount = Number(form.get("amount") || 0);
     const txHash = String(form.get("txHash") || "").trim() || null;
     if (!asset || !network) return badRequest("Asset and network are required");
-    if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
+    const assetConfig = getDb().prepare("SELECT deposit_enabled, is_active FROM assets WHERE code = ?").get(asset) as { deposit_enabled: number; is_active: number } | undefined;
+    if (!assetConfig || !assetConfig.is_active || !assetConfig.deposit_enabled) return badRequest("Deposits are disabled for this asset");
     if (!Number.isFinite(amount) || amount <= 0) return badRequest("Invalid deposit amount");
     const networkCode = normalizeNetworkCode(network);
     const networkConfig = getDb().prepare("SELECT deposit_enabled, min_deposit FROM asset_networks WHERE asset = ? AND code = ? AND is_active = 1").get(asset, networkCode) as { deposit_enabled: number; min_deposit: number } | undefined;

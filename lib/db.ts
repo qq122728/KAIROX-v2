@@ -4,6 +4,7 @@ import { randomInt } from "node:crypto";
 import path from "node:path";
 import { hashPassword } from "./password";
 import { networkConfigDefaults } from "./network-config";
+import { defaultAssetConfigs } from "./asset-config";
 
 let db: DatabaseSync | null = null;
 
@@ -644,6 +645,10 @@ function initialize(database: DatabaseSync) {
   addColumn(database, "user_deposit_addresses", "updated_by", "INTEGER");
   addColumn(database, "user_deposit_addresses", "updated_at", "TEXT");
   database.exec("CREATE TABLE IF NOT EXISTS asset_networks (id INTEGER PRIMARY KEY AUTOINCREMENT, asset TEXT NOT NULL, code TEXT NOT NULL, name TEXT NOT NULL, icon TEXT NOT NULL DEFAULT 'coin', deposit_enabled INTEGER NOT NULL DEFAULT 1, withdraw_enabled INTEGER NOT NULL DEFAULT 1, deposit_fee REAL NOT NULL DEFAULT 0, withdraw_fee REAL NOT NULL DEFAULT 0, min_deposit REAL NOT NULL DEFAULT 0, min_withdraw REAL NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, UNIQUE(asset, code));");
+  database.exec("CREATE TABLE IF NOT EXISTS assets (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, symbol TEXT NOT NULL, name TEXT NOT NULL, icon TEXT NOT NULL DEFAULT 'coin', sort_order INTEGER NOT NULL DEFAULT 0, deposit_enabled INTEGER NOT NULL DEFAULT 1, withdraw_enabled INTEGER NOT NULL DEFAULT 1, trade_enabled INTEGER NOT NULL DEFAULT 1, is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT)");
+  const ensureAsset = database.prepare("INSERT INTO assets (code, symbol, name, icon, sort_order, deposit_enabled, withdraw_enabled, trade_enabled, is_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(code) DO NOTHING");
+  for (const asset of defaultAssetConfigs()) ensureAsset.run(asset.code, asset.symbol, asset.name, asset.icon, asset.sortOrder, asset.depositEnabled ? 1 : 0, asset.withdrawEnabled ? 1 : 0, asset.tradeEnabled ? 1 : 0, asset.isActive ? 1 : 0);
+
   addColumn(database, "orders", "actor_id", "INTEGER");
   database.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;");
   database.exec("CREATE INDEX IF NOT EXISTS idx_login_attempts_locked_until ON login_attempts(locked_until);");

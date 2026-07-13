@@ -38,6 +38,7 @@ import type { AdminNavGroup, AdminNavItem } from "./components/AdminSidebar";
 import AdminTable, { type AdminTableColumn } from "./components/AdminTable";
 import AdminToolbar, { type AdminToolbarFilter } from "./components/AdminToolbar";
 import NetworkConfigTab from "./components/NetworkConfigTab";
+import AssetConfigTab from "./components/AssetConfigTab";
 import EmptyState from "./components/EmptyState";
 import SectionCard from "./components/SectionCard";
 import StatCard from "./components/StatCard";
@@ -60,6 +61,7 @@ type User = {
   created_at: string;
 };
 type AssetRow = { user_id: number; asset: string; balance: number; locked: number };
+type AdminAssetConfig = { id?: number; code: string; symbol: string; name: string; icon: string; sortOrder: number; depositEnabled: boolean; withdrawEnabled: boolean; tradeEnabled: boolean; isActive: boolean };
 type LedgerRow = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; asset: string; type: string; amount: number; status: string; note: string | null; created_at: string };
 type Market = { id: number; symbol: string; price: number; max_leverage: number; fee_rate: number; maintenance_margin_rate: number; is_active: number };
 type Position = { id: number; username: string; email?: string | null; symbol: string; side: string; margin: number; leverage: number; unrealized_pnl: number; pnl_override: number | null };
@@ -67,6 +69,7 @@ type Order = { id: number; user_id: number; user_public_uid?: string | null; use
 type Withdrawal = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; amount: number; address: string; status: string; note: string | null; created_at: string };
 type DepositAddress = { id: number; asset: string; network: string; address: string; is_active: number };
 type UserDepositAddress = DepositAddress & { user_id: number; user_public_uid?: string | null; email: string | null; username: string };
+type AdminNetworkConfig = { id?: number; asset: string; code: string; name: string; icon: string; depositEnabled: boolean; withdrawEnabled: boolean; isActive: boolean };
 
 const ASSET_NETWORKS: Record<string, string[]> = {
   USDC: ["TRC20", "ERC20", "BEP20", "Polygon", "Solana"],
@@ -102,6 +105,7 @@ type AdminData = {
   settings: Settings;
   users: User[];
   assetRows: AssetRow[];
+  assets: AdminAssetConfig[];
   ledger: LedgerRow[];
   deposits: Deposit[];
   kycSubmissions: KycSubmission[];
@@ -110,7 +114,7 @@ type AdminData = {
   orders: Order[];
   withdrawals: Withdrawal[];
 };
-type TabId = "dashboard" | "networks" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "admins" | "orders" | "markets" | "settings" | "support" | "fiatDeposits" | "fiatBankAccounts";
+type TabId = "dashboard" | "assets" | "networks" | "depositAddresses" | "deposits" | "withdrawals" | "kyc" | "users" | "admins" | "orders" | "markets" | "settings" | "support" | "fiatDeposits" | "fiatBankAccounts";
 type ModalState =
   | { type: "funds"; user: User }
   | { type: "loginPassword"; user: User }
@@ -144,7 +148,6 @@ type AdminNotification = {
   read: boolean;
 };
 
-const coins = ["USDC", "BTC", "ETH", "SOL"];
 /* Events that always ring the bell when first seen — high-signal account / cashflow events.
    binary:created / trade:created additionally ring only above the size thresholds below. */
 const alwaysRingTypes = new Set([
@@ -650,6 +653,7 @@ export default function AdminPage() {
       items: [
         { id: "users", label: "用户管理", icon: Users },
         { id: "admins", label: "管理员", icon: UserPlus },
+        { id: "assets", label: "资产配置", icon: CircleDollarSign },
         { id: "depositAddresses", label: "资金地址", icon: Landmark },
         { id: "networks", label: "网络配置", icon: SlidersHorizontal },
       ],
@@ -675,6 +679,7 @@ export default function AdminPage() {
   ];
   const pageMeta: Record<TabId, { title: string; description: string }> = {
     dashboard: { title: "首页", description: "今日待办、平台状态与资金风险总览。" },
+    assets: { title: "资产配置", description: "统一管理用户端资产及 Deposit、Withdraw、Trade 开关。" },
     depositAddresses: { title: "资金地址", description: "平台默认地址与用户自定义地址管理。" },
     networks: { title: "网络配置", description: "统一管理 Deposit 与 Withdraw 共用的网络参数。" },
     deposits: { title: "充值审核", description: "处理用户充值凭证与入账状态。" },
@@ -779,12 +784,13 @@ export default function AdminPage() {
         {!loading && data && (
           <>
             {tab === "dashboard" && <Dashboard data={data} lastSyncAt={lastSyncAt} realtimeStatus={realtimeStatus} setTab={setTab} unreadNotifications={unreadNotifications} />}
+            {tab === "assets" && <AssetConfigTab />}
             {tab === "networks" && <NetworkConfigTab />}
-            {tab === "depositAddresses" && <DepositAddressesTab mutate={mutate} />}
+            {tab === "depositAddresses" && <DepositAddressesTab mutate={mutate} assets={data.assets} />}
             {tab === "deposits" && <DepositsTab deposits={deposits} all={data.deposits} status={depositStatus} setStatus={setDepositStatus} mutate={mutate} />}
             {tab === "withdrawals" && <WithdrawalsTab withdrawals={withdrawals} all={data.withdrawals} status={withdrawStatus} setStatus={setWithdrawStatus} mutate={mutate} />}
             {tab === "kyc" && <KycTab submissions={kycRows} all={data.kycSubmissions} status={kycStatusFilter} setStatus={setKycStatusFilter} mutate={mutate} />}
-            {tab === "users" && <UsersTab users={users} assets={data.assetRows} query={query} setQuery={setQuery} mutate={mutate} openModal={setModal} />}
+            {tab === "users" && <UsersTab users={users} assets={data.assetRows} assetConfigs={data.assets} query={query} setQuery={setQuery} mutate={mutate} openModal={setModal} />}
             {tab === "admins" && <AdminAccountsTab admins={data.users.filter((user) => user.role === "admin")} currentAdmin={data.currentAdmin} mutate={mutate} />}
             {tab === "orders" && <ManualOrdersTab orders={orders} allOrders={data.orders} query={orderQuery} setQuery={setOrderQuery} status={orderStatus} setStatus={setOrderStatus} mutate={mutate} />}
             {tab === "markets" && <MarketsTab markets={data.markets} newMarket={newMarket} setNewMarket={setNewMarket} mutate={mutate} />}
@@ -795,7 +801,7 @@ export default function AdminPage() {
           </>
         )}
       </AdminLayout>
-      {modal && <UserModal modal={modal} assets={data?.assetRows ?? []} close={() => setModal(null)} mutate={mutate} />}
+      {modal && <UserModal modal={modal} assets={data?.assetRows ?? []} assetConfigs={data?.assets ?? []} close={() => setModal(null)} mutate={mutate} />}
       {confirm && <ConfirmDialog confirm={confirm} close={() => setConfirm(null)} />}
     </main>
   );
@@ -1265,9 +1271,10 @@ function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; cu
   );
 }
 
-function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users: User[]; assets: AssetRow[]; query: string; setQuery: (value: string) => void; mutate: AdminMutate; openModal: (modal: ModalState) => void }) {
+function UsersTab({ users, assets, assetConfigs, query, setQuery, mutate, openModal }: { users: User[]; assets: AssetRow[]; assetConfigs: AdminAssetConfig[]; query: string; setQuery: (value: string) => void; mutate: AdminMutate; openModal: (modal: ModalState) => void }) {
   const [activeFilter, setActiveFilter] = useState<UserFilterId>("all");
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const coins = assetConfigs.map((item) => item.code);
   const assetsByUser = useMemo(() => {
     const map = new Map<number, AssetRow[]>();
     assets.forEach((row) => {
@@ -1495,7 +1502,7 @@ function UsersTab({ users, assets, query, setQuery, mutate, openModal }: { users
   );
 }
 
-function UserModal({ modal, assets, close, mutate }: { modal: Exclude<ModalState, null>; assets: AssetRow[]; close: () => void; mutate: AdminMutate }) {
+function UserModal({ modal, assets, assetConfigs, close, mutate }: { modal: Exclude<ModalState, null>; assets: AssetRow[]; assetConfigs: AdminAssetConfig[]; close: () => void; mutate: AdminMutate }) {
   const [asset, setAsset] = useState("USDC");
   const [operation, setOperation] = useState<"credit" | "debit" | "freeze" | "unfreeze">("credit");
   const [amount, setAmount] = useState("0");
@@ -1504,6 +1511,7 @@ function UserModal({ modal, assets, close, mutate }: { modal: Exclude<ModalState
   const [remark, setRemark] = useState(modal.user.remark || "");
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+  const coins = assetConfigs.map((item) => item.code);
   const balances = coins.map((coin) => assets.find((row) => row.user_id === modal.user.id && row.asset === coin) || { user_id: modal.user.id, asset: coin, balance: 0, locked: 0 });
 
   async function submit() {
@@ -2277,8 +2285,10 @@ function addressStatusTone(enabled: number): StatusChipTone {
   return enabled ? "success" : "muted";
 }
 
-function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
+function DepositAddressesTab({ mutate, assets }: { mutate: AdminMutate; assets: AdminAssetConfig[] }) {
   const [rows, setRows] = useState<{ defaultAddresses: DepositAddress[]; userAddresses: UserDepositAddress[] }>({ defaultAddresses: [], userAddresses: [] });
+  const [networks, setNetworks] = useState<AdminNetworkConfig[]>([]);
+  const [configuredAssets, setConfiguredAssets] = useState<AdminAssetConfig[]>(assets);
   const [form, setForm] = useState<{ scope: DepositAddressScope; userId: string; asset: string; network: string; address: string }>({ scope: "default", userId: "", asset: "USDC", network: "TRC20", address: "" });
   const [editing, setEditing] = useState<{ scope: DepositAddressScope; id: number } | null>(null);
   const [drawerMode, setDrawerMode] = useState<"create" | "edit" | null>(null);
@@ -2290,12 +2300,37 @@ function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
     const res = await fetch("/api/admin/deposit-addresses", { cache: "no-store" });
     if (res.ok) setRows(await res.json());
   }
+  async function loadNetworks() {
+    const res = await fetch("/api/admin/networks", { cache: "no-store" });
+    if (res.ok) {
+      const body = await res.json() as { networks?: Array<Record<string, unknown>> };
+      setNetworks((body.networks || []).map((row) => ({
+        id: Number(row.id), asset: String(row.asset || "").toUpperCase(), code: String(row.code || "").toUpperCase(),
+        name: String(row.name || ""), icon: String(row.icon || "coin"), depositEnabled: Boolean(row.deposit_enabled),
+        withdrawEnabled: Boolean(row.withdraw_enabled), isActive: Boolean(row.is_active),
+      })));
+    }
+  }
+  async function loadAssets() {
+    const res = await fetch("/api/admin/assets", { cache: "no-store" });
+    if (res.ok) {
+      const body = await res.json() as { assets?: AdminAssetConfig[] };
+      setConfiguredAssets(body.assets || []);
+    }
+  }
   useEffect(() => {
-    loadAddresses();
+    void loadAddresses();
+    void loadNetworks();
+    void loadAssets();
   }, []);
 
+  const currentAssets = configuredAssets.length ? configuredAssets : assets;
+
   function resetForm(scope: DepositAddressScope = "default") {
-    setForm({ scope, userId: "", asset: "USDC", network: "TRC20", address: "" });
+    const activeAssets = currentAssets.filter((item) => item.isActive).sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
+    const asset = activeAssets[0]?.code || "";
+    const network = networks.find((item) => item.asset === asset && item.isActive && item.depositEnabled)?.code || "";
+    setForm({ scope, userId: "", asset, network, address: "" });
     setEditing(null);
     setError("");
   }
@@ -2312,8 +2347,11 @@ function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
 
   async function saveAddress() {
     setError("");
-    if (!form.asset || !ASSET_NETWORKS[form.asset]) return setError("请选择有效币种");
-    if (!form.network.trim()) return setError("网络代码不能为空");
+    const selectedAsset = currentAssets.find((item) => item.code === form.asset);
+    const selectedNetwork = networks.find((item) => item.asset === form.asset && item.code === form.network);
+    if (!form.asset || !selectedAsset || (!selectedAsset.isActive && !editing)) return setError("请选择有效且启用的币种");
+    if (!form.network.trim() || (!selectedNetwork && !editing)) return setError("请选择有效且启用的网络");
+    if (selectedNetwork && (!selectedNetwork.isActive || !selectedNetwork.depositEnabled) && !editing) return setError("该网络当前未启用充值");
     if (!form.address.trim()) return setError("充值地址不能为空");
     const res = await fetch("/api/admin/deposit-addresses", {
       method: editing ? "PATCH" : "POST",
@@ -2326,6 +2364,13 @@ function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
     setDrawerMode(null);
     await loadAddresses();
   }
+
+  const selectableAssets = currentAssets
+    .filter((item) => item.isActive || (editing && item.code === form.asset))
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
+  const selectableNetworks = networks
+    .filter((item) => item.asset === form.asset && ((editing && item.code === form.network) || item.isActive && item.depositEnabled))
+    .sort((a, b) => a.code.localeCompare(b.code));
 
   function addressConfirmContext(scope: DepositAddressScope, id: number): ConfirmContext {
     const row = scope === "default"
@@ -2524,24 +2569,28 @@ function DepositAddressesTab({ mutate }: { mutate: AdminMutate }) {
                 disabled={!!editing}
                 onChange={(event) => {
                   const newAsset = event.target.value;
-                  const defaultNet = ASSET_DEFAULT_NETWORK[newAsset] || "TRC20";
+                  const defaultNet = networks.find((item) => item.asset === newAsset && item.isActive && item.depositEnabled)?.code || "";
                   setForm({ ...form, asset: newAsset, network: defaultNet });
                 }}
                 value={form.asset}
               >
-                {Object.keys(ASSET_NETWORKS).map((asset) => (
-                  <option key={asset} value={asset}>{asset}</option>
+                {selectableAssets.map((asset) => (
+                  <option key={asset.code} value={asset.code}>{asset.name} ({asset.code})</option>
                 ))}
               </select>
             </label>
             <label>
               <span>网络</span>
-              <input
+              <select
                 disabled={!!editing}
-                onChange={(event) => setForm({ ...form, network: event.target.value.toUpperCase() })}
-                placeholder="例如 TRC20 / POLYGON"
+                onChange={(event) => setForm({ ...form, network: event.target.value })}
                 value={form.network}
-              />
+              >
+                {selectableNetworks.length === 0 && <option value="">暂无可用充值网络</option>}
+                {selectableNetworks.map((network) => (
+                  <option key={network.code} value={network.code}>{network.name} ({network.code})</option>
+                ))}
+              </select>
             </label>
             <label>
               <span>充值地址</span>

@@ -6,7 +6,6 @@ import { normalizeAsset } from "@/lib/balances";
 import { normalizeNetwork } from "@/lib/networks";
 import { networkConfigDefaults } from "@/lib/network-config";
 
-const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
 
 type AddressPayload = {
   id?: number;
@@ -37,14 +36,14 @@ export async function GET() {
   try {
     await requireAdmin();
     return json({
-      defaultAddresses: getDb().prepare("SELECT id, asset, UPPER(TRIM(network)) AS network, address, is_active, created_at FROM deposit_addresses WHERE asset IN ('USDC', 'BTC', 'ETH', 'SOL') ORDER BY asset, network").all(),
+      defaultAddresses: getDb().prepare("SELECT id, asset, UPPER(TRIM(network)) AS network, address, is_active, created_at FROM deposit_addresses WHERE EXISTS (SELECT 1 FROM assets cfg WHERE cfg.code = deposit_addresses.asset) ORDER BY asset, network").all(),
       userAddresses: getDb()
         .prepare(
           `SELECT a.id, a.user_id, a.asset, UPPER(TRIM(a.network)) AS network, a.address, a.is_active, a.created_at,
                   u.public_uid AS user_public_uid, u.email, u.username
            FROM user_deposit_addresses a
            JOIN users u ON u.id = a.user_id
-           WHERE a.asset IN ('USDC', 'BTC', 'ETH', 'SOL')
+           WHERE EXISTS (SELECT 1 FROM assets cfg WHERE cfg.code = a.asset)
            ORDER BY a.created_at DESC`
         )
         .all()
@@ -62,7 +61,7 @@ export async function POST(request: Request) {
     const network = normalizeNetwork(clean(body.network));
     const address = clean(body.address);
     if (!asset || !network || !address) return badRequest("Asset, network, and address are required");
-    if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
+    if (!getDb().prepare("SELECT 1 FROM assets WHERE code = ? AND is_active = 1").get(asset)) return badRequest("Unsupported asset");
     const defaults = networkConfigDefaults(asset, network);
     getDb().prepare("INSERT INTO asset_networks (asset, code, name, icon, deposit_enabled, withdraw_enabled, deposit_fee, withdraw_fee, min_deposit, min_withdraw, is_active, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(asset, code) DO NOTHING").run(defaults.asset, defaults.code, defaults.name, defaults.icon, 1, 1, defaults.depositFee, defaults.withdrawFee, defaults.minDeposit, defaults.minWithdraw, 1);
 

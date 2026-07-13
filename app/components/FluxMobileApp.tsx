@@ -47,7 +47,7 @@ type User = { id?: number; public_uid?: string | null; email: string | null; bal
 type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "network-error" | "server-error";
 type ApiBinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; odds: number; risk_amount?: number | null; duration_seconds: number; entry_price: number; expires_at: string; status: "open" | "won" | "lost"; profit?: number | null };
 type Summary = { user: User; markets: Market[]; orders?: ApiBinaryOrder[] };
-type AssetRow = { asset: string; balance: number; locked: number; updated_at?: string; usdPrice?: number | null; usdValue?: number | null; lockedUsdValue?: number | null; totalUsdValue?: number | null };
+type AssetRow = { asset: string; code?: string; symbol?: string; name?: string; icon?: string; sortOrder?: number; depositEnabled?: boolean; withdrawEnabled?: boolean; tradeEnabled?: boolean; isActive?: boolean; balance: number; locked: number; updated_at?: string; usdPrice?: number | null; usdValue?: number | null; lockedUsdValue?: number | null; totalUsdValue?: number | null };
 type DepositRecord = { id: number; asset: string; network: string; amount: number; status: string; tx_hash?: string | null; note?: string | null; admin_note?: string | null; created_at: string; processed_at?: string | null };
 type WithdrawalRecord = { id: number; asset: string; network?: string | null; amount: number; address?: string | null; status: string; note?: string | null; created_at: string; processed_at?: string | null };
 type AssetTransaction = { id: number; asset: string; type: string; amount: number; status: string; note?: string | null; created_at: string };
@@ -71,6 +71,7 @@ type AssetData = {
   settings: PublicSettings;
   summary: { availableBalance: number; marginUsed: number; unrealizedPnl: number; totalEquity: number; valuationStatus?: "complete" | "partial"; valuationWarnings?: string[] };
   assets: AssetRow[];
+  assetConfigs?: AssetRow[];
   networks?: AssetNetworkConfig[];
   depositAddresses?: { asset: string; network: string; address: string; source: "default" | "custom" }[];
   deposits?: DepositRecord[];
@@ -94,8 +95,6 @@ const routeStateFromPath = (pathname: string): { tab: Tab; symbol?: string } | n
   if (pathname.startsWith("/trade/")) return { tab: "trade", symbol: decodeURIComponent(pathname.slice("/trade/".length)).toUpperCase() };
   return null;
 };
-const coins = ["USDC", "BTC", "ETH", "SOL"];
-const coinSet = new Set(coins);
 type CountryOption = { code: string; name: string; dialCode: string; flag: string };
 const authCountries: CountryOption[] = [
   { code: "US", name: "United States", dialCode: "+1", flag: "🇺🇸" }, { code: "CA", name: "Canada", dialCode: "+1", flag: "🇨🇦" },
@@ -199,37 +198,30 @@ const compactDateTime = (value?: string | null) => {
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 };
+const configuredAssetRows = (assets: AssetData | null) => (assets?.assetConfigs?.length ? assets.assetConfigs : assets?.assets || []).filter((item) => item.isActive !== false);
 const mergedAssetRows = (assets: AssetData | null): AssetRow[] => {
   const rows = assets?.assets?.length ? assets.assets : [{ asset: "USDC", balance: assets?.user.balance || 0, locked: 0 }];
+  const configs = configuredAssetRows(assets);
   const map = new Map<string, AssetRow>();
-  const addNullable = (left?: number | null, right?: number | null) => (
-    left == null || right == null ? null : Number(left || 0) + Number(right || 0)
-  );
+  const addNullable = (left?: number | null, right?: number | null) => (left == null || right == null ? null : Number(left || 0) + Number(right || 0));
   for (const item of rows) {
     const key = displayAsset(item.asset);
-    if (!coinSet.has(key)) continue;
     const existing = map.get(key);
     if (existing) {
-      existing.balance += Number(item.balance || 0);
-      existing.locked += Number(item.locked || 0);
-      existing.usdValue = addNullable(existing.usdValue, item.usdValue);
-      existing.lockedUsdValue = addNullable(existing.lockedUsdValue, item.lockedUsdValue);
-      existing.totalUsdValue = addNullable(existing.totalUsdValue, item.totalUsdValue);
-    } else {
-      map.set(key, { ...item, asset: key, balance: Number(item.balance || 0), locked: Number(item.locked || 0) });
-    }
+      existing.balance += Number(item.balance || 0); existing.locked += Number(item.locked || 0);
+      existing.usdValue = addNullable(existing.usdValue, item.usdValue); existing.lockedUsdValue = addNullable(existing.lockedUsdValue, item.lockedUsdValue); existing.totalUsdValue = addNullable(existing.totalUsdValue, item.totalUsdValue);
+    } else map.set(key, { ...item, asset: key, balance: Number(item.balance || 0), locked: Number(item.locked || 0) });
   }
-  for (const asset of coins) {
-    if (!map.has(asset)) map.set(asset, { asset, balance: asset === "USDC" ? assets?.user.balance || 0 : 0, locked: 0 });
+  for (const config of configs) {
+    const configAsset = config.asset || config.code || "";
+    if (!configAsset) continue;
+    if (!map.has(configAsset)) map.set(configAsset, { ...config, asset: configAsset, balance: configAsset === "USDC" ? assets?.user.balance || 0 : 0, locked: 0 });
   }
-  return [...map.values()].sort((a, b) => (a.asset === "USDC" ? -1 : b.asset === "USDC" ? 1 : a.asset.localeCompare(b.asset)));
+  return [...map.values()].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || a.asset.localeCompare(b.asset));
 };
 const availableForAsset = (assets: AssetData | null, asset: string) => mergedAssetRows(assets).find((row) => row.asset === displayAsset(asset))?.balance || 0;
 const pickerCoins = (assets: AssetData | null, mode: "deposit" | "withdraw" | "swap" = "withdraw") => {
-  const fromAddresses = mode === "deposit" ? (assets?.depositAddresses || []).map((item) => displayAsset(item.asset)).filter((asset) => coinSet.has(asset)) : [];
-  if (mode === "deposit" && fromAddresses.length) return [...new Set(fromAddresses)];
-  const fromBalances = mergedAssetRows(assets).map((item) => item.asset);
-  return [...new Set([...fromAddresses, ...fromBalances, ...coins].filter((asset) => coinSet.has(asset)))];
+  return configuredAssetRows(assets).filter((item) => mode === "deposit" ? item.depositEnabled : mode === "withdraw" ? item.withdrawEnabled : item.tradeEnabled).map((item) => item.asset || item.code || "");
 };
 const symbolName = (symbol: string) => symbol.replace("-PERP", "/USDC");
 const baseAsset = (symbol: string) => symbol.split("-")[0];
