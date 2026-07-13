@@ -3,6 +3,7 @@ import { badRequest, handleError, json, readJson } from "@/lib/api";
 import { getSettings, setSettings } from "@/lib/settings";
 import { emitRealtime } from "@/lib/realtime";
 import { sanitizeBinaryOptionsConfig } from "@/lib/binary-options";
+import { getBinaryTradeSettings, updateBinaryTradeSettings } from "@/lib/binary-trade-settings";
 
 type SettingsPayload = {
   whatsappLink?: string;
@@ -22,6 +23,7 @@ type SettingsPayload = {
   privacy_content?: string;
   trading_enabled?: string;
   binary_options_config?: string;
+  binary_trade_config?: string;
 };
 
 export async function GET() {
@@ -35,7 +37,7 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const body = await readJson<SettingsPayload>(request);
     const next: Record<string, string> = {};
 
@@ -92,6 +94,15 @@ export async function PATCH(request: Request) {
         next.binary_options_config = sanitizeBinaryOptionsConfig(body.binary_options_config);
       } catch (error) {
         return badRequest(error instanceof Error ? error.message : "Invalid binary option config");
+      }
+    }
+
+    if (typeof body.binary_trade_config === "string") {
+      try {
+        updateBinaryTradeSettings(JSON.parse(body.binary_trade_config), admin.id);
+        next.binary_trade_config = JSON.stringify(getBinaryTradeSettings());
+      } catch (error) {
+        return badRequest(error instanceof Error ? error.message : "Invalid binary trade config");
       }
     }
 

@@ -31,6 +31,20 @@ function addColumn(database: DatabaseSync, table: string, column: string, defini
   }
 }
 
+function ensureBinaryOrderOutcomeSchema(database: DatabaseSync) {
+  const row = database.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'binary_orders'").get() as { sql?: string } | undefined;
+  if (!row?.sql || row.sql.includes("'draw'")) return;
+  database.exec("PRAGMA foreign_keys = OFF;");
+  try {
+    database.exec(`BEGIN; CREATE TABLE binary_orders_new (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, market_id INTEGER NOT NULL, symbol TEXT NOT NULL, direction TEXT NOT NULL CHECK(direction IN ('call', 'put')), stake REAL NOT NULL, odds REAL NOT NULL, duration_seconds INTEGER NOT NULL, entry_price REAL NOT NULL, settle_price REAL, status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'won', 'lost', 'draw')), profit REAL, risk_amount REAL, manual_result TEXT CHECK(manual_result IN ('won', 'lost', 'draw') OR manual_result IS NULL), manual_settle_price REAL, manual_note TEXT, manual_result_set_at TEXT, expires_at TEXT NOT NULL, settled_at TEXT, note TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, manual_set_by INTEGER, win_profit_rate REAL, loss_rate REAL, draw_refund_rate REAL, config_version INTEGER, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (market_id) REFERENCES markets(id) ON DELETE CASCADE); INSERT INTO binary_orders_new (id,user_id,market_id,symbol,direction,stake,odds,duration_seconds,entry_price,settle_price,status,profit,risk_amount,manual_result,manual_settle_price,manual_note,manual_result_set_at,expires_at,settled_at,note,created_at,manual_set_by,win_profit_rate,loss_rate,draw_refund_rate,config_version) SELECT id,user_id,market_id,symbol,direction,stake,odds,duration_seconds,entry_price,settle_price,status,profit,risk_amount,manual_result,manual_settle_price,manual_note,manual_result_set_at,expires_at,settled_at,note,created_at,manual_set_by,win_profit_rate,loss_rate,draw_refund_rate,config_version FROM binary_orders; DROP TABLE binary_orders; ALTER TABLE binary_orders_new RENAME TO binary_orders; COMMIT;`);
+  } catch (error) {
+    try { database.exec("ROLLBACK;"); } catch { /* preserve original error */ }
+    throw error;
+  } finally {
+    database.exec("PRAGMA foreign_keys = ON;");
+  }
+}
+
 function randomSixDigitUid() {
   return String(randomInt(100000, 1000000));
 }
@@ -227,11 +241,17 @@ function seedSettings(database: DatabaseSync) {
     terms_content: "By accessing or using this platform, you agree to follow these Terms and all applicable laws and regulations.",
     privacy_content: "We use account information for authentication, KYC verification, funding records, account security, risk control, and customer support.",
     binary_options_config: JSON.stringify([
-      { seconds: 30, odds: 0.3 },
-      { seconds: 60, odds: 0.35 },
-      { seconds: 180, odds: 0.45 },
-      { seconds: 300, odds: 0.55 }
+      { seconds: 60, odds: 0.05 },
+      { seconds: 120, odds: 0.15 },
+      { seconds: 180, odds: 0.2 },
+      { seconds: 300, odds: 0.3 }
     ]),
+    binary_trade_config: JSON.stringify({ minOrderAmount: 10, maxOrderAmount: 5000, dailyMaxAmount: 0, version: 1, presets: [
+      { seconds: 60, winRate: 0.05, lossRate: 0.06, drawRefundRate: 1 },
+      { seconds: 120, winRate: 0.15, lossRate: 0.16, drawRefundRate: 1 },
+      { seconds: 180, winRate: 0.2, lossRate: 0.21, drawRefundRate: 1 },
+      { seconds: 300, winRate: 0.3, lossRate: 0.31, drawRefundRate: 1 }
+    ]}),
     trading_enabled: "true"
   };
   const insert = database.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
@@ -485,6 +505,16 @@ function initialize(database: DatabaseSync) {
     value TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS settings_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by INTEGER,
+    FOREIGN KEY (updated_by) REFERENCES users(id)
+  );
+
   CREATE TABLE IF NOT EXISTS email_verification_codes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL,
@@ -640,6 +670,11 @@ function initialize(database: DatabaseSync) {
   addColumn(database, "binary_orders", "manual_note", "TEXT");
   addColumn(database, "binary_orders", "manual_result_set_at", "TEXT");
   addColumn(database, "binary_orders", "manual_set_by", "INTEGER");
+  addColumn(database, "binary_orders", "win_profit_rate", "REAL");
+  addColumn(database, "binary_orders", "loss_rate", "REAL");
+  addColumn(database, "binary_orders", "draw_refund_rate", "REAL");
+  addColumn(database, "binary_orders", "config_version", "INTEGER");
+  ensureBinaryOrderOutcomeSchema(database);
   addColumn(database, "deposit_addresses", "updated_by", "INTEGER");
   addColumn(database, "deposit_addresses", "updated_at", "TEXT");
   addColumn(database, "user_deposit_addresses", "updated_by", "INTEGER");

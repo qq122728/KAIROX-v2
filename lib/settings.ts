@@ -22,6 +22,7 @@ export type AppSettings = {
   privacy_content: string;
   trading_enabled: string;
   binary_options_config: string;
+  binary_trade_config: string;
 };
 
 export function getSettings(): AppSettings {
@@ -39,11 +40,23 @@ export function getSettings(): AppSettings {
   settings.terms_content ||= "By accessing or using this platform, you agree to follow these Terms and all applicable laws and regulations.";
   settings.privacy_content ||= "We use account information for authentication, KYC verification, funding records, account security, risk control, and customer support.";
   settings.binary_options_config ||= JSON.stringify([
-    { seconds: 30, odds: 0.3 },
-    { seconds: 60, odds: 0.35 },
-    { seconds: 180, odds: 0.45 },
-    { seconds: 300, odds: 0.55 }
+    { seconds: 60, odds: 0.05 },
+    { seconds: 120, odds: 0.15 },
+    { seconds: 180, odds: 0.2 },
+    { seconds: 300, odds: 0.3 }
   ]);
+  settings.binary_trade_config ||= JSON.stringify({
+    minOrderAmount: 10,
+    maxOrderAmount: 5000,
+    dailyMaxAmount: 0,
+    version: 1,
+    presets: [
+      { seconds: 60, winRate: 0.05, lossRate: 0.06, drawRefundRate: 1 },
+      { seconds: 120, winRate: 0.15, lossRate: 0.16, drawRefundRate: 1 },
+      { seconds: 180, winRate: 0.2, lossRate: 0.21, drawRefundRate: 1 },
+      { seconds: 300, winRate: 0.3, lossRate: 0.31, drawRefundRate: 1 }
+    ]
+  });
   return settings;
 }
 

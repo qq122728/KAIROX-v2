@@ -45,13 +45,13 @@ type StackPage =
 type Market = { id: number; symbol: string; price: number; max_leverage?: number; is_active: number };
 type User = { id?: number; public_uid?: string | null; email: string | null; balance: number; kyc_status?: "none" | "pending" | "approved" | "rejected"; kyc_rejected_reason?: string | null; created_at?: string };
 type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "network-error" | "server-error";
-type ApiBinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; odds: number; risk_amount?: number | null; duration_seconds: number; entry_price: number; expires_at: string; status: "open" | "won" | "lost"; profit?: number | null };
+type ApiBinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; odds: number; risk_amount?: number | null; duration_seconds: number; entry_price: number; expires_at: string; status: "open" | "won" | "lost" | "draw"; profit?: number | null };
 type Summary = { user: User; markets: Market[]; orders?: ApiBinaryOrder[] };
 type AssetRow = { asset: string; code?: string; symbol?: string; name?: string; icon?: string; sortOrder?: number; depositEnabled?: boolean; withdrawEnabled?: boolean; tradeEnabled?: boolean; isActive?: boolean; balance: number; locked: number; updated_at?: string; usdPrice?: number | null; usdValue?: number | null; lockedUsdValue?: number | null; totalUsdValue?: number | null };
 type DepositRecord = { id: number; asset: string; network: string; amount: number; status: string; tx_hash?: string | null; note?: string | null; admin_note?: string | null; created_at: string; processed_at?: string | null };
 type WithdrawalRecord = { id: number; asset: string; network?: string | null; amount: number; address?: string | null; status: string; note?: string | null; created_at: string; processed_at?: string | null };
 type AssetTransaction = { id: number; asset: string; type: string; amount: number; status: string; note?: string | null; created_at: string };
-type PublicSettings = { withdrawals_enabled: string; withdrawal_notice: string; whatsapp_support_url: string; whatsapp_url?: string; telegram_url?: string; min_withdrawal_amount?: string; min_withdrawal_usdc?: string; about_content?: string; terms_content?: string; privacy_content?: string; binary_options_config?: string };
+type PublicSettings = { withdrawals_enabled: string; withdrawal_notice: string; whatsapp_support_url: string; whatsapp_url?: string; telegram_url?: string; min_withdrawal_amount?: string; min_withdrawal_usdc?: string; about_content?: string; terms_content?: string; privacy_content?: string; binary_options_config?: string; binary_trade_config?: string };
 type AssetNetworkConfig = {
   id?: number;
   asset: string;
@@ -79,8 +79,8 @@ type AssetData = {
   transactions?: AssetTransaction[];
 };
 type Tickers = Record<string, { price: number; change: number; source: string }>;
-type Duration = { label: string; seconds: number; odds: number; lossRate: number };
-type BinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; riskAmount?: number; duration: Duration; entry: number; expiresAt: number; status: "open" | "win" | "loss"; profit?: number };
+type Duration = { label: string; seconds: number; odds: number; winRate: number; lossRate: number; drawRefundRate: number };
+type BinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; riskAmount?: number; duration: Duration; entry: number; expiresAt: number; status: "open" | "win" | "loss" | "draw"; profit?: number };
 
 const tabPath = (tab: Tab, symbol = "BTC-PERP") => tab === "home" ? "/" : tab === "trade" ? `/trade/${symbol}` : `/${tab}`;
 const routeStateFromPath = (pathname: string): { tab: Tab; symbol?: string } | null => {
@@ -113,10 +113,10 @@ function writeAuthCountryIso(code: string) {
 }
 const networks = ["TRC20", "ERC20"];
 const defaultDurations: Duration[] = [
-  { label: "30s", seconds: 30, odds: 0.3, lossRate: 0.31 },
-  { label: "60s", seconds: 60, odds: 0.35, lossRate: 0.36 },
-  { label: "180s", seconds: 180, odds: 0.45, lossRate: 0.46 },
-  { label: "300s", seconds: 300, odds: 0.55, lossRate: 0.56 }
+  { label: "1m", seconds: 60, odds: 0.05, winRate: 0.05, lossRate: 0.06, drawRefundRate: 1 },
+  { label: "2m", seconds: 120, odds: 0.15, winRate: 0.15, lossRate: 0.16, drawRefundRate: 1 },
+  { label: "3m", seconds: 180, odds: 0.2, winRate: 0.2, lossRate: 0.21, drawRefundRate: 1 },
+  { label: "5m", seconds: 300, odds: 0.3, winRate: 0.3, lossRate: 0.31, drawRefundRate: 1 }
 ];
 const dataPollMs = 12_000;
 const requestTimeoutMs = 15_000;
@@ -160,20 +160,26 @@ const durationLabel = (seconds: number) => seconds < 60 ? `${seconds}s` : second
 const binaryDurationsFromSettings = (value?: string): Duration[] => {
   if (!value) return defaultDurations;
   try {
-    const rows = JSON.parse(value) as Array<{ seconds?: number; odds?: number; profitRate?: number; label?: string }>;
+    const parsed = JSON.parse(value) as unknown;
+    const rows = (Array.isArray(parsed) ? parsed : (parsed && typeof parsed === "object" && Array.isArray((parsed as { presets?: unknown }).presets) ? (parsed as { presets: unknown[] }).presets : [])) as Array<{ seconds?: number; odds?: number; winRate?: number; lossRate?: number; drawRefundRate?: number; profitRate?: number; label?: string }>;
     if (!Array.isArray(rows)) return defaultDurations;
     const durations = rows
       .map((row) => {
         const seconds = Number(row.seconds);
-        const oddsValue = Number(row.odds ?? row.profitRate);
+        const oddsValue = Number(row.winRate ?? row.odds ?? row.profitRate);
         const odds = oddsValue > 1 ? oddsValue / 100 : oddsValue;
+        const lossRaw = Number(row.lossRate ?? (odds + 0.01));
+        const lossRate = lossRaw > 1 ? lossRaw / 100 : lossRaw;
+        const drawRaw = Number(row.drawRefundRate ?? 1);
         if (!Number.isInteger(seconds) || seconds <= 0 || !Number.isFinite(odds) || odds <= 0) return null;
         const roundedOdds = Number(odds.toFixed(6));
         return {
           seconds,
           label: row.label?.trim() || durationLabel(seconds),
           odds: roundedOdds,
-          lossRate: Number((roundedOdds + 0.01).toFixed(6))
+          winRate: roundedOdds,
+          lossRate: Number(lossRate.toFixed(6)),
+          drawRefundRate: drawRaw > 1 ? drawRaw / 100 : drawRaw
         };
       })
       .filter((item): item is Duration => Boolean(item))
@@ -183,6 +189,19 @@ const binaryDurationsFromSettings = (value?: string): Duration[] => {
     return defaultDurations;
   }
 };
+type BinaryTradeUiConfig = { minOrderAmount: number; maxOrderAmount: number; dailyMaxAmount: number };
+const defaultBinaryTradeUiConfig: BinaryTradeUiConfig = { minOrderAmount: 10, maxOrderAmount: 5000, dailyMaxAmount: 0 };
+function binaryTradeUiConfigFromSettings(value?: string): BinaryTradeUiConfig {
+  if (!value) return defaultBinaryTradeUiConfig;
+  try {
+    const parsed = JSON.parse(value) as Partial<BinaryTradeUiConfig>;
+    const minOrderAmount = Number(parsed.minOrderAmount);
+    const maxOrderAmount = Number(parsed.maxOrderAmount);
+    const dailyMaxAmount = Number(parsed.dailyMaxAmount ?? 0);
+    if (![minOrderAmount, maxOrderAmount, dailyMaxAmount].every(Number.isFinite) || minOrderAmount <= 0 || maxOrderAmount < minOrderAmount || dailyMaxAmount < 0) return defaultBinaryTradeUiConfig;
+    return { minOrderAmount, maxOrderAmount, dailyMaxAmount };
+  } catch { return defaultBinaryTradeUiConfig; }
+}
 
 const money = (n: number, digits = 2) => `$${Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: digits, minimumFractionDigits: digits })}`;
 const displayAsset = (asset: string) => asset === "USDT" ? "USDC" : asset;
@@ -255,10 +274,10 @@ const mapApiOrder = (order: ApiBinaryOrder): BinaryOrder => ({
   direction: order.direction,
   stake: order.stake,
   riskAmount: order.risk_amount ?? undefined,
-  duration: { label: durationLabel(order.duration_seconds), seconds: order.duration_seconds, odds: order.odds, lossRate: Number((order.odds + 0.01).toFixed(6)) },
+  duration: { label: durationLabel(order.duration_seconds), seconds: order.duration_seconds, odds: order.odds, winRate: order.odds, lossRate: Number((order.odds + 0.01).toFixed(6)), drawRefundRate: 1 },
   entry: order.entry_price,
   expiresAt: new Date(order.expires_at).getTime(),
-  status: order.status === "won" ? "win" : order.status === "lost" ? "loss" : "open",
+  status: order.status === "won" ? "win" : order.status === "lost" ? "loss" : order.status === "draw" ? "draw" : "open",
   profit: order.profit ?? undefined
 });
 
@@ -317,6 +336,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [stake, setStake] = useState(50);
   const [durationOptions, setDurationOptions] = useState<Duration[]>(defaultDurations);
   const [duration, setDuration] = useState(defaultDurations[0]);
+  const [binaryTradeConfig, setBinaryTradeConfig] = useState<BinaryTradeUiConfig>(defaultBinaryTradeUiConfig);
   const [now, setNow] = useState(Date.now());
   const [toast, setToast] = useState<{ type: "ok" | "err" | "info"; text: string } | null>(null);
   const [notifications, setNotifications] = useState<ClientNotification[]>([]);
@@ -386,9 +406,10 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   function applyPublicSettings(settings: Partial<PublicSettings> = {}) {
     setSupport({ telegram: settings.telegram_url?.trim() || "", whatsapp: (settings.whatsapp_support_url || settings.whatsapp_url || "").trim() });
     setPublicSettings(settings);
-    const nextDurations = binaryDurationsFromSettings(settings.binary_options_config);
+    const nextDurations = binaryDurationsFromSettings(settings.binary_trade_config || settings.binary_options_config);
     setDurationOptions(nextDurations);
     setDuration((current) => nextDurations.find((item) => item.seconds === current.seconds) || nextDurations[0]);
+    setBinaryTradeConfig(binaryTradeUiConfigFromSettings(settings.binary_trade_config));
   }
 
   const activeStack = stack[stack.length - 1];
@@ -816,7 +837,8 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   async function placeOrder(direction: "call" | "put") {
     if (placingOrder) return;
     if (!currentMarket) return showToast("err", "Market unavailable");
-    if (stake < 10) return showToast("err", "Minimum stake is 10 USDC");
+    if (stake < binaryTradeConfig.minOrderAmount) return showToast("err", `Minimum stake is ${binaryTradeConfig.minOrderAmount} USDC`);
+    if (stake > binaryTradeConfig.maxOrderAmount) return showToast("err", `Maximum stake is ${binaryTradeConfig.maxOrderAmount} USDC`);
     setPlacingOrder(true);
     try {
       const res = await fetch("/api/binary-orders", {
@@ -830,7 +852,9 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
       const confirmedDuration = {
         ...duration,
         odds: Number(result.odds ?? duration.odds),
-        lossRate: Number(result.lossRate ?? duration.lossRate)
+        winRate: Number(result.winProfitRate ?? result.odds ?? duration.winRate),
+        lossRate: Number(result.lossRate ?? duration.lossRate),
+        drawRefundRate: Number(result.drawRefundRate ?? duration.drawRefundRate)
       };
       const order: BinaryOrder = {
         id: result.orderId || Date.now(),
@@ -965,6 +989,8 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
           setStake={setStake}
           duration={duration}
           durations={durationOptions}
+          minOrderAmount={binaryTradeConfig.minOrderAmount}
+          maxOrderAmount={binaryTradeConfig.maxOrderAmount}
           setDuration={setDuration}
           activeOrder={activeOrder}
           now={now}
@@ -1866,7 +1892,7 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
 
 type TradeSheetMode = "place" | "running" | "settled";
 
-function TradeSheet({ mode, direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, setDuration, activeOrder, now, close, minimize, tradeAgain, submit, submitting }: {
+function TradeSheet({ mode, direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, setDuration, activeOrder, now, close, minimize, tradeAgain, submit, submitting }: {
   mode: TradeSheetMode;
   direction: "call" | "put";
   setDirection: (d: "call" | "put") => void;
@@ -1878,6 +1904,8 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
   setStake: (n: number) => void;
   duration: Duration;
   durations: Duration[];
+  minOrderAmount: number;
+  maxOrderAmount: number;
   setDuration: (d: Duration) => void;
   activeOrder: BinaryOrder | null;
   now: number;
@@ -1933,7 +1961,7 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
             <X size={15} strokeWidth={2.4} aria-hidden="true" />
           </button>
         )}
-        {mode === "place" && <PlaceModeBody direction={direction} setDirection={setDirection} market={market} price={price} change={change} availableBalance={availableBalance} stake={stake} setStake={setStake} duration={duration} durations={durations} setDuration={setDuration} submit={submit} submitting={submitting} />}
+        {mode === "place" && <PlaceModeBody direction={direction} setDirection={setDirection} market={market} price={price} change={change} availableBalance={availableBalance} stake={stake} setStake={setStake} duration={duration} durations={durations} minOrderAmount={minOrderAmount} maxOrderAmount={maxOrderAmount} setDuration={setDuration} submit={submit} submitting={submitting} />}
         {mode === "running" && activeOrder && <RunningModeBody order={activeOrder} now={now} currentPrice={price} />}
         {mode === "settled" && activeOrder && <SettledModeBody order={activeOrder} tradeAgain={tradeAgain} />}
       </div>
@@ -1941,7 +1969,7 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
   );
 }
 
-function PlaceModeBody({ direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, setDuration, submit, submitting }: {
+function PlaceModeBody({ direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, setDuration, submit, submitting }: {
   direction: "call" | "put";
   setDirection: (d: "call" | "put") => void;
   market: Market;
@@ -1952,11 +1980,14 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
   setStake: (n: number) => void;
   duration: Duration;
   durations: Duration[];
+  minOrderAmount: number;
+  maxOrderAmount: number;
   setDuration: (d: Duration) => void;
   submit: () => void;
   submitting: boolean;
 }) {
-  const winAmount = stake * duration.odds;
+  const winAmount = stake * duration.winRate;
+  const maxLoss = stake * duration.lossRate;
   return (
     <>
       <div className="order-header">
@@ -1985,15 +2016,15 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
       <div className="order-section">
         <label className="order-section-label">Amount (USDC)</label>
         <div className="order-amount">
-          <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(Math.max(10, stake - 10))}>−</button>
-          <input className="order-amount-input tabular-nums" type="number" min={10} max={5000} value={stake} disabled={submitting} onChange={(e) => setStake(Number(e.target.value || 0))} aria-label="Order amount in USDC" />
+          <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(Math.max(minOrderAmount, stake - 10))}>−</button>
+          <input className="order-amount-input tabular-nums" type="number" min={minOrderAmount} max={maxOrderAmount} value={stake} disabled={submitting} onChange={(e) => setStake(Number(e.target.value || 0))} aria-label="Order amount in USDC" />
           <span className="order-amount-unit">USDC</span>
           <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(stake + 10)}>+</button>
         </div>
         <div className="order-amount-meta">
           <span>Balance: <span className="tabular-nums">{availableBalance.toFixed(2)} USDC</span></span>
           <span>·</span>
-          <span>Min 10 · Max 5000</span>
+          <span>Min {minOrderAmount} · Max {maxOrderAmount}</span>
         </div>
       </div>
 
@@ -2013,7 +2044,7 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
         <div className="order-summary-card">
           <div className="order-summary-row"><span>Investment</span><b className="tabular-nums">{money(stake)}</b></div>
           <div className="order-summary-row"><span className="good">Est. Profit</span><b className="good tabular-nums">+{money(winAmount)}</b></div>
-          <div className="order-summary-row"><span className="bad">Max Loss</span><b className="bad tabular-nums">-{money(stake)}</b></div>
+        <div className="order-summary-row"><span className="bad">Max Loss</span><b className="bad tabular-nums">-{money(maxLoss)}</b></div>
         </div>
       </div>
 
@@ -2187,7 +2218,7 @@ function OrderCard({ order, now, onClick }: { order: BinaryOrder; now: number; o
   const inner = (
     <>
       <div><span className={`tag ${order.direction}`}>{order.direction.toUpperCase()}</span><b>{symbolName(order.symbol)}</b></div>
-      {order.status === "open" ? <strong className="tabular-nums">{awaitingManualSettlement ? "Settling" : `${Math.max(0, remaining)}s`}</strong> : <strong className={`${order.status === "win" ? "good" : "bad"} tabular-nums`}>{order.status === "win" ? "Won" : "Lost"} {money(order.profit || 0)}</strong>}
+      {order.status === "open" ? <strong className="tabular-nums">{awaitingManualSettlement ? "Settling" : `${Math.max(0, remaining)}s`}</strong> : <strong className={`${order.status === "win" ? "good" : order.status === "draw" ? "wait" : "bad"} tabular-nums`}>{order.status === "win" ? "Won" : order.status === "draw" ? "Draw" : "Lost"} {money(order.profit || 0)}</strong>}
       <small>Entry <span className="tabular-nums">{money(order.entry)}</span> - Stake <span className="tabular-nums">{money(order.stake)}</span> - Risk <span className="tabular-nums">{money(riskAmount)}</span></small>
     </>
   );

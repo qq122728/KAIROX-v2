@@ -65,7 +65,7 @@ type AdminAssetConfig = { id?: number; code: string; symbol: string; name: strin
 type LedgerRow = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; asset: string; type: string; amount: number; status: string; note: string | null; created_at: string };
 type Market = { id: number; symbol: string; price: number; max_leverage: number; fee_rate: number; maintenance_margin_rate: number; is_active: number };
 type Position = { id: number; username: string; email?: string | null; symbol: string; side: string; margin: number; leverage: number; unrealized_pnl: number; pnl_override: number | null };
-type Order = { id: number; user_id: number; user_public_uid?: string | null; username: string; email?: string | null; symbol: string; direction: "call" | "put"; stake: number; odds: number; risk_amount?: number | null; duration_seconds: number; entry_price: number; settle_price?: number | null; manual_result?: "won" | "lost" | null; manual_settle_price?: number | null; manual_result_set_at?: string | null; status: "open" | "won" | "lost"; profit?: number | null; note: string | null; created_at: string; expires_at: string };
+type Order = { id: number; user_id: number; user_public_uid?: string | null; username: string; email?: string | null; symbol: string; direction: "call" | "put"; stake: number; odds: number; risk_amount?: number | null; win_profit_rate?: number | null; loss_rate?: number | null; draw_refund_rate?: number | null; config_version?: number | null; duration_seconds: number; entry_price: number; settle_price?: number | null; manual_result?: "won" | "lost" | "draw" | null; manual_settle_price?: number | null; manual_result_set_at?: string | null; status: "open" | "won" | "lost" | "draw"; profit?: number | null; note: string | null; created_at: string; expires_at: string };
 type Withdrawal = { id: number; user_id: number; user_public_uid?: string | null; username: string; email: string | null; amount: number; address: string; status: string; note: string | null; created_at: string };
 type DepositAddress = { id: number; asset: string; network: string; address: string; is_active: number };
 type UserDepositAddress = DepositAddress & { user_id: number; user_public_uid?: string | null; email: string | null; username: string };
@@ -98,6 +98,7 @@ type Settings = {
   privacy_content: string;
   trading_enabled: string;
   binary_options_config: string;
+  binary_trade_config: string;
 };
 type AdminData = {
   stats: { users: number; open_positions: number; trader_realized_pnl: number; fees: number; pending_withdrawals: number; pending_deposits?: number; pending_kyc?: number; pending_fiat_deposits?: number; markets?: number; total_stable_balance?: number };
@@ -3097,11 +3098,13 @@ function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSe
     setSettings({ ...settings, [key]: value });
   };
   const [binaryText, setBinaryText] = useState(formatBinaryOptionsConfig(settings.binary_options_config));
+  const [binaryTradeText, setBinaryTradeText] = useState(settings.binary_trade_config || "");
   const [binaryError, setBinaryError] = useState("");
 
   useEffect(() => {
     setBinaryText(formatBinaryOptionsConfig(settings.binary_options_config));
   }, [settings.binary_options_config]);
+  useEffect(() => setBinaryTradeText(settings.binary_trade_config || ""), [settings.binary_trade_config]);
 
   function confirmChanges(nextSettings: Partial<Settings>) {
     const binaryCount = binaryText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).length;
@@ -3119,7 +3122,8 @@ function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSe
       setBinaryError("");
       const nextSettings = {
         ...settings,
-        binary_options_config: binaryOptionsTextToConfig(binaryText)
+        binary_options_config: binaryOptionsTextToConfig(binaryText),
+        binary_trade_config: binaryTradeText
       };
       const result = await persistSettings(nextSettings, {
         changes: confirmChanges(nextSettings),
@@ -3185,10 +3189,10 @@ function SettingsTab({ settings, setSettings, markDirty, saveSettings: persistSe
       </SectionCard>
 
       {/* 交易参数 — 表格 + 高级编辑 */}
-      <BinaryOptionsSettings
-        binaryText={binaryText}
-        setBinaryText={(v) => { markDirty(); setDirty(true); setBinaryText(v); }}
-        binaryError={binaryError}
+      <BinaryTradeSettingsEditor
+        value={binaryTradeText}
+        onChange={(v) => { markDirty(); setDirty(true); setBinaryTradeText(v); }}
+        error={binaryError}
       />
 
       {/* 前端页面内容 */}
@@ -3223,8 +3227,8 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (enabled: b
 }
 
 function Status({ status }: { status: string }) {
-  const cls = status === "approved" || status === "paid" || status === "won" ? "ok" : status === "pending" || status === "open" ? "wait" : status === "rejected" || status === "lost" ? "sys" : "off";
-  const label = status === "approved" ? "已通过" : status === "paid" ? "已支付" : status === "pending" ? "待审核" : status === "rejected" ? "已拒绝" : status === "won" ? "已盈利" : status === "lost" ? "已亏损" : status;
+  const cls = status === "approved" || status === "paid" || status === "won" ? "ok" : status === "pending" || status === "open" ? "wait" : status === "rejected" || status === "lost" ? "sys" : status === "draw" ? "wait" : "off";
+  const label = status === "approved" ? "已通过" : status === "paid" ? "已支付" : status === "pending" ? "待审核" : status === "rejected" ? "已拒绝" : status === "won" ? "已盈利" : status === "lost" ? "已亏损" : status === "draw" ? "平局" : status;
   return <span className={`pill ${cls}`}>{label}</span>;
 }
 
@@ -3253,6 +3257,25 @@ function SettingToggleCard({ title, subtitle, enabled, onToggle }: { title: stri
       <Toggle enabled={enabled} onChange={onToggle} />
     </div>
   );
+}
+
+function BinaryTradeSettingsEditor({ value, onChange, error }: { value: string; onChange: (value: string) => void; error: string }) {
+  const defaults = { minOrderAmount: 10, maxOrderAmount: 5000, dailyMaxAmount: 0, version: 1, presets: [{ seconds: 60, winRate: 0.05, lossRate: 0.06, drawRefundRate: 1 }, { seconds: 120, winRate: 0.15, lossRate: 0.16, drawRefundRate: 1 }, { seconds: 180, winRate: 0.2, lossRate: 0.21, drawRefundRate: 1 }, { seconds: 300, winRate: 0.3, lossRate: 0.31, drawRefundRate: 1 }] };
+  const parse = () => { try { const parsed = JSON.parse(value || "{}"); return { ...defaults, ...parsed, presets: Array.isArray(parsed.presets) && parsed.presets.length ? parsed.presets : defaults.presets }; } catch { return defaults; } };
+  const [config, setConfig] = useState(parse);
+  useEffect(() => setConfig(parse()), [value]);
+  const update = (next: typeof config) => { setConfig(next); onChange(JSON.stringify(next)); };
+  const inputStyle: React.CSSProperties = { width: "100%", height: 36, padding: "6px 10px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", color: "#e0eaf5", boxSizing: "border-box" };
+  return <SectionCard title="二元期权交易参数" description="比例统一使用小数，例如 0.30 表示 30%。修改只影响新订单，旧订单使用下单时快照。">
+    <div className="admin-settings-form">
+      <label><span>单笔最小金额</span><input type="number" min="0.00000001" step="0.01" value={config.minOrderAmount} onChange={(e) => update({ ...config, minOrderAmount: Number(e.target.value) })} /></label>
+      <label><span>单笔最大金额</span><input type="number" min="0.00000001" step="0.01" value={config.maxOrderAmount} onChange={(e) => update({ ...config, maxOrderAmount: Number(e.target.value) })} /></label>
+      <label><span>每日最大金额（0 表示不限）</span><input type="number" min="0" step="0.01" value={config.dailyMaxAmount} onChange={(e) => update({ ...config, dailyMaxAmount: Number(e.target.value) })} /></label>
+    </div>
+    <div style={{ overflowX: "auto", marginTop: 12 }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}><thead><tr><th style={{ textAlign: "left" }}>秒数</th><th style={{ textAlign: "left" }}>赢单收益 %</th><th style={{ textAlign: "left" }}>输单亏损 %</th><th style={{ textAlign: "left" }}>平局返还 %</th></tr></thead><tbody>{config.presets.map((row: any, index: number) => <tr key={`${row.seconds}-${index}`}><td><input style={inputStyle} type="number" min="5" value={row.seconds} onChange={(e) => { const presets = config.presets.map((item: any, i: number) => i === index ? { ...item, seconds: Number(e.target.value) } : item); update({ ...config, presets }); }} /></td><td><input style={inputStyle} type="number" min="0" max="100" step="0.1" value={Number(row.winRate || 0) * 100} onChange={(e) => { const presets = config.presets.map((item: any, i: number) => i === index ? { ...item, winRate: Number(e.target.value) / 100 } : item); update({ ...config, presets }); }} /></td><td><input style={inputStyle} type="number" min="0" max="100" step="0.1" value={Number(row.lossRate || 0) * 100} onChange={(e) => { const presets = config.presets.map((item: any, i: number) => i === index ? { ...item, lossRate: Number(e.target.value) / 100 } : item); update({ ...config, presets }); }} /></td><td><input style={inputStyle} type="number" min="0" max="100" step="0.1" value={Number(row.drawRefundRate || 0) * 100} onChange={(e) => { const presets = config.presets.map((item: any, i: number) => i === index ? { ...item, drawRefundRate: Number(e.target.value) / 100 } : item); update({ ...config, presets }); }} /></td></tr>)}</tbody></table></div>
+    <p className="muted" style={{ marginTop: 10 }}>示例：100 USDC × 30% 赢单收益 = 30 USDC；100 USDC × 31% 输单亏损 = 31 USDC。</p>
+    {error ? <p style={{ color: "#f87171", marginTop: 10 }}>{error}</p> : null}
+  </SectionCard>;
 }
 
 function BinaryOptionsSettings({ binaryText, setBinaryText, binaryError }: { binaryText: string; setBinaryText: (v: string) => void; binaryError: string }) {
