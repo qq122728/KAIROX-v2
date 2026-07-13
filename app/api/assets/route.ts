@@ -5,6 +5,7 @@ import { listOpenPositions } from "@/lib/trading";
 import { getSettings } from "@/lib/settings";
 import { sanitizePublicRecords, type PublicRecordRow } from "@/lib/public-records";
 import { getAssetUsdPrice } from "@/lib/swap";
+import { networkConfigFromRow } from "@/lib/network-config";
 
 const supportedAssets = ["USDC", "BTC", "ETH", "SOL"];
 
@@ -105,11 +106,15 @@ export async function GET() {
          ORDER BY asset, network`
       )
       .all(user.id, user.id);
+    const networks = (getDb()
+      .prepare("SELECT id, asset, code, name, icon, deposit_enabled, withdraw_enabled, deposit_fee, withdraw_fee, min_deposit, min_withdraw, is_active FROM asset_networks WHERE is_active = 1 AND asset IN ('USDC', 'BTC', 'ETH', 'SOL') ORDER BY asset, id")
+      .all() as Record<string, unknown>[]).map(networkConfigFromRow);
     return json({
       user,
       settings: getSettings(),
       assets: assetsWithValuation,
       depositAddresses,
+      networks,
       summary: {
         availableBalance,
         marginUsed,

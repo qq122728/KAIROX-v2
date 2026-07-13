@@ -7,6 +7,7 @@ import { emitRealtime, userRoom } from "@/lib/realtime";
 import { ensureUserAssetRow, freezeAvailableAssetBalance, isStableAsset, normalizeAsset, syncUserStableBalance } from "@/lib/balances";
 import { getAssetUsdPrice } from "@/lib/swap";
 import { consumeUserRate } from "@/lib/rate-limit";
+import { normalizeNetworkCode } from "@/lib/network-config";
 
 const supportedAssets = new Set(["USDC", "BTC", "ETH", "SOL"]);
 const withdrawalPasswordLimit = Number(process.env.PERP_SIM_WITHDRAW_PASSWORD_LIMIT || 5);
@@ -29,11 +30,16 @@ export async function POST(request: Request) {
     const clientRequestId = String(body.clientRequestId || "").trim() || null;
 
     const asset = normalizeAsset(String(body.asset || "USDC"));
+    const networkCode = normalizeNetworkCode(String(body.network || ""));
     const amount = Number(body.amount);
     const minUsd = Number(settings.min_withdrawal_usdc || settings.min_withdrawal_amount || 10);
     if (!asset) return badRequest("Asset is required");
     if (!supportedAssets.has(asset)) return badRequest("Unsupported asset");
+    if (!networkCode) return badRequest("Withdrawal network is required");
     if (!Number.isFinite(amount) || amount <= 0) return badRequest("Invalid withdrawal amount");
+    const networkConfig = getDb().prepare("SELECT withdraw_enabled, min_withdraw FROM asset_networks WHERE asset = ? AND code = ? AND is_active = 1").get(asset, networkCode) as { withdraw_enabled: number; min_withdraw: number } | undefined;
+    if (!networkConfig || !networkConfig.withdraw_enabled) return badRequest("Withdrawals are disabled on this network");
+    if (Number(networkConfig.min_withdraw) > 0 && amount < Number(networkConfig.min_withdraw)) return badRequest("Minimum withdrawal amount is " + Number(networkConfig.min_withdraw));
     if (Number.isFinite(minUsd) && minUsd > 0) {
       const usdValue = await withdrawalUsdValue(asset, amount);
       if (usdValue < minUsd) return badRequest(`Minimum withdrawal value is ${minUsd} USDC`);
@@ -76,7 +82,7 @@ export async function POST(request: Request) {
 
         const result = getDb()
           .prepare("INSERT INTO withdrawals (user_id, asset, amount, address, network, status, note, client_request_id) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)")
-          .run(user.id, debitedAsset, amount, body.address.trim(), body.network?.trim() || null, "User withdrawal request", clientRequestId);
+          .run(user.id, debitedAsset, amount, body.address.trim(), networkCode, "User withdrawal request", clientRequestId);
         withdrawalId = Number(result.lastInsertRowid);
         getDb()
           .prepare("INSERT INTO asset_transactions (user_id, asset, type, amount, status, note) VALUES (?, ?, 'withdrawal_request', ?, 'pending', ?)")
