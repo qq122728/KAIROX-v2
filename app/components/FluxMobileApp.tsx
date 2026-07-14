@@ -2489,12 +2489,12 @@ function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: Stack
       <section className="activity-card">
         <div className="activity-head">
           <h3>Recent Activity</h3>
-          <button type="button" className="activity-view-all" onClick={() => push({ id: "funding-records", title: "Funding Records" })}>View All <ChevronRight size={14} /></button>
+          <button type="button" className="activity-view-all" data-testid="assets-view-all" onClick={() => push({ id: "funding-records", title: "Funding Records" })}>View All <ChevronRight size={14} /></button>
         </div>
         {activities.length ? (
           <div className="activity-list">
             {activities.map((act) => (
-              <button type="button" key={act.id} className="activity-row" onClick={() => openActivity(act)}>
+              <button type="button" key={act.id} className="activity-row" data-testid={`activity-${act.kind}`} onClick={() => openActivity(act)}>
                 <span className={`activity-icon activity-icon-${act.kind}`}>
                   {act.kind === "deposit" && <Download size={16} />}
                   {act.kind === "withdraw" && <Upload size={16} />}
@@ -2780,14 +2780,14 @@ function fundingRecordLabel(type: string) {
 function RecordList({ kind, assets, push }: { kind: "deposits" | "withdrawals" | "transactions"; assets: AssetData | null; push?: (p: StackPage) => void }) {
   if (kind === "deposits") {
     const rows = assets?.deposits || [];
-    return <div className="stack-page"><div className="record-list">{rows.map((row) => <div className="record-line" key={row.id}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network} - {compactDateTime(row.created_at)}</small>{row.tx_hash && <small className="record-hash">TX {row.tx_hash}</small>}</div>)}{!rows.length && <div className="empty-state">No deposit records yet.</div>}</div></div>;
+    return <div className="stack-page"><div className="record-list" data-testid={`record-list-${kind}`}>{rows.map((row) => <div className="record-line" key={row.id}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network} - {compactDateTime(row.created_at)}</small>{row.tx_hash && <small className="record-hash">TX {row.tx_hash}</small>}</div>)}{!rows.length && <div className="empty-state">No deposit records yet.</div>}</div></div>;
   }
   if (kind === "withdrawals") {
     const rows = assets?.withdrawals || [];
-    return <div className="stack-page"><div className="record-list">{rows.map((row) => <button type="button" className="record-line record-button" key={row.id} onClick={() => push?.({ id: "withdraw-detail", title: "Withdrawal Details", record: row })}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network || "Network"} - {compactDateTime(row.created_at)}</small>{row.address && <small className="record-hash">{row.address}</small>}<span className="record-arrow">{">"}</span></button>)}{!rows.length && <div className="empty-state">No withdrawal records yet.</div>}</div></div>;
+    return <div className="stack-page"><div className="record-list" data-testid={`record-list-${kind}`}>{rows.map((row) => <button type="button" className="record-line record-button" key={row.id} onClick={() => push?.({ id: "withdraw-detail", title: "Withdrawal Details", record: row })}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network || "Network"} - {compactDateTime(row.created_at)}</small>{row.address && <small className="record-hash">{row.address}</small>}<span className="record-arrow">{">"}</span></button>)}{!rows.length && <div className="empty-state">No withdrawal records yet.</div>}</div></div>;
   }
   const rows = assets?.transactions || [];
-  return <div className="stack-page"><div className="record-list">{rows.map((row) => <div className="record-line" key={row.id}><div><b>{fundingRecordLabel(row.type)}</b><StatusChip status={row.status} /></div><small className={`tabular-nums ${row.amount >= 0 ? "good" : "bad"}`}>{assetAmount(row.amount, row.asset, true)}</small>{row.note && <small>{row.note}</small>}<small>{compactDateTime(row.created_at)}</small></div>)}{!rows.length && <div className="empty-state">No funding records yet.</div>}</div></div>;
+  return <div className="stack-page"><div className="record-list" data-testid={`record-list-${kind}`}>{rows.map((row) => <div className="record-line" key={row.id}><div><b>{fundingRecordLabel(row.type)}</b><StatusChip status={row.status} /></div><small className={`tabular-nums ${row.amount >= 0 ? "good" : "bad"}`}>{assetAmount(row.amount, row.asset, true)}</small>{row.note && <small>{row.note}</small>}<small>{compactDateTime(row.created_at)}</small></div>)}{!rows.length && <div className="empty-state">No funding records yet.</div>}</div></div>;
 }
 
 function DetailRow({ label, value, mono = false }: { label: string; value?: string | number | null; mono?: boolean }) {
