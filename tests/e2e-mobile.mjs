@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { accessSync, constants, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { chromium } from "playwright";
@@ -7,7 +8,17 @@ import { chromium } from "playwright";
 const appUrl = process.env.TEST_APP_URL || "http://127.0.0.1:3000";
 const dbPath = process.env.TEST_DB_PATH || path.join(process.cwd(), "data", "perp-lab.sqlite");
 const artifactDir = process.env.TEST_ARTIFACT_DIR || path.join(process.cwd(), "test-artifacts", "e2e");
-const browserChannel = process.env.PLAYWRIGHT_CHANNEL || "msedge";
+function findBrowserExecutable() {
+  const candidates = [process.env.CHROME_BIN, "chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "microsoft-edge", "msedge"].filter(Boolean);
+  const bundled = ["/home/hermes/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome", "/root/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome"];
+  for (const candidate of candidates) {
+    try { return candidate.startsWith("/") ? (accessSync(candidate, constants.X_OK), candidate) : execFileSync("sh", ["-lc", `command -v ${candidate}`], { encoding: "utf8" }).trim(); } catch {}
+  }
+  for (const candidate of bundled) {
+    try { accessSync(candidate, constants.X_OK); return candidate; } catch {}
+  }
+  return null;
+}
 const testPassword = "E2ePass123!";
 const testWithdrawalPassword = "E2eWithdraw123!";
 const testEmail = `e2e-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
@@ -104,7 +115,10 @@ async function main() {
   let browser;
 
   try {
-    browser = await chromium.launch(browserChannel === "bundled" ? { headless: true } : { channel: browserChannel, headless: true });
+    const executablePath = findBrowserExecutable();
+    if (!executablePath) throw new Error("No Chromium-compatible browser found. Set CHROME_BIN or install a supported browser.");
+    console.log(`Using browser: ${executablePath}`);
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
     const page = await context.newPage();
     const pageErrors = [];
