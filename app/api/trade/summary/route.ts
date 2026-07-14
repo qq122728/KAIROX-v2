@@ -2,6 +2,8 @@ import { requireUser } from "@/lib/auth";
 import { handleError, json } from "@/lib/api";
 import { listMarkets, listOpenPositions, listOrders, listPriceTicks } from "@/lib/trading";
 import { getDb } from "@/lib/db";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   try {

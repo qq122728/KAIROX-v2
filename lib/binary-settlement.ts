@@ -4,7 +4,7 @@ import { emitRealtime, userRoom } from "@/lib/realtime";
 import { binaryOrderRiskAmount } from "@/lib/binary-options";
 import { syncUserStableBalance } from "@/lib/balances";
 
-type SettlementResult = "won" | "lost";
+type SettlementResult = "won" | "lost" | "draw";
 
 type BinaryOrderRow = {
   id: number;
@@ -14,6 +14,9 @@ type BinaryOrderRow = {
   direction: "call" | "put";
   stake: number;
   odds: number;
+  win_profit_rate?: number | null;
+  loss_rate?: number | null;
+  draw_refund_rate?: number | null;
   risk_amount?: number | null;
   status: string;
   entry_price: number;
@@ -54,6 +57,7 @@ function marketSettlePrice(order: Pick<BinaryOrderRow, "market_id" | "entry_pric
 }
 
 function marketResult(order: Pick<BinaryOrderRow, "direction" | "entry_price">, settlePrice: number): SettlementResult {
+  if (settlePrice === order.entry_price) return "draw";
   if (order.direction === "call") return settlePrice > order.entry_price ? "won" : "lost";
   return settlePrice < order.entry_price ? "won" : "lost";
 }
@@ -87,9 +91,11 @@ export function settleBinaryOrder(orderId: number, result: SettlementResult, set
   if (!orderExpired(order)) throw new Error("Order has not expired yet");
 
   const price = Number.isFinite(settlePrice) && Number(settlePrice) > 0 ? Number(settlePrice) : order.entry_price;
-  const riskAmount = binaryOrderRiskAmount(order.stake, order.odds, order.risk_amount);
-  const profit = result === "won" ? order.stake * order.odds : -riskAmount;
-  const payout = result === "won" ? riskAmount + order.stake * order.odds : 0;
+  const winRate = Number.isFinite(Number(order.win_profit_rate)) ? Number(order.win_profit_rate) : order.odds;
+  const riskAmount = binaryOrderRiskAmount(order.stake, winRate, order.risk_amount, order.loss_rate);
+  const drawRefundRate = Number.isFinite(Number(order.draw_refund_rate)) ? Number(order.draw_refund_rate) : 1;
+  const profit = result === "won" ? order.stake * winRate : result === "draw" ? riskAmount * drawRefundRate - riskAmount : -riskAmount;
+  const payout = result === "won" ? riskAmount + order.stake * winRate : result === "draw" ? riskAmount * drawRefundRate : 0;
   /* Pin the ledger actor: explicit argument > admin who set the manual_result > none (market settlement). */
   const ledgerActorId = typeof actorId === "number" ? actorId : order.manual_set_by ?? null;
   let changed = 0;
@@ -132,7 +138,7 @@ export function setBinaryOrderManualResult(orderId: number, result: SettlementRe
   if (order.status !== "open") throw new Error("Order has already been settled");
 
   if (orderExpired(order)) {
-    if (order.manual_result === "won" || order.manual_result === "lost") {
+    if (order.manual_result === "won" || order.manual_result === "lost" || order.manual_result === "draw") {
       const settled = settleBinaryOrder(
         order.id,
         order.manual_result,
@@ -174,7 +180,7 @@ export function settleConfiguredExpiredOrders(userId?: number) {
       `SELECT id, manual_result, manual_settle_price, manual_note
        FROM binary_orders
        WHERE status = 'open'
-         AND manual_result IN ('won', 'lost')
+         AND manual_result IN ('won', 'lost', 'draw')
          AND datetime(expires_at) <= CURRENT_TIMESTAMP
          ${userWhere}
        ORDER BY expires_at ASC

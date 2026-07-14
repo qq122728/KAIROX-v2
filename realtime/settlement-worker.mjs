@@ -47,6 +47,10 @@ function ensureSchemaReady() {
   addColumn("binary_orders", "manual_settle_price", "REAL");
   addColumn("binary_orders", "manual_note", "TEXT");
   addColumn("binary_orders", "manual_result_set_at", "TEXT");
+  addColumn("binary_orders", "win_profit_rate", "REAL");
+  addColumn("binary_orders", "loss_rate", "REAL");
+  addColumn("binary_orders", "draw_refund_rate", "REAL");
+  addColumn("binary_orders", "config_version", "INTEGER");
   addColumn("asset_transactions", "actor_id", "INTEGER");
   schemaReady = true;
   return true;
@@ -60,10 +64,11 @@ function emit(event, room, payload = {}) {
   }).catch(() => {});
 }
 
-function binaryOrderRiskAmount(stake, odds, riskAmount) {
+function binaryOrderRiskAmount(stake, odds, riskAmount, lossRate) {
   const storedRisk = Number(riskAmount);
   if (Number.isFinite(storedRisk) && storedRisk > 0) return storedRisk;
-  return Number((stake * (odds + 0.01)).toFixed(8));
+  const rate = Number.isFinite(Number(lossRate)) ? Number(lossRate) : odds + 0.01;
+  return Number((stake * rate).toFixed(8));
 }
 
 function syncUserStableBalance(userId) {
@@ -88,11 +93,13 @@ function releaseSettlementFunds(userId, payout, riskAmount) {
 
 function settleConfigured(order) {
   const result = order.manual_result;
-  if (result !== "won" && result !== "lost") return false;
+  if (result !== "won" && result !== "lost" && result !== "draw") return false;
   const price = Number.isFinite(order.manual_settle_price) && Number(order.manual_settle_price) > 0 ? Number(order.manual_settle_price) : order.entry_price;
-  const riskAmount = binaryOrderRiskAmount(order.stake, order.odds, order.risk_amount);
-  const profit = result === "won" ? order.stake * order.odds : -riskAmount;
-  const payout = result === "won" ? riskAmount + order.stake * order.odds : 0;
+  const winRate = Number.isFinite(Number(order.win_profit_rate)) ? Number(order.win_profit_rate) : order.odds;
+  const drawRefundRate = Number.isFinite(Number(order.draw_refund_rate)) ? Number(order.draw_refund_rate) : 1;
+  const riskAmount = binaryOrderRiskAmount(order.stake, winRate, order.risk_amount, order.loss_rate);
+  const profit = result === "won" ? order.stake * winRate : result === "draw" ? riskAmount * drawRefundRate - riskAmount : -riskAmount;
+  const payout = result === "won" ? riskAmount + order.stake * winRate : result === "draw" ? riskAmount * drawRefundRate : 0;
   const note = order.manual_note || `Manual preset settled as ${result}`;
 
   db.exec("BEGIN");
@@ -146,6 +153,7 @@ function marketSettlePrice(order) {
 }
 
 function marketResult(order, settlePrice) {
+  if (settlePrice === order.entry_price) return "draw";
   if (order.direction === "call") return settlePrice > order.entry_price ? "won" : "lost";
   return settlePrice < order.entry_price ? "won" : "lost";
 }
@@ -232,9 +240,11 @@ async function providerSettlePrice(order) {
 async function settleMarket(order) {
   const price = (await providerSettlePrice(order)) ?? marketSettlePrice(order);
   const result = marketResult(order, price);
-  const riskAmount = binaryOrderRiskAmount(order.stake, order.odds, order.risk_amount);
-  const profit = result === "won" ? order.stake * order.odds : -riskAmount;
-  const payout = result === "won" ? riskAmount + order.stake * order.odds : 0;
+  const winRate = Number.isFinite(Number(order.win_profit_rate)) ? Number(order.win_profit_rate) : order.odds;
+  const drawRefundRate = Number.isFinite(Number(order.draw_refund_rate)) ? Number(order.draw_refund_rate) : 1;
+  const riskAmount = binaryOrderRiskAmount(order.stake, winRate, order.risk_amount, order.loss_rate);
+  const profit = result === "won" ? order.stake * winRate : result === "draw" ? riskAmount * drawRefundRate - riskAmount : -riskAmount;
+  const payout = result === "won" ? riskAmount + order.stake * winRate : result === "draw" ? riskAmount * drawRefundRate : 0;
   const note = `Market settlement ${order.symbol} at ${price}`;
 
   db.exec("BEGIN");
@@ -282,7 +292,7 @@ async function tick() {
         `SELECT *
          FROM binary_orders
          WHERE status = 'open'
-           AND manual_result IN ('won', 'lost')
+           AND manual_result IN ('won', 'lost', 'draw')
            AND datetime(expires_at) <= CURRENT_TIMESTAMP
          ORDER BY expires_at ASC
          LIMIT 50`
