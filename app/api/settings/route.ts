@@ -4,6 +4,8 @@ import { getSettings } from "@/lib/settings";
 import { setSettings, type AppSettings } from "@/lib/settings";
 import { sanitizeBinaryOptionsConfig } from "@/lib/binary-options";
 import { getBinaryTradeSettings, updateBinaryTradeSettings } from "@/lib/binary-trade-settings";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   try {
