@@ -3098,15 +3098,33 @@ function WithdrawForm({ coin, network, assets, form, setForm, done }: { coin: st
   }, [keyFields, submitting]);
   const withdrawRequestId = withdrawReqIdRef.current;
   const available = availableForAsset(assets, coin);
-  const minWithdrawal = displayAsset(coin) === "USDC" ? Number(assets?.settings?.min_withdrawal_usdc || assets?.settings?.min_withdrawal_amount || 10) : 0;
+  const networkMinimum = Number(networkConfigsForCoin(assets, coin, "withdraw").find((item) => item.code === network)?.minWithdraw);
+  const settingsMinimum = displayAsset(coin) === "USDC" ? Number(assets?.settings?.min_withdrawal_usdc || assets?.settings?.min_withdrawal_amount || 0) : 0;
+  const configuredMinimum = Math.max(
+    Number.isFinite(networkMinimum) && networkMinimum > 0 ? networkMinimum : 0,
+    Number.isFinite(settingsMinimum) && settingsMinimum > 0 ? settingsMinimum : 0
+  );
+  // HTML min cannot express a strict greater-than-zero rule, so use the smallest
+  // supported display unit only when no configured network minimum exists.
+  const inputMinimum = configuredMinimum || 10 ** -assetDigits(coin);
+  const amountText = form.amount.trim();
+  const numericAmount = amountText ? Number(amountText) : Number.NaN;
+  const amountError = !amountText
+    ? "Withdrawal amount is required"
+    : !Number.isFinite(numericAmount)
+      ? "Enter a valid withdrawal amount"
+      : numericAmount <= 0
+        ? "Withdrawal amount must be greater than 0"
+        : configuredMinimum > 0 && numericAmount < configuredMinimum
+          ? `Minimum withdrawal is ${assetAmount(configuredMinimum, coin)}`
+          : numericAmount > available
+            ? "Withdrawal amount cannot exceed available balance"
+            : "";
   async function submit() {
     if (submitting) return;
     setError("");
-    const numericAmount = Number(form.amount);
     if (!form.address.trim()) return setError("Withdrawal address is required");
-    if (!form.amount.trim() || !Number.isFinite(numericAmount) || numericAmount <= 0) return setError("Enter a valid withdrawal amount");
-    if (Number.isFinite(minWithdrawal) && numericAmount < minWithdrawal) return setError(`Minimum withdrawal is ${assetAmount(minWithdrawal, coin)}`);
-    if (numericAmount > available) return setError("Insufficient available balance");
+    if (amountError) return setError(amountError);
     if (!form.password.trim()) return setError("Withdrawal password is required");
     setSubmitting(true);
     try {
@@ -3141,7 +3159,7 @@ function WithdrawForm({ coin, network, assets, form, setForm, done }: { coin: st
       setSubmitting(false);
     }
   }
-  return <div className="stack-page withdraw-form-page"><p className="muted-line">Network: {network} - Available: <span className="tabular-nums">{assetAmount(available, coin)}</span></p><label className="mobile-field"><span>Withdrawal Address</span><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={`Enter ${coin} address`} /></label><label className="mobile-field"><span>Amount ({coin})</span><input type="number" min="0" step="any" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label className="mobile-field"><span>Withdrawal Password</span><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>{error && <div className="form-error">{error}</div>}<button type="button" className="mobile-primary call" disabled={submitting} onClick={submit}>{submitting ? "Submitting..." : "Withdraw"}</button></div>;
+  return <div className="stack-page withdraw-form-page"><p className="muted-line">Network: {network} - Available: <span className="tabular-nums">{assetAmount(available, coin)}</span></p><label className="mobile-field"><span>Withdrawal Address</span><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={`Enter ${coin} address`} /></label><label className="mobile-field"><span>Amount ({coin})</span><input type="number" min={inputMinimum} step="any" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label className="mobile-field"><span>Withdrawal Password</span><input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></label>{(amountError || error) && <div className="form-error" role="alert">{amountError || error}</div>}<button type="button" className="mobile-primary call" disabled={submitting || Boolean(amountError)} onClick={submit}>{submitting ? "Submitting..." : "Withdraw"}</button></div>;
 }
 
 type SwapQuoteData = {

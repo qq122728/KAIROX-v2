@@ -153,10 +153,13 @@ function resetLoginAttempts() {
 function userCounts() {
   const db = getDb();
   try {
+    const asset = db.prepare("SELECT balance, locked FROM user_assets WHERE user_id = ? AND asset = 'USDC'").get(testUserId) || { balance: 0, locked: 0 };
     return {
       binaryOrders: Number(db.prepare("SELECT COUNT(*) AS count FROM binary_orders WHERE user_id = ?").get(testUserId).count),
       withdrawals: Number(db.prepare("SELECT COUNT(*) AS count FROM withdrawals WHERE user_id = ?").get(testUserId).count),
-      ledger: Number(db.prepare("SELECT COUNT(*) AS count FROM asset_transactions WHERE user_id = ?").get(testUserId).count)
+      ledger: Number(db.prepare("SELECT COUNT(*) AS count FROM asset_transactions WHERE user_id = ?").get(testUserId).count),
+      available: Number(asset.balance),
+      locked: Number(asset.locked)
     };
   } finally {
     db.close();
@@ -373,6 +376,32 @@ async function main() {
     const before = userCounts();
 
     await expectStatus(
+      "zero withdrawal",
+      request(new URL("/api/assets/withdraw", appUrl), {
+        method: "POST",
+        body: JSON.stringify({ asset: "USDC", network: "TRC20", amount: 0, address: "TRegressionAddress000000000000000000", withdrawalPassword: testWithdrawalPassword })
+      }),
+      400
+    );
+    await expectStatus(
+      "negative withdrawal",
+      request(new URL("/api/assets/withdraw", appUrl), {
+        method: "POST",
+        body: JSON.stringify({ asset: "USDC", network: "TRC20", amount: -1, address: "TRegressionAddress000000000000000000", withdrawalPassword: testWithdrawalPassword })
+      }),
+      400
+    );
+    await expectStatus(
+      "non-numeric withdrawal",
+      request(new URL("/api/assets/withdraw", appUrl), {
+        method: "POST",
+        body: JSON.stringify({ asset: "USDC", network: "TRC20", amount: "not-a-number", address: "TRegressionAddress000000000000000000", withdrawalPassword: testWithdrawalPassword })
+      }),
+      400
+    );
+    results.push("invalid withdrawal amounts: 400");
+
+    await expectStatus(
       "oversized withdrawal",
       request(new URL("/api/assets/withdraw", appUrl), {
         method: "POST",
@@ -404,6 +433,8 @@ async function main() {
     assert(after.binaryOrders === before.binaryOrders, "Failed binary order created a binary_orders row");
     assert(after.withdrawals === before.withdrawals, "Failed withdrawal created a withdrawals row");
     assert(after.ledger === before.ledger, "Failed financial operation created an asset_transactions row");
+    assert(after.available === before.available, "Failed withdrawal changed available balance");
+    assert(after.locked === before.locked, "Failed withdrawal changed frozen balance");
     results.push("failed financial operations: no DB side effects");
 
     const manualOrder = await expectStatus(
