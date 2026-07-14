@@ -18,6 +18,7 @@ import { notificationManager, type ClientNotification } from "../lib/notificatio
 import { displayUid } from "@/lib/uid";
 import { compressImage } from "@/app/lib/compressImage";
 import { normalizePhone } from "@/lib/auth-identifier";
+import { validateBinaryOrderAmount } from "@/lib/binary-order-amount";
 
 type Tab = "home" | "markets" | "trade" | "orders" | "account";
 type StackPage =
@@ -46,7 +47,7 @@ type Market = { id: number; symbol: string; price: number; max_leverage?: number
 type User = { id?: number; public_uid?: string | null; email: string | null; balance: number; kyc_status?: "none" | "pending" | "approved" | "rejected"; kyc_rejected_reason?: string | null; created_at?: string };
 type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "network-error" | "server-error";
 type ApiBinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; odds: number; risk_amount?: number | null; duration_seconds: number; entry_price: number; expires_at: string; status: "open" | "won" | "lost" | "draw"; profit?: number | null };
-type Summary = { user: User; markets: Market[]; orders?: ApiBinaryOrder[] };
+type Summary = { user: User; markets: Market[]; orders?: ApiBinaryOrder[]; binaryTrade?: { dailyUsed: number; dailyRemaining: number | null; minOrderAmount: number; maxOrderAmount: number } };
 type AssetRow = { asset: string; code?: string; symbol?: string; name?: string; icon?: string; sortOrder?: number; depositEnabled?: boolean; withdrawEnabled?: boolean; tradeEnabled?: boolean; isActive?: boolean; balance: number; locked: number; updated_at?: string; usdPrice?: number | null; usdValue?: number | null; lockedUsdValue?: number | null; totalUsdValue?: number | null };
 type DepositRecord = { id: number; asset: string; network: string; amount: number; status: string; tx_hash?: string | null; note?: string | null; admin_note?: string | null; created_at: string; processed_at?: string | null };
 type WithdrawalRecord = { id: number; asset: string; network?: string | null; amount: number; address?: string | null; status: string; note?: string | null; created_at: string; processed_at?: string | null };
@@ -337,6 +338,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [durationOptions, setDurationOptions] = useState<Duration[]>(defaultDurations);
   const [duration, setDuration] = useState(defaultDurations[0]);
   const [binaryTradeConfig, setBinaryTradeConfig] = useState<BinaryTradeUiConfig>(defaultBinaryTradeUiConfig);
+  const [dailyRemaining, setDailyRemaining] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [toast, setToast] = useState<{ type: "ok" | "err" | "info"; text: string } | null>(null);
   const [notifications, setNotifications] = useState<ClientNotification[]>([]);
@@ -480,6 +482,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
       setMarkets(summary.markets || []);
       const summaryOrders = summary.orders || [];
       setOrders(summaryOrders.map(mapApiOrder));
+      setDailyRemaining(summary.binaryTrade?.dailyRemaining ?? null);
       if (!summary.markets.find((m) => m.symbol === currentSymbolRef.current) && summary.markets[0]) setCurrentSymbol(summary.markets[0].symbol);
       setAuthStatus("authenticated");
       fetch("/api/market-data/tickers", { cache: "no-store" })
@@ -837,8 +840,8 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   async function placeOrder(direction: "call" | "put") {
     if (placingOrder) return;
     if (!currentMarket) return showToast("err", "Market unavailable");
-    if (stake < binaryTradeConfig.minOrderAmount) return showToast("err", `Minimum stake is ${binaryTradeConfig.minOrderAmount} USDC`);
-    if (stake > binaryTradeConfig.maxOrderAmount) return showToast("err", `Maximum stake is ${binaryTradeConfig.maxOrderAmount} USDC`);
+    const amountError = validateBinaryOrderAmount({ amount: stake, min: binaryTradeConfig.minOrderAmount, max: binaryTradeConfig.maxOrderAmount, dailyRemaining: dailyRemaining ?? undefined, availableBalance: availableForAsset(assets, "USDC"), decimals: 2 });
+    if (amountError) return showToast("err", amountError);
     setPlacingOrder(true);
     try {
       const res = await fetch("/api/binary-orders", {
@@ -991,6 +994,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
           durations={durationOptions}
           minOrderAmount={binaryTradeConfig.minOrderAmount}
           maxOrderAmount={binaryTradeConfig.maxOrderAmount}
+          dailyRemaining={dailyRemaining}
           setDuration={setDuration}
           activeOrder={activeOrder}
           now={now}
@@ -1892,7 +1896,7 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
 
 type TradeSheetMode = "place" | "running" | "settled";
 
-function TradeSheet({ mode, direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, setDuration, activeOrder, now, close, minimize, tradeAgain, submit, submitting }: {
+function TradeSheet({ mode, direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, dailyRemaining, setDuration, activeOrder, now, close, minimize, tradeAgain, submit, submitting }: {
   mode: TradeSheetMode;
   direction: "call" | "put";
   setDirection: (d: "call" | "put") => void;
@@ -1906,6 +1910,7 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
   durations: Duration[];
   minOrderAmount: number;
   maxOrderAmount: number;
+  dailyRemaining: number | null;
   setDuration: (d: Duration) => void;
   activeOrder: BinaryOrder | null;
   now: number;
@@ -1961,7 +1966,7 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
             <X size={15} strokeWidth={2.4} aria-hidden="true" />
           </button>
         )}
-        {mode === "place" && <PlaceModeBody direction={direction} setDirection={setDirection} market={market} price={price} change={change} availableBalance={availableBalance} stake={stake} setStake={setStake} duration={duration} durations={durations} minOrderAmount={minOrderAmount} maxOrderAmount={maxOrderAmount} setDuration={setDuration} submit={submit} submitting={submitting} />}
+        {mode === "place" && <PlaceModeBody direction={direction} setDirection={setDirection} market={market} price={price} change={change} availableBalance={availableBalance} stake={stake} setStake={setStake} duration={duration} durations={durations} minOrderAmount={minOrderAmount} maxOrderAmount={maxOrderAmount} dailyRemaining={dailyRemaining} setDuration={setDuration} submit={submit} submitting={submitting} />}
         {mode === "running" && activeOrder && <RunningModeBody order={activeOrder} now={now} currentPrice={price} />}
         {mode === "settled" && activeOrder && <SettledModeBody order={activeOrder} tradeAgain={tradeAgain} />}
       </div>
@@ -1969,7 +1974,7 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
   );
 }
 
-function PlaceModeBody({ direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, setDuration, submit, submitting }: {
+function PlaceModeBody({ direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, dailyRemaining, setDuration, submit, submitting }: {
   direction: "call" | "put";
   setDirection: (d: "call" | "put") => void;
   market: Market;
@@ -1982,12 +1987,14 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
   durations: Duration[];
   minOrderAmount: number;
   maxOrderAmount: number;
+  dailyRemaining: number | null;
   setDuration: (d: Duration) => void;
   submit: () => void;
   submitting: boolean;
 }) {
   const winAmount = stake * duration.winRate;
   const maxLoss = stake * duration.lossRate;
+  const amountError = validateBinaryOrderAmount({ amount: stake, min: minOrderAmount, max: maxOrderAmount, dailyRemaining: dailyRemaining ?? undefined, availableBalance, decimals: 2 });
   return (
     <>
       <div className="order-header">
@@ -2021,6 +2028,7 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
           <span className="order-amount-unit">USDC</span>
           <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(stake + 10)}>+</button>
         </div>
+        {amountError && <div className="order-field-error" role="alert">{amountError}</div>}
         <div className="order-amount-meta">
           <span>Balance: <span className="tabular-nums">{availableBalance.toFixed(2)} USDC</span></span>
           <span>·</span>
@@ -2048,7 +2056,7 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
         </div>
       </div>
 
-      <button type="button" className={`order-confirm ${direction}`} disabled={submitting} onClick={submit}>
+      <button type="button" className={`order-confirm ${direction}`} disabled={submitting || Boolean(amountError)} onClick={submit}>
         {submitting ? "Placing..." : `Confirm ${direction.toUpperCase()} · ${money(stake)}`}
       </button>
       <div className="order-foot"><ShieldCheck size={14} /> Your funds are securely protected</div>

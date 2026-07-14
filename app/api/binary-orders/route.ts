@@ -9,6 +9,7 @@ import { getExecutionPrice } from "@/lib/execution-price";
 import { binaryOrderRiskAmount, getBinaryOptionPreset } from "@/lib/binary-options";
 import { getBinaryTradeSettings } from "@/lib/binary-trade-settings";
 import { consumeUserRate } from "@/lib/rate-limit";
+import { validateBinaryOrderAmount } from "@/lib/binary-order-amount";
 
 const binaryOrderLimit = Math.max(1, Number(process.env.PERP_SIM_BINARY_ORDER_LIMIT || 30));
 const binaryOrderWindowMs = Math.max(1000, Number(process.env.PERP_SIM_BINARY_ORDER_WINDOW_MS || 60_000));
@@ -30,7 +31,8 @@ export async function POST(request: Request) {
 
     const body = await readJson<{ marketId: number; direction: "call" | "put"; stake: number; durationSeconds: number }>(request);
     if (body.direction !== "call" && body.direction !== "put") return badRequest("Invalid direction");
-    if (!Number.isFinite(body.stake) || body.stake < tradeSettings.minOrderAmount || body.stake > tradeSettings.maxOrderAmount) return badRequest(`Stake must be between ${tradeSettings.minOrderAmount} and ${tradeSettings.maxOrderAmount} USDC`);
+    const amountError = validateBinaryOrderAmount({ amount: body.stake, min: tradeSettings.minOrderAmount, max: tradeSettings.maxOrderAmount, decimals: 2 });
+    if (amountError) return badRequest(amountError);
     const preset = getBinaryOptionPreset(body.durationSeconds, settings);
     if (!preset) return badRequest("Invalid duration");
     if (tradeSettings.dailyMaxAmount > 0) {
