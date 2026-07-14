@@ -72,6 +72,9 @@ function createTestUser() {
     const userId = Number(result.lastInsertRowid);
     db.prepare("INSERT INTO user_assets (user_id, asset, balance, locked) VALUES (?, 'USDC', 100, 0)").run(userId);
     db
+      .prepare("INSERT INTO asset_networks (asset, code, name, icon, deposit_enabled, withdraw_enabled, deposit_fee, withdraw_fee, min_deposit, min_withdraw, is_active, updated_at) VALUES ('USDC', 'BEP20', 'BNB Chain', 'bnb', 1, 1, 0, 1, 0, 15, 1, CURRENT_TIMESTAMP) ON CONFLICT(asset, code) DO UPDATE SET name=excluded.name, icon=excluded.icon, deposit_enabled=excluded.deposit_enabled, withdraw_enabled=excluded.withdraw_enabled, min_withdraw=excluded.min_withdraw, is_active=excluded.is_active, updated_at=CURRENT_TIMESTAMP")
+      .run();
+    db
       .prepare("INSERT INTO deposits (user_id, asset, network, amount, tx_hash, status, admin_note) VALUES (?, 'USDC', 'TRC20', 12, '0xE2EAdminNoteDeposit', 'approved', ?)")
       .run(userId, "后台通过");
     db
@@ -176,10 +179,28 @@ async function main() {
 
     await page.getByText("Withdraw", { exact: true }).click();
     await page.getByRole("button", { name: /USDC/i }).first().click();
-    await page.getByRole("button", { name: /TRC20/i }).first().click();
+    await page.getByRole("button", { name: /BEP20/i }).first().click();
     await page.locator('input[placeholder="Enter USDC address"]').fill("TWithdrawDetailE2EAddress000000000");
     await page.locator('input[type="password"]').fill(testWithdrawalPassword);
-    await page.getByRole("button", { name: /^Withdraw$/ }).click();
+    const withdrawalAmount = page.getByRole("spinbutton", { name: "Amount (USDC)" });
+    const withdrawalSubmit = page.getByRole("button", { name: /^Withdraw$/ });
+    await withdrawalAmount.fill("");
+    assert(await withdrawalSubmit.isDisabled(), "Empty withdrawal amount should disable submit");
+    await page.getByText("Withdrawal amount is required").waitFor({ timeout: 10_000 });
+    await withdrawalAmount.fill("0");
+    assert(await withdrawalSubmit.isDisabled(), "Zero withdrawal amount should disable submit");
+    await page.getByText("Withdrawal amount must be greater than 0").waitFor({ timeout: 10_000 });
+    await withdrawalAmount.fill("-1");
+    assert(await withdrawalSubmit.isDisabled(), "Negative withdrawal amount should disable submit");
+    await withdrawalAmount.fill("14");
+    assert(await withdrawalSubmit.isDisabled(), "Below-network-minimum withdrawal should disable submit");
+    await page.getByText("Minimum withdrawal is 15.00 USDC").waitFor({ timeout: 10_000 });
+    await withdrawalAmount.fill("101");
+    assert(await withdrawalSubmit.isDisabled(), "Withdrawal above available balance should disable submit");
+    await page.getByText("Withdrawal amount cannot exceed available balance").waitFor({ timeout: 10_000 });
+    await withdrawalAmount.fill("15");
+    assert(await withdrawalSubmit.isEnabled(), "Network-minimum withdrawal should enable submit");
+    await withdrawalSubmit.click();
     await page.getByText("Withdrawal Details").waitFor({ timeout: 10_000 });
     await page.locator(".detail-status small").getByText("Submitted", { exact: true }).waitFor({ timeout: 10_000 });
     await page.getByText(/Request ID/i).waitFor({ timeout: 10_000 });
