@@ -18,6 +18,7 @@ import { notificationManager, type ClientNotification } from "../lib/notificatio
 import { displayUid } from "@/lib/uid";
 import { compressImage } from "@/app/lib/compressImage";
 import { normalizePhone } from "@/lib/auth-identifier";
+import { validateBinaryOrderAmount } from "@/lib/binary-order-amount";
 
 type Tab = "home" | "markets" | "trade" | "orders" | "account";
 type StackPage =
@@ -46,7 +47,7 @@ type Market = { id: number; symbol: string; price: number; max_leverage?: number
 type User = { id?: number; public_uid?: string | null; email: string | null; balance: number; kyc_status?: "none" | "pending" | "approved" | "rejected"; kyc_rejected_reason?: string | null; created_at?: string };
 type AuthStatus = "loading" | "authenticated" | "unauthenticated" | "network-error" | "server-error";
 type ApiBinaryOrder = { id: number; symbol: string; direction: "call" | "put"; stake: number; odds: number; risk_amount?: number | null; duration_seconds: number; entry_price: number; expires_at: string; status: "open" | "won" | "lost" | "draw"; profit?: number | null };
-type Summary = { user: User; markets: Market[]; orders?: ApiBinaryOrder[] };
+type Summary = { user: User; markets: Market[]; orders?: ApiBinaryOrder[]; binaryTrade?: { dailyUsed: number; dailyRemaining: number | null; minOrderAmount: number; maxOrderAmount: number } };
 type AssetRow = { asset: string; code?: string; symbol?: string; name?: string; icon?: string; sortOrder?: number; depositEnabled?: boolean; withdrawEnabled?: boolean; tradeEnabled?: boolean; isActive?: boolean; balance: number; locked: number; updated_at?: string; usdPrice?: number | null; usdValue?: number | null; lockedUsdValue?: number | null; totalUsdValue?: number | null };
 type DepositRecord = { id: number; asset: string; network: string; amount: number; status: string; tx_hash?: string | null; note?: string | null; admin_note?: string | null; created_at: string; processed_at?: string | null };
 type WithdrawalRecord = { id: number; asset: string; network?: string | null; amount: number; address?: string | null; status: string; note?: string | null; created_at: string; processed_at?: string | null };
@@ -337,6 +338,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   const [durationOptions, setDurationOptions] = useState<Duration[]>(defaultDurations);
   const [duration, setDuration] = useState(defaultDurations[0]);
   const [binaryTradeConfig, setBinaryTradeConfig] = useState<BinaryTradeUiConfig>(defaultBinaryTradeUiConfig);
+  const [dailyRemaining, setDailyRemaining] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [toast, setToast] = useState<{ type: "ok" | "err" | "info"; text: string } | null>(null);
   const [notifications, setNotifications] = useState<ClientNotification[]>([]);
@@ -480,6 +482,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
       setMarkets(summary.markets || []);
       const summaryOrders = summary.orders || [];
       setOrders(summaryOrders.map(mapApiOrder));
+      setDailyRemaining(summary.binaryTrade?.dailyRemaining ?? null);
       if (!summary.markets.find((m) => m.symbol === currentSymbolRef.current) && summary.markets[0]) setCurrentSymbol(summary.markets[0].symbol);
       setAuthStatus("authenticated");
       fetch("/api/market-data/tickers", { cache: "no-store" })
@@ -837,8 +840,8 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
   async function placeOrder(direction: "call" | "put") {
     if (placingOrder) return;
     if (!currentMarket) return showToast("err", "Market unavailable");
-    if (stake < binaryTradeConfig.minOrderAmount) return showToast("err", `Minimum stake is ${binaryTradeConfig.minOrderAmount} USDC`);
-    if (stake > binaryTradeConfig.maxOrderAmount) return showToast("err", `Maximum stake is ${binaryTradeConfig.maxOrderAmount} USDC`);
+    const amountError = validateBinaryOrderAmount({ amount: stake, min: binaryTradeConfig.minOrderAmount, max: binaryTradeConfig.maxOrderAmount, dailyRemaining: dailyRemaining ?? undefined, availableBalance: availableForAsset(assets, "USDC"), decimals: 2 });
+    if (amountError) return showToast("err", amountError);
     setPlacingOrder(true);
     try {
       const res = await fetch("/api/binary-orders", {
@@ -991,6 +994,7 @@ export function FluxMobileApp({ initialTab = "home", initialAuthMode = "login", 
           durations={durationOptions}
           minOrderAmount={binaryTradeConfig.minOrderAmount}
           maxOrderAmount={binaryTradeConfig.maxOrderAmount}
+          dailyRemaining={dailyRemaining}
           setDuration={setDuration}
           activeOrder={activeOrder}
           now={now}
@@ -1892,7 +1896,7 @@ function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake
 
 type TradeSheetMode = "place" | "running" | "settled";
 
-function TradeSheet({ mode, direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, setDuration, activeOrder, now, close, minimize, tradeAgain, submit, submitting }: {
+function TradeSheet({ mode, direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, dailyRemaining, setDuration, activeOrder, now, close, minimize, tradeAgain, submit, submitting }: {
   mode: TradeSheetMode;
   direction: "call" | "put";
   setDirection: (d: "call" | "put") => void;
@@ -1906,6 +1910,7 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
   durations: Duration[];
   minOrderAmount: number;
   maxOrderAmount: number;
+  dailyRemaining: number | null;
   setDuration: (d: Duration) => void;
   activeOrder: BinaryOrder | null;
   now: number;
@@ -1961,7 +1966,7 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
             <X size={15} strokeWidth={2.4} aria-hidden="true" />
           </button>
         )}
-        {mode === "place" && <PlaceModeBody direction={direction} setDirection={setDirection} market={market} price={price} change={change} availableBalance={availableBalance} stake={stake} setStake={setStake} duration={duration} durations={durations} minOrderAmount={minOrderAmount} maxOrderAmount={maxOrderAmount} setDuration={setDuration} submit={submit} submitting={submitting} />}
+        {mode === "place" && <PlaceModeBody direction={direction} setDirection={setDirection} market={market} price={price} change={change} availableBalance={availableBalance} stake={stake} setStake={setStake} duration={duration} durations={durations} minOrderAmount={minOrderAmount} maxOrderAmount={maxOrderAmount} dailyRemaining={dailyRemaining} setDuration={setDuration} submit={submit} submitting={submitting} />}
         {mode === "running" && activeOrder && <RunningModeBody order={activeOrder} now={now} currentPrice={price} />}
         {mode === "settled" && activeOrder && <SettledModeBody order={activeOrder} tradeAgain={tradeAgain} />}
       </div>
@@ -1969,7 +1974,7 @@ function TradeSheet({ mode, direction, setDirection, market, price, change, avai
   );
 }
 
-function PlaceModeBody({ direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, setDuration, submit, submitting }: {
+function PlaceModeBody({ direction, setDirection, market, price, change, availableBalance, stake, setStake, duration, durations, minOrderAmount, maxOrderAmount, dailyRemaining, setDuration, submit, submitting }: {
   direction: "call" | "put";
   setDirection: (d: "call" | "put") => void;
   market: Market;
@@ -1982,12 +1987,14 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
   durations: Duration[];
   minOrderAmount: number;
   maxOrderAmount: number;
+  dailyRemaining: number | null;
   setDuration: (d: Duration) => void;
   submit: () => void;
   submitting: boolean;
 }) {
   const winAmount = stake * duration.winRate;
   const maxLoss = stake * duration.lossRate;
+  const amountError = validateBinaryOrderAmount({ amount: stake, min: minOrderAmount, max: maxOrderAmount, dailyRemaining: dailyRemaining ?? undefined, availableBalance, decimals: 2 });
   return (
     <>
       <div className="order-header">
@@ -2021,6 +2028,7 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
           <span className="order-amount-unit">USDC</span>
           <button type="button" disabled={submitting} className="order-step" onClick={() => setStake(stake + 10)}>+</button>
         </div>
+        {amountError && <div className="order-field-error" role="alert">{amountError}</div>}
         <div className="order-amount-meta">
           <span>Balance: <span className="tabular-nums">{availableBalance.toFixed(2)} USDC</span></span>
           <span>·</span>
@@ -2048,7 +2056,7 @@ function PlaceModeBody({ direction, setDirection, market, price, change, availab
         </div>
       </div>
 
-      <button type="button" className={`order-confirm ${direction}`} disabled={submitting} onClick={submit}>
+      <button type="button" className={`order-confirm ${direction}`} disabled={submitting || Boolean(amountError)} onClick={submit}>
         {submitting ? "Placing..." : `Confirm ${direction.toUpperCase()} · ${money(stake)}`}
       </button>
       <div className="order-foot"><ShieldCheck size={14} /> Your funds are securely protected</div>
@@ -2481,12 +2489,12 @@ function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: Stack
       <section className="activity-card">
         <div className="activity-head">
           <h3>Recent Activity</h3>
-          <button type="button" className="activity-view-all" onClick={() => push({ id: "funding-records", title: "Funding Records" })}>View All <ChevronRight size={14} /></button>
+          <button type="button" className="activity-view-all" data-testid="assets-view-all" onClick={() => push({ id: "funding-records", title: "Funding Records" })}>View All <ChevronRight size={14} /></button>
         </div>
         {activities.length ? (
           <div className="activity-list">
             {activities.map((act) => (
-              <button type="button" key={act.id} className="activity-row" onClick={() => openActivity(act)}>
+              <button type="button" key={act.id} className="activity-row" data-testid={`activity-${act.kind}`} onClick={() => openActivity(act)}>
                 <span className={`activity-icon activity-icon-${act.kind}`}>
                   {act.kind === "deposit" && <Download size={16} />}
                   {act.kind === "withdraw" && <Upload size={16} />}
@@ -2772,14 +2780,14 @@ function fundingRecordLabel(type: string) {
 function RecordList({ kind, assets, push }: { kind: "deposits" | "withdrawals" | "transactions"; assets: AssetData | null; push?: (p: StackPage) => void }) {
   if (kind === "deposits") {
     const rows = assets?.deposits || [];
-    return <div className="stack-page"><div className="record-list">{rows.map((row) => <div className="record-line" key={row.id}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network} - {compactDateTime(row.created_at)}</small>{row.tx_hash && <small className="record-hash">TX {row.tx_hash}</small>}</div>)}{!rows.length && <div className="empty-state">No deposit records yet.</div>}</div></div>;
+    return <div className="stack-page"><div className="record-list" data-testid={`record-list-${kind}`}>{rows.map((row) => <div className="record-line" key={row.id}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network} - {compactDateTime(row.created_at)}</small>{row.tx_hash && <small className="record-hash">TX {row.tx_hash}</small>}</div>)}{!rows.length && <div className="empty-state">No deposit records yet.</div>}</div></div>;
   }
   if (kind === "withdrawals") {
     const rows = assets?.withdrawals || [];
-    return <div className="stack-page"><div className="record-list">{rows.map((row) => <button type="button" className="record-line record-button" key={row.id} onClick={() => push?.({ id: "withdraw-detail", title: "Withdrawal Details", record: row })}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network || "Network"} - {compactDateTime(row.created_at)}</small>{row.address && <small className="record-hash">{row.address}</small>}<span className="record-arrow">{">"}</span></button>)}{!rows.length && <div className="empty-state">No withdrawal records yet.</div>}</div></div>;
+    return <div className="stack-page"><div className="record-list" data-testid={`record-list-${kind}`}>{rows.map((row) => <button type="button" className="record-line record-button" key={row.id} onClick={() => push?.({ id: "withdraw-detail", title: "Withdrawal Details", record: row })}><div><b>{assetAmount(row.amount, row.asset)}</b><StatusChip status={row.status} /></div><small>{row.network || "Network"} - {compactDateTime(row.created_at)}</small>{row.address && <small className="record-hash">{row.address}</small>}<span className="record-arrow">{">"}</span></button>)}{!rows.length && <div className="empty-state">No withdrawal records yet.</div>}</div></div>;
   }
   const rows = assets?.transactions || [];
-  return <div className="stack-page"><div className="record-list">{rows.map((row) => <div className="record-line" key={row.id}><div><b>{fundingRecordLabel(row.type)}</b><StatusChip status={row.status} /></div><small className={`tabular-nums ${row.amount >= 0 ? "good" : "bad"}`}>{assetAmount(row.amount, row.asset, true)}</small>{row.note && <small>{row.note}</small>}<small>{compactDateTime(row.created_at)}</small></div>)}{!rows.length && <div className="empty-state">No funding records yet.</div>}</div></div>;
+  return <div className="stack-page"><div className="record-list" data-testid={`record-list-${kind}`}>{rows.map((row) => <div className="record-line" key={row.id}><div><b>{fundingRecordLabel(row.type)}</b><StatusChip status={row.status} /></div><small className={`tabular-nums ${row.amount >= 0 ? "good" : "bad"}`}>{assetAmount(row.amount, row.asset, true)}</small>{row.note && <small>{row.note}</small>}<small>{compactDateTime(row.created_at)}</small></div>)}{!rows.length && <div className="empty-state">No funding records yet.</div>}</div></div>;
 }
 
 function DetailRow({ label, value, mono = false }: { label: string; value?: string | number | null; mono?: boolean }) {

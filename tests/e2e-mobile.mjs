@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { accessSync, constants, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { chromium } from "playwright";
@@ -7,9 +8,20 @@ import { chromium } from "playwright";
 const appUrl = process.env.TEST_APP_URL || "http://127.0.0.1:3000";
 const dbPath = process.env.TEST_DB_PATH || path.join(process.cwd(), "data", "perp-lab.sqlite");
 const artifactDir = process.env.TEST_ARTIFACT_DIR || path.join(process.cwd(), "test-artifacts", "e2e");
-const browserChannel = process.env.PLAYWRIGHT_CHANNEL || "msedge";
+function findBrowserExecutable() {
+  const candidates = [process.env.CHROME_BIN, "chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "microsoft-edge", "msedge"].filter(Boolean);
+  const bundled = ["/home/hermes/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome", "/root/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome"];
+  for (const candidate of candidates) {
+    try { return candidate.startsWith("/") ? (accessSync(candidate, constants.X_OK), candidate) : execFileSync("sh", ["-lc", `command -v ${candidate}`], { encoding: "utf8" }).trim(); } catch {}
+  }
+  for (const candidate of bundled) {
+    try { accessSync(candidate, constants.X_OK); return candidate; } catch {}
+  }
+  return null;
+}
 const testPassword = "E2ePass123!";
 const testWithdrawalPassword = "E2eWithdraw123!";
+let activeLoginPassword = testPassword;
 const testEmail = `e2e-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
 
 let testUserId = 0;
@@ -104,8 +116,13 @@ async function main() {
   let browser;
 
   try {
-    browser = await chromium.launch(browserChannel === "bundled" ? { headless: true } : { channel: browserChannel, headless: true });
-    const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
+    const executablePath = findBrowserExecutable();
+    if (!executablePath) throw new Error("No Chromium-compatible browser found. Set CHROME_BIN or install a supported browser.");
+    console.log(`Using browser: ${executablePath}`);
+    browser = await chromium.launch({ executablePath, headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+    const viewportWidth = Number(process.env.TEST_VIEWPORT_WIDTH || 390);
+    const viewportHeight = Number(process.env.TEST_VIEWPORT_HEIGHT || (viewportWidth >= 800 ? 900 : 844));
+    const context = await browser.newContext({ viewport: { width: viewportWidth, height: viewportHeight }, deviceScaleFactor: 1 });
     const page = await context.newPage();
     const pageErrors = [];
     page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -127,8 +144,10 @@ async function main() {
     await page.waitForURL(/markets|trade|assets|profile/, { timeout: 15_000 });
 
     const navigationEntryCount = await page.evaluate(() => performance.getEntriesByType("navigation").length);
-    await page.getByRole("button", { name: /assets/i }).click();
-    await page.waitForFunction(() => window.location.pathname === "/assets", null, { timeout: 10_000 });
+    await page.locator('.mobile-bottom button[aria-label="Home"]').waitFor({ timeout: 15_000 });
+    await page.locator('.mobile-bottom button[aria-label="Home"]').click();
+    await page.getByRole("button", { name: "View assets" }).click();
+    await page.locator(".assets-screen").waitFor({ timeout: 10_000 });
     const afterTabNavigationEntryCount = await page.evaluate(() => performance.getEntriesByType("navigation").length);
     assert(afterTabNavigationEntryCount === navigationEntryCount, "Bottom tab switch caused a document navigation");
     for (const asset of ["USDC", "BTC", "ETH", "SOL"]) {
@@ -136,21 +155,21 @@ async function main() {
     }
     assert(await page.getByText("USDT", { exact: true }).count() === 0, "Assets page should not show USDT");
     await page.screenshot({ path: path.join(artifactDir, "assets-overview.png"), fullPage: true });
-    await page.getByText("Deposit History").click();
-    await page.getByText(/No deposit records|USDC|pending|approved|rejected/i).first().waitFor({ timeout: 10_000 });
+    await page.getByTestId("activity-deposit").click();
+    await page.getByTestId("record-list-deposits").waitFor({ timeout: 10_000 });
     assert(await page.getByText("后台通过").count() === 0, "Deposit history should not show admin approval notes");
     await page.screenshot({ path: path.join(artifactDir, "assets-history.png"), fullPage: true });
     await page.locator(".mobile-header button").first().click();
-    await page.getByText("Withdraw History").click();
-    await page.getByText(/USDC|pending|approved|rejected/i).first().waitFor({ timeout: 10_000 });
+    await page.getByTestId("activity-withdraw").click();
+    await page.getByTestId("record-list-withdrawals").waitFor({ timeout: 10_000 });
     assert(await page.getByText("后台通过").count() === 0, "Withdraw history should not show admin approval notes");
     await page.locator(".record-button").first().click();
     await page.getByText("Withdrawal Details").waitFor({ timeout: 10_000 });
     await page.getByText(/Request ID/i).waitFor({ timeout: 10_000 });
     await page.locator(".mobile-header button").first().click();
     await page.locator(".mobile-header button").first().click();
-    await page.getByText("Funding Records").click();
-    await page.getByText(/USDC|completed|pending|approved|rejected/i).first().waitFor({ timeout: 10_000 });
+    await page.getByTestId("assets-view-all").click();
+    await page.getByTestId("record-list-transactions").waitFor({ timeout: 10_000 });
     assert(await page.getByText("后台通过").count() === 0, "Funding records should not show admin approval notes");
     await page.getByText("System processed").first().waitFor({ timeout: 10_000 });
     await page.locator(".mobile-header button").first().click();
@@ -166,25 +185,46 @@ async function main() {
     await page.getByText(/Request ID/i).waitFor({ timeout: 10_000 });
     await page.screenshot({ path: path.join(artifactDir, "withdrawal-detail.png"), fullPage: true });
     await page.locator(".mobile-header button").first().click();
-    await page.getByText("Deposit History").waitFor({ timeout: 10_000 });
+    await page.getByRole("button", { name: "Home", exact: true }).click();
+    await page.getByRole("button", { name: "View assets" }).click();
+    await page.locator(".assets-screen").waitFor({ timeout: 10_000 });
+    await page.getByTestId("activity-withdraw").click();
+    await page.getByTestId("record-list-withdrawals").waitFor({ timeout: 10_000 });
 
     await page.goto(new URL("/profile", appUrl).toString(), { waitUntil: "networkidle" });
     await page.getByText(/UID\s*:?\s*\d{6}/).waitFor({ timeout: 10_000 });
     await page.getByRole("button", { name: /Security/ }).click();
-    if ((await page.getByRole("button", { name: /^Save$/ }).count()) === 0) {
+    if ((await page.getByRole("button", { name: /^Save Changes$/ }).count()) === 0) {
       await page.getByRole("button", { name: /Change Password/ }).click();
     }
-    await page.getByRole("button", { name: /^Save$/ }).first().click();
-    await page.getByText("Current password is required").waitFor({ timeout: 10_000 });
-    await page.locator('input[placeholder="Current password"]').fill("wrong");
-    await page.locator('input[placeholder="New password (6+ chars)"]').fill(testPassword);
-    await page.locator('input[placeholder="Confirm password"]').fill(testPassword);
-    await page.getByRole("button", { name: /^Save$/ }).first().click();
+    const loginSave = page.getByRole("button", { name: /^Save Changes$/ }).first();
+    assert(await loginSave.isDisabled(), "Login password save should be disabled until required fields are filled");
+    await page.locator('input[placeholder="Enter current password"]').fill("wrong");
+    await page.locator('input[placeholder="At least 6 characters"]').fill(testPassword);
+    await page.locator('input[placeholder="Re-enter new password"]').fill(testPassword);
+    await page.getByRole("button", { name: /^Save Changes$/ }).first().click();
     await page.getByText("Invalid current password").waitFor({ timeout: 10_000 });
+    await page.locator('input[placeholder="Enter current password"]').fill(activeLoginPassword);
+    await page.locator('input[placeholder="At least 6 characters"]').fill("E2eNewPass123!");
+    await page.locator('input[placeholder="Re-enter new password"]').fill("E2eNewPass123!");
+    const loginSaveEnabled = page.getByRole("button", { name: /^Save Changes$/ }).first();
+    assert(await loginSaveEnabled.isEnabled(), "Login password save should enable after valid fields are filled");
+    await loginSaveEnabled.click();
+    await page.getByText("Password changed successfully.").waitFor({ timeout: 10_000 });
+    activeLoginPassword = "E2eNewPass123!";
+    await page.keyboard.press("Escape");
 
     await page.getByRole("button", { name: /Withdrawal Password/ }).click();
-    await page.getByRole("button", { name: /^Save$/ }).first().click();
-    await page.getByText("Current withdrawal password is required").waitFor({ timeout: 10_000 });
+    const withdrawalSave = page.getByRole("button", { name: /^Save Changes$/ }).first();
+    assert(await withdrawalSave.isDisabled(), "Withdrawal password save should be disabled until required fields are filled");
+    await page.locator('input[placeholder="Enter current withdrawal password"]').fill(testWithdrawalPassword);
+    await page.locator('input[placeholder="Enter your login password to confirm"]').fill(activeLoginPassword);
+    await page.locator('input[placeholder="At least 6 characters"]').fill("E2eNewWithdraw123!");
+    await page.locator('input[placeholder="Re-enter new password"]').fill("E2eNewWithdraw123!");
+    const withdrawalSaveEnabled = page.getByRole("button", { name: /^Save Changes$/ }).first();
+    assert(await withdrawalSaveEnabled.isEnabled(), "Withdrawal password save should enable after valid fields are filled");
+    await withdrawalSaveEnabled.click();
+    await page.getByText("Withdrawal password updated successfully.").waitFor({ timeout: 10_000 });
     await page.screenshot({ path: path.join(artifactDir, "security-validation.png"), fullPage: true });
 
     assert(pageErrors.length === 0, `Page errors: ${pageErrors.join(" | ")}`);

@@ -203,16 +203,19 @@ async function expectStatus(label, responsePromise, expectedStatus) {
 
 async function main() {
   const results = [];
+  // Trigger the formal application bootstrap/migrations before direct DB access.
+  await fetch(new URL("/api/auth/register", appUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({})
+  });
   resetLoginAttempts();
   testUserId = createTestUser();
   testAdminId = createTestAdmin();
 
   try {
-    const settingsPayload = await expectStatus("settings", request(new URL("/api/settings", appUrl)), 200);
-    for (const key of ["about_content", "terms_content", "privacy_content"]) {
-      assert(typeof settingsPayload?.settings?.[key] === "string", `settings: missing ${key}`);
-    }
-    results.push("settings: 200 with editable static page content");
+    await expectStatus("settings unauthenticated", request(new URL("/api/settings", appUrl)), 401);
+    results.push("settings: unauthenticated 401");
 
     const originalCookieHeader = cookieHeader;
     const registrationEmail = `new-user-${Date.now()}-${Math.random().toString(16).slice(2)}@example.test`;
@@ -222,7 +225,9 @@ async function main() {
       request(new URL("/api/auth/register", appUrl), {
         method: "POST",
         body: JSON.stringify({
+          identifierType: "email",
           email: registrationEmail,
+          phone: "",
           password: testPassword,
           confirmPassword: testPassword,
           withdrawalPassword: testWithdrawalPassword,
@@ -283,6 +288,12 @@ async function main() {
       200
     );
     results.push("login: 200");
+
+    const settingsPayload = await expectStatus("settings after login", request(new URL("/api/settings", appUrl)), 200);
+    for (const key of ["about_content", "terms_content", "privacy_content"]) {
+      assert(typeof settingsPayload?.settings?.[key] === "string", `settings: missing ${key}`);
+    }
+    results.push("settings: authenticated 200");
 
     const me = await expectStatus("me", request(new URL("/api/me", appUrl)), 200);
     assert(me?.user?.id === testUserId, `me: expected test user ${testUserId}, got ${me?.user?.id}`);
@@ -442,18 +453,25 @@ async function main() {
     const postExpirySummary = await expectStatus("summary after explicit preset settlement", request(new URL("/api/trade/summary", appUrl)), 200);
     const completedManualOrder = (postExpirySummary.orders || []).find((order) => order.id === manualOrder.orderId);
     assert(completedManualOrder?.status === "won", `Preset order did not settle as won after expiry: ${JSON.stringify(completedManualOrder)}`);
-    assert(Math.abs(Number(completedManualOrder.profit) - 5.5) < 0.000001, `Preset order profit mismatch after expiry: ${JSON.stringify(completedManualOrder)}`);
+    assert(Math.abs(Number(completedManualOrder.profit) - Number(manualOrder.winProfitRate) * 10) < 0.000001, `Preset order profit mismatch after expiry: ${JSON.stringify(completedManualOrder)}`);
     const settlementDb = getDb();
     try {
       const settled = settlementDb.prepare("SELECT status, manual_result, profit FROM binary_orders WHERE id = ?").get(manualOrder.orderId);
       assert(settled?.status === "won", `Manual settlement did not mark order won: ${JSON.stringify(settled)}`);
       assert(settled.manual_result === "won", `Manual preset result was not retained: ${JSON.stringify(settled)}`);
-      assert(Math.abs(Number(settled.profit) - 5.5) < 0.000001, `Manual settlement profit mismatch: ${JSON.stringify(settled)}`);
+      assert(Math.abs(Number(settled.profit) - Number(manualOrder.winProfitRate) * 10) < 0.000001, `Manual settlement profit mismatch: ${JSON.stringify(settled)}`);
     } finally {
       settlementDb.close();
     }
     results.push("manual binary preset: waits until expiry and settles via POST");
 
+    const marketBalanceDb = getDb();
+    let marketBalanceBefore;
+    try {
+      marketBalanceBefore = marketBalanceDb.prepare("SELECT balance, locked FROM user_assets WHERE user_id = ? AND asset = 'USDC'").get(testUserId);
+    } finally {
+      marketBalanceDb.close();
+    }
     const marketOrder = await expectStatus(
       "market-settlement binary order",
       request(new URL("/api/binary-orders", appUrl), {
@@ -476,12 +494,19 @@ async function main() {
     assert(Number(marketSettlement?.settled) >= 1, `Market fallback did not settle expired order: ${JSON.stringify(marketSettlement)}`);
     const marketDb = getDb();
     try {
-      const settled = marketDb.prepare("SELECT status, manual_result, stake, odds, risk_amount, entry_price, settle_price, profit FROM binary_orders WHERE id = ?").get(marketOrder.orderId);
-      assert(settled?.status === "won" || settled?.status === "lost", `Market fallback did not close order: ${JSON.stringify(settled)}`);
+      const settled = marketDb.prepare("SELECT status, manual_result, stake, odds, risk_amount, win_profit_rate, loss_rate, draw_refund_rate, entry_price, settle_price, profit, created_at, expires_at FROM binary_orders WHERE id = ?").get(marketOrder.orderId);
+      assert(["won", "lost", "draw"].includes(settled?.status), `Market fallback did not close order: ${JSON.stringify(settled)}`);
       assert(settled.manual_result == null, `Market fallback should not write manual_result: ${JSON.stringify(settled)}`);
       assert(Number(settled.settle_price) > 0, `Market fallback did not use a valid market price: ${JSON.stringify(settled)}`);
-      const expectedProfit = settled.status === "won" ? Number(settled.stake) * Number(settled.odds) : -Number(settled.risk_amount);
+      const expectedProfit = settled.status === "won"
+        ? Number(settled.stake) * Number(settled.win_profit_rate ?? settled.odds)
+        : settled.status === "draw"
+          ? Number(settled.risk_amount) * Number(settled.draw_refund_rate ?? 1) - Number(settled.risk_amount)
+          : -Number(settled.risk_amount);
       assert(Math.abs(Number(settled.profit) - expectedProfit) < 0.000001, `Market fallback profit mismatch: ${JSON.stringify(settled)}`);
+      const balances = marketDb.prepare("SELECT balance, locked FROM user_assets WHERE user_id = ? AND asset = 'USDC'").get(testUserId);
+      assert(Math.abs(Number(balances.locked) - Number(marketBalanceBefore.locked)) < 0.000001, `Market fallback did not release locked balance: ${JSON.stringify({ before: marketBalanceBefore, after: balances, settled })}`);
+      assert(Math.abs(Number(balances.balance) - (Number(marketBalanceBefore.balance) + expectedProfit)) < 0.000001, `Market fallback balance mismatch: ${JSON.stringify({ before: marketBalanceBefore, after: balances, settled, expectedProfit })}`);
     } finally {
       marketDb.close();
     }
