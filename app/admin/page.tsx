@@ -9,7 +9,10 @@ import {
   ArrowDownToLine,
   BarChart3,
   Bell,
+  ChevronLeft,
+  CheckCircle2,
   CircleDollarSign,
+  Clock3,
   FileText,
   Gauge,
   KeyRound,
@@ -17,6 +20,8 @@ import {
   LockKeyhole,
   LogOut,
   MessageSquare,
+  Pencil,
+  Plus,
   RefreshCw,
   Save,
   Send,
@@ -1087,29 +1092,98 @@ function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; cu
   const [accountConfirmPassword, setAccountConfirmPassword] = useState("");
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [modalKind, setModalKind] = useState<"edit" | "create" | null>(null);
+  const [modalStep, setModalStep] = useState<1 | 2>(1);
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
 
   useEffect(() => {
     setAccountUsername(currentAdmin.username || "");
     setAccountEmail(currentAdmin.email || "");
   }, [currentAdmin.email, currentAdmin.username]);
 
-  const columns: Array<AdminTableColumn<User>> = [
-    {
-      id: "admin",
-      header: "管理员",
-      cell: (admin) => (
-        <div className="admin-user-identity">
-          <span className="admin-user-avatar">{userInitial(admin)}</span>
-          <div>
-            <strong>{admin.email || admin.username}</strong>
-            <span>UID {displayUid(admin)} · {admin.username}</span>
-          </div>
-        </div>
-      ),
-    },
-    { id: "role", header: "角色", align: "center", cell: () => <StatusChip label="管理员" tone="info" /> },
-    { id: "created", header: "创建时间", cell: (admin) => <span className="admin-user-time">{cnTime(admin.created_at)}</span> },
-  ];
+  const resetEditDraft = () => {
+    setAccountUsername(currentAdmin.username || "");
+    setAccountEmail(currentAdmin.email || "");
+    setAccountCurrentPassword("");
+    setAccountNewPassword("");
+    setAccountConfirmPassword("");
+  };
+
+  const resetCreateDraft = () => {
+    setNewUsername("");
+    setNewEmail("");
+    setNewPassword("");
+    setNewConfirmPassword("");
+    setCreateCurrentPassword("");
+  };
+
+  const closeModal = () => {
+    setModalKind(null);
+    setModalStep(1);
+    setDiscardConfirmOpen(false);
+    setFormError("");
+  };
+
+  const hasModalDraft = () => {
+    if (modalKind === "create") {
+      return Boolean(newUsername || newEmail || newPassword || newConfirmPassword || createCurrentPassword);
+    }
+    if (modalKind === "edit") {
+      return accountUsername !== (currentAdmin.username || "")
+        || accountEmail !== (currentAdmin.email || "")
+        || Boolean(accountCurrentPassword || accountNewPassword || accountConfirmPassword);
+    }
+    return false;
+  };
+
+  const requestModalClose = () => {
+    if (hasModalDraft()) {
+      setDiscardConfirmOpen(true);
+      return;
+    }
+    closeModal();
+  };
+
+  const discardModal = () => {
+    if (modalKind === "edit") resetEditDraft();
+    if (modalKind === "create") resetCreateDraft();
+    closeModal();
+  };
+
+  const openEditModal = () => {
+    resetEditDraft();
+    setFormError("");
+    setModalStep(1);
+    setModalKind("edit");
+  };
+
+  const openCreateModal = () => {
+    resetCreateDraft();
+    setFormError("");
+    setModalStep(1);
+    setModalKind("create");
+  };
+
+  const goToConfirmation = () => {
+    setFormError("");
+    if (modalKind === "create") {
+      if (!newUsername.trim()) return setFormError("请输入新管理员账号");
+      if (newPassword.trim().length < 8) return setFormError("新管理员密码至少 8 位");
+      if (newPassword.trim() !== newConfirmPassword.trim()) return setFormError("两次输入的新管理员密码不一致");
+    }
+    setModalStep(2);
+  };
+
+  useEffect(() => {
+    if (!modalKind) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      requestModalClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalKind, newUsername, newEmail, newPassword, newConfirmPassword, createCurrentPassword, accountUsername, accountEmail, accountCurrentPassword, accountNewPassword, accountConfirmPassword, currentAdmin.email, currentAdmin.username]);
 
   async function createAdmin() {
     setFormError("");
@@ -1130,19 +1204,13 @@ function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; cu
       }, {
         target: `管理员 ${email || username}`,
         onConfirmed: () => {
-          setNewUsername("");
-          setNewEmail("");
-          setNewPassword("");
-          setNewConfirmPassword("");
-          setCreateCurrentPassword("");
+          resetCreateDraft();
+          closeModal();
         }
       });
       if (result === "executed") {
-        setNewUsername("");
-        setNewEmail("");
-        setNewPassword("");
-        setNewConfirmPassword("");
-        setCreateCurrentPassword("");
+        resetCreateDraft();
+        closeModal();
       }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "新增管理员失败");
@@ -1179,12 +1247,14 @@ function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; cu
           setAccountCurrentPassword("");
           setAccountNewPassword("");
           setAccountConfirmPassword("");
+          closeModal();
         }
       });
       if (result === "executed") {
         setAccountCurrentPassword("");
         setAccountNewPassword("");
         setAccountConfirmPassword("");
+        closeModal();
       }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "保存管理员账号失败");
@@ -1194,80 +1264,141 @@ function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; cu
   }
 
   return (
-    <div className="admin-users-page">
-      {formError && <div className="error">{formError}</div>}
+    <div className="admin-admins-page">
+      <section className="admin-admins-hero">
+        <div>
+          <span className="admin-admins-eyebrow">ADMINISTRATOR</span>
+          <h2>管理员</h2>
+          <p>集中查看当前登录管理员与已授权后台账号，敏感修改会在确认后才提交。</p>
+        </div>
+        <span className="admin-admins-hero-icon"><ShieldCheck aria-hidden="true" /></span>
+      </section>
 
-      <div className="admin-dashboard-columns">
-        <SectionCard title="当前登录管理员" description="修改当前后台登录账号或登录密码，必须输入当前密码。">
-          <div className="admin-user-detail-grid">
-            <div><span>UID</span><strong>{displayUid(currentAdmin)}</strong></div>
-            <div><span>角色</span><strong>管理员</strong></div>
-            <div><span>创建时间</span><strong>{cnTime(currentAdmin.created_at)}</strong></div>
+      <section className="admin-admins-current-card">
+        <div className="admin-admins-card-heading">
+          <div>
+            <span className="admin-admins-eyebrow">CURRENT SESSION</span>
+            <h3>当前登录管理员</h3>
           </div>
-          <div className="admin-user-modal-form">
-            <label>
-              <span>管理员账号</span>
-              <input autoComplete="username" onChange={(event) => setAccountUsername(event.target.value)} value={accountUsername} />
-            </label>
-            <label>
-              <span>邮箱</span>
-              <input autoComplete="email" onChange={(event) => setAccountEmail(event.target.value)} placeholder="可选" value={accountEmail} />
-            </label>
-            <label>
-              <span>当前密码</span>
-              <input autoComplete="current-password" onChange={(event) => setAccountCurrentPassword(event.target.value)} placeholder="保存修改前必须填写" type="password" value={accountCurrentPassword} />
-            </label>
-            <label>
-              <span>新登录密码</span>
-              <input autoComplete="new-password" onChange={(event) => setAccountNewPassword(event.target.value)} placeholder="不修改密码可留空" type="password" value={accountNewPassword} />
-            </label>
-            <label>
-              <span>确认新密码</span>
-              <input autoComplete="new-password" onChange={(event) => setAccountConfirmPassword(event.target.value)} placeholder="再次输入新密码" type="password" value={accountConfirmPassword} />
-            </label>
-            <button className="admin-button admin-button-danger" disabled={saving} onClick={updateAccount} type="button">
-              {saving ? "保存中..." : "保存当前管理员账号"}
-            </button>
+          <StatusChip label="管理员" tone="info" />
+        </div>
+        <div className="admin-admins-current-body">
+          <span className="admin-admins-avatar admin-admins-avatar-lg">{(currentAdmin.email || currentAdmin.username || "A").slice(0, 1).toUpperCase()}</span>
+          <div className="admin-admins-identity">
+            <strong>{currentAdmin.username}</strong>
+            <span>{currentAdmin.email || "未设置邮箱"}</span>
           </div>
-        </SectionCard>
+          <dl className="admin-admins-detail-grid">
+            <div><dt>管理员</dt><dd>{displayUid(currentAdmin)}</dd></div>
+            <div><dt>创建时间</dt><dd>{cnTime(currentAdmin.created_at)}</dd></div>
+          </dl>
+          <button className="admin-button admin-button-primary admin-admins-edit-button" onClick={openEditModal} type="button">
+            <Pencil aria-hidden="true" /> 修改资料
+          </button>
+        </div>
+      </section>
 
-        <SectionCard title="新增管理员" description="新账号会直接拥有后台管理权限，请只添加已授权运营人员。" tone="danger">
-          <div className="admin-user-modal-form">
-            <label>
-              <span>新管理员账号</span>
-              <input autoComplete="off" onChange={(event) => setNewUsername(event.target.value)} placeholder="例如 ops-kairox" value={newUsername} />
-            </label>
-            <label>
-              <span>邮箱</span>
-              <input autoComplete="off" onChange={(event) => setNewEmail(event.target.value)} placeholder="可选" value={newEmail} />
-            </label>
-            <label>
-              <span>登录密码</span>
-              <input autoComplete="new-password" onChange={(event) => setNewPassword(event.target.value)} type="password" value={newPassword} />
-            </label>
-            <label>
-              <span>确认密码</span>
-              <input autoComplete="new-password" onChange={(event) => setNewConfirmPassword(event.target.value)} type="password" value={newConfirmPassword} />
-            </label>
-            <label>
-              <span>当前管理员密码</span>
-              <input autoComplete="current-password" onChange={(event) => setCreateCurrentPassword(event.target.value)} placeholder="用于确认新增管理员" type="password" value={createCurrentPassword} />
-            </label>
-            <button className="admin-button admin-button-danger" disabled={saving} onClick={createAdmin} type="button">
-              {saving ? "提交中..." : "新增管理员"}
-            </button>
+      <section className="admin-admins-list-card">
+        <header className="admin-admins-card-heading">
+          <div>
+            <span className="admin-admins-eyebrow">AUTHORIZED ACCOUNTS</span>
+            <h3>管理员列表</h3>
+            <p>仅展示拥有后台权限的账号，普通用户仍在用户管理页维护。</p>
           </div>
-        </SectionCard>
-      </div>
+          <button className="admin-button admin-button-primary" onClick={openCreateModal} type="button">
+            <Plus aria-hidden="true" /> 新增管理员
+          </button>
+        </header>
+        {admins.length ? (
+          <div className="admin-admins-list" role="list">
+            {admins.map((admin) => (
+              <article className="admin-admins-list-row" key={admin.id} role="listitem">
+                <span className="admin-admins-avatar">{userInitial(admin)}</span>
+                <div className="admin-admins-identity">
+                  <strong>{admin.username}</strong>
+                  <span>{admin.email || `UID ${displayUid(admin)}`}</span>
+                </div>
+                <StatusChip label="管理员" tone="info" />
+                <span className="admin-admins-created"><Clock3 aria-hidden="true" /> {cnTime(admin.created_at)}</span>
+              </article>
+            ))}
+          </div>
+        ) : <EmptyState compact description="当前没有管理员账号。" title="没有管理员" />}
+      </section>
 
-      <SectionCard title="管理员列表" description="这里只展示后台管理员账号；普通用户仍在用户管理页维护。">
-        <AdminTable
-          columns={columns}
-          emptyState={<EmptyState compact description="当前没有管理员账号。" title="没有管理员" />}
-          getRowKey={(admin) => admin.id}
-          rows={admins}
-        />
-      </SectionCard>
+      {modalKind && (
+        <div className="admin-admin-modal-layer" onMouseDown={(event) => { if (event.target === event.currentTarget) requestModalClose(); }} role="presentation">
+          <section aria-labelledby="admin-account-modal-title" aria-modal="true" className="admin-admin-modal" role="dialog">
+            <header className="admin-admin-modal-header">
+              <div>
+                <span className="admin-admins-eyebrow">{modalKind === "create" ? "CREATE ADMIN" : "EDIT PROFILE"}</span>
+                <h3 id="admin-account-modal-title">{modalKind === "create" ? (modalStep === 1 ? "新增管理员" : "确认新增管理员") : (modalStep === 1 ? "修改资料" : "确认修改")}</h3>
+              </div>
+              <button aria-label="关闭" className="admin-admin-modal-close" onClick={requestModalClose} type="button"><X aria-hidden="true" /></button>
+            </header>
+
+            <div className="admin-admin-modal-steps" aria-label={`第 ${modalStep} 步，共 2 步`}>
+              <span className={modalStep === 1 ? "is-active" : "is-complete"}>1. 填写资料</span>
+              <span className={modalStep === 2 ? "is-active" : ""}>2. 确认提交</span>
+            </div>
+
+            {formError && <div className="admin-config-error" role="alert">{formError}</div>}
+
+            {modalKind === "edit" && modalStep === 1 && (
+              <div className="admin-admin-modal-body admin-config-field-grid">
+                <label className="admin-config-field"><span>管理员账号</span><input autoComplete="username" onChange={(event) => setAccountUsername(event.target.value)} value={accountUsername} /></label>
+                <label className="admin-config-field"><span>邮箱</span><input autoComplete="email" onChange={(event) => setAccountEmail(event.target.value)} placeholder="可选" value={accountEmail} /></label>
+              </div>
+            )}
+
+            {modalKind === "create" && modalStep === 1 && (
+              <div className="admin-admin-modal-body admin-config-field-grid">
+                <label className="admin-config-field"><span>管理员账号</span><input autoComplete="off" onChange={(event) => setNewUsername(event.target.value)} placeholder="例如 ops-kairox" value={newUsername} /></label>
+                <label className="admin-config-field"><span>邮箱</span><input autoComplete="off" onChange={(event) => setNewEmail(event.target.value)} placeholder="可选" value={newEmail} /></label>
+                <label className="admin-config-field"><span>登录密码</span><input autoComplete="new-password" onChange={(event) => setNewPassword(event.target.value)} type="password" value={newPassword} /></label>
+                <label className="admin-config-field"><span>确认密码</span><input autoComplete="new-password" onChange={(event) => setNewConfirmPassword(event.target.value)} type="password" value={newConfirmPassword} /></label>
+              </div>
+            )}
+
+            {modalKind === "edit" && modalStep === 2 && (
+              <div className="admin-admin-modal-body">
+                <div className="admin-admin-confirm-summary"><CheckCircle2 aria-hidden="true" /><div><strong>{accountUsername || "未填写账号"}</strong><span>{accountEmail || "未设置邮箱"}</span></div></div>
+                <div className="admin-admin-modal-divider" />
+                <div className="admin-config-field-grid">
+                  <label className="admin-config-field admin-admin-field-wide"><span>当前密码</span><input autoComplete="current-password" onChange={(event) => setAccountCurrentPassword(event.target.value)} placeholder="保存修改前必须填写" type="password" value={accountCurrentPassword} /></label>
+                  <label className="admin-config-field"><span>新密码（可留空）</span><input autoComplete="new-password" onChange={(event) => setAccountNewPassword(event.target.value)} placeholder="不修改密码可留空" type="password" value={accountNewPassword} /></label>
+                  <label className="admin-config-field"><span>确认密码</span><input autoComplete="new-password" onChange={(event) => setAccountConfirmPassword(event.target.value)} placeholder="再次输入新密码" type="password" value={accountConfirmPassword} /></label>
+                </div>
+              </div>
+            )}
+
+            {modalKind === "create" && modalStep === 2 && (
+              <div className="admin-admin-modal-body">
+                <div className="admin-admin-confirm-summary"><CheckCircle2 aria-hidden="true" /><div><strong>{newUsername || "未填写账号"}</strong><span>{newEmail || "未设置邮箱"}</span></div><span className="admin-admin-role-label">角色：管理员</span><StatusChip label="管理员" tone="info" /></div>
+                <div className="admin-admin-modal-divider" />
+                <label className="admin-config-field"><span>请输入当前管理员密码</span><input autoComplete="current-password" onChange={(event) => setCreateCurrentPassword(event.target.value)} placeholder="用于确认新增管理员" type="password" value={createCurrentPassword} /></label>
+              </div>
+            )}
+
+            <footer className="admin-admin-modal-actions">
+              {modalStep === 2 ? <button className="admin-button admin-button-ghost" onClick={() => { setFormError(""); setModalStep(1); }} type="button"><ChevronLeft aria-hidden="true" /> 返回</button> : <span />}
+              {modalStep === 1 ? <button className="admin-button admin-button-primary" onClick={goToConfirmation} type="button">下一步</button> : (
+                <button className="admin-button admin-button-primary" disabled={saving} onClick={modalKind === "create" ? createAdmin : updateAccount} type="button">{saving ? "提交中..." : modalKind === "create" ? "确认创建" : "保存修改"}</button>
+              )}
+            </footer>
+
+            {discardConfirmOpen && (
+              <div className="admin-admin-discard-layer">
+                <section aria-labelledby="discard-admin-edit-title" aria-modal="true" className="admin-admin-discard-dialog" role="dialog">
+                  <h4 id="discard-admin-edit-title">放弃本次修改？</h4>
+                  <p>已填写的内容不会保存。</p>
+                  <div><button className="admin-button admin-button-ghost" onClick={() => setDiscardConfirmOpen(false)} type="button">继续编辑</button><button className="admin-button admin-button-primary" onClick={discardModal} type="button">放弃</button></div>
+                </section>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
