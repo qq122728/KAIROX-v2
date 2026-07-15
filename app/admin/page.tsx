@@ -1265,76 +1265,40 @@ function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; cu
 
   return (
     <div className="admin-admins-page">
-      <section className="admin-admins-hero">
-        <div>
-          <span className="admin-admins-eyebrow">ADMINISTRATOR</span>
-          <h2>管理员</h2>
-          <p>集中查看当前登录管理员与已授权后台账号，敏感修改会在确认后才提交。</p>
-        </div>
-        <span className="admin-admins-hero-icon"><ShieldCheck aria-hidden="true" /></span>
+      <header className="admin-page-header">
+        <div><p className="admin-page-kicker">ADMINISTRATION</p><h2>管理员</h2><p>查看已授权后台账号；所有敏感修改都将在确认后才提交。</p></div>
+      </header>
+
+      <section className="admin-admin-current-bar" aria-label="当前登录管理员">
+        <span className="admin-admins-avatar admin-admins-avatar-lg">{(currentAdmin.email || currentAdmin.username || "A").slice(0, 1).toUpperCase()}</span>
+        <div className="admin-admins-identity"><strong>{currentAdmin.username}</strong><span>{currentAdmin.email || "未设置邮箱"}</span></div>
+        <dl className="admin-admins-detail-grid"><div><dt>UID</dt><dd>{displayUid(currentAdmin)}</dd></div><div><dt>角色</dt><dd>管理员</dd></div><div><dt>创建时间</dt><dd>{cnTime(currentAdmin.created_at)}</dd></div></dl>
+        <button className="admin-primary-button admin-admins-edit-button" onClick={openEditModal} type="button"><Pencil aria-hidden="true" /> 修改资料</button>
       </section>
 
-      <section className="admin-admins-current-card">
-        <div className="admin-admins-card-heading">
-          <div>
-            <span className="admin-admins-eyebrow">CURRENT SESSION</span>
-            <h3>当前登录管理员</h3>
-          </div>
-          <StatusChip label="管理员" tone="info" />
-        </div>
-        <div className="admin-admins-current-body">
-          <span className="admin-admins-avatar admin-admins-avatar-lg">{(currentAdmin.email || currentAdmin.username || "A").slice(0, 1).toUpperCase()}</span>
-          <div className="admin-admins-identity">
-            <strong>{currentAdmin.username}</strong>
-            <span>{currentAdmin.email || "未设置邮箱"}</span>
-          </div>
-          <dl className="admin-admins-detail-grid">
-            <div><dt>管理员</dt><dd>{displayUid(currentAdmin)}</dd></div>
-            <div><dt>创建时间</dt><dd>{cnTime(currentAdmin.created_at)}</dd></div>
-          </dl>
-          <button className="admin-button admin-button-primary admin-admins-edit-button" onClick={openEditModal} type="button">
-            <Pencil aria-hidden="true" /> 修改资料
-          </button>
-        </div>
+      <section className="admin-toolbar admin-admin-toolbar">
+        <div><strong>管理员列表</strong><span className="admin-toolbar-count">共 {admins.length} 个管理员</span></div>
+        <button className="admin-primary-button" onClick={openCreateModal} type="button"><Plus aria-hidden="true" /> 新增管理员</button>
       </section>
 
-      <section className="admin-admins-list-card">
-        <header className="admin-admins-card-heading">
-          <div>
-            <span className="admin-admins-eyebrow">AUTHORIZED ACCOUNTS</span>
-            <h3>管理员列表</h3>
-            <p>仅展示拥有后台权限的账号，普通用户仍在用户管理页维护。</p>
-          </div>
-          <button className="admin-button admin-button-primary" onClick={openCreateModal} type="button">
-            <Plus aria-hidden="true" /> 新增管理员
-          </button>
-        </header>
-        {admins.length ? (
-          <div className="admin-admins-list" role="list">
-            {admins.map((admin) => (
-              <article className="admin-admins-list-row" key={admin.id} role="listitem">
-                <span className="admin-admins-avatar">{userInitial(admin)}</span>
-                <div className="admin-admins-identity">
-                  <strong>{admin.username}</strong>
-                  <span>{admin.email || `UID ${displayUid(admin)}`}</span>
-                </div>
-                <StatusChip label="管理员" tone="info" />
-                <span className="admin-admins-created"><Clock3 aria-hidden="true" /> {cnTime(admin.created_at)}</span>
-              </article>
-            ))}
-          </div>
-        ) : <EmptyState compact description="当前没有管理员账号。" title="没有管理员" />}
+      <section className="admin-table-shell">
+        <div className="admin-table-scroll">
+          <table className="admin-table admin-admin-table"><thead><tr><th>#</th><th>管理员</th><th>邮箱</th><th>UID</th><th>角色</th><th>创建时间</th></tr></thead><tbody>
+            {admins.map((admin, index) => <tr key={admin.id}><td className="admin-table-index">{index + 1}</td><td><div className="admin-table-identity"><span className="admin-admins-avatar">{userInitial(admin)}</span><div><strong>{admin.username}</strong><small>后台管理员</small></div></div></td><td>{admin.email || "–"}</td><td><code>{displayUid(admin)}</code></td><td><span className="admin-badge is-on">管理员</span></td><td><span className="admin-admins-created"><Clock3 aria-hidden="true" /> {cnTime(admin.created_at)}</span></td></tr>)}
+            {!admins.length && <tr><td className="admin-table-empty" colSpan={6}>当前没有管理员账号</td></tr>}
+          </tbody></table>
+        </div>
       </section>
 
       {modalKind && (
         <div className="admin-admin-modal-layer" onMouseDown={(event) => { if (event.target === event.currentTarget) requestModalClose(); }} role="presentation">
-          <section aria-labelledby="admin-account-modal-title" aria-modal="true" className="admin-admin-modal" role="dialog">
+          <section aria-labelledby="admin-account-modal-title" aria-modal="true" className="admin-admin-modal admin-modal" role="dialog">
             <header className="admin-admin-modal-header">
               <div>
-                <span className="admin-admins-eyebrow">{modalKind === "create" ? "CREATE ADMIN" : "EDIT PROFILE"}</span>
+                <span className="admin-page-kicker">{modalKind === "create" ? "CREATE ADMIN" : "EDIT PROFILE"}</span>
                 <h3 id="admin-account-modal-title">{modalKind === "create" ? (modalStep === 1 ? "新增管理员" : "确认新增管理员") : (modalStep === 1 ? "修改资料" : "确认修改")}</h3>
               </div>
-              <button aria-label="关闭" className="admin-admin-modal-close" onClick={requestModalClose} type="button"><X aria-hidden="true" /></button>
+              <button aria-label="关闭" className="admin-admin-modal-close admin-icon-button" onClick={requestModalClose} type="button"><X aria-hidden="true" /></button>
             </header>
 
             <div className="admin-admin-modal-steps" aria-label={`第 ${modalStep} 步，共 2 步`}>
@@ -1381,9 +1345,9 @@ function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; cu
             )}
 
             <footer className="admin-admin-modal-actions">
-              {modalStep === 2 ? <button className="admin-button admin-button-ghost" onClick={() => { setFormError(""); setModalStep(1); }} type="button"><ChevronLeft aria-hidden="true" /> 返回</button> : <span />}
-              {modalStep === 1 ? <button className="admin-button admin-button-primary" onClick={goToConfirmation} type="button">下一步</button> : (
-                <button className="admin-button admin-button-primary" disabled={saving} onClick={modalKind === "create" ? createAdmin : updateAccount} type="button">{saving ? "提交中..." : modalKind === "create" ? "确认创建" : "保存修改"}</button>
+              {modalStep === 2 ? <button className="admin-secondary-button" onClick={() => { setFormError(""); setModalStep(1); }} type="button"><ChevronLeft aria-hidden="true" /> 返回</button> : <span />}
+              {modalStep === 1 ? <button className="admin-primary-button" onClick={goToConfirmation} type="button">下一步</button> : (
+                <button className="admin-primary-button" disabled={saving} onClick={modalKind === "create" ? createAdmin : updateAccount} type="button">{saving ? "提交中..." : modalKind === "create" ? "确认创建" : "保存修改"}</button>
               )}
             </footer>
 
@@ -1392,7 +1356,7 @@ function AdminAccountsTab({ admins, currentAdmin, mutate }: { admins: User[]; cu
                 <section aria-labelledby="discard-admin-edit-title" aria-modal="true" className="admin-admin-discard-dialog" role="dialog">
                   <h4 id="discard-admin-edit-title">放弃本次修改？</h4>
                   <p>已填写的内容不会保存。</p>
-                  <div><button className="admin-button admin-button-ghost" onClick={() => setDiscardConfirmOpen(false)} type="button">继续编辑</button><button className="admin-button admin-button-primary" onClick={discardModal} type="button">放弃</button></div>
+                  <div><button className="admin-secondary-button" onClick={() => setDiscardConfirmOpen(false)} type="button">继续编辑</button><button className="admin-primary-button" onClick={discardModal} type="button">放弃</button></div>
                 </section>
               </div>
             )}
