@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { ArrowDownToLine, ArrowUpFromLine, Network, Pencil, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-type Network = {
+type NetworkRow = {
   id: number;
   asset: string;
   code: string;
@@ -31,8 +32,23 @@ const emptyForm = {
   isActive: true,
 };
 
+const networkMarks: Record<string, string> = { ERC20: "Ξ", BEP20: "B", TRC20: "T", POLYGON: "P", SOLANA: "S", BITCOIN: "₿" };
+
+function networkMark(row: NetworkRow) {
+  const custom = (row.icon || "").trim();
+  return custom.length > 0 && custom.length <= 2 ? custom : networkMarks[row.code.toUpperCase()] ?? row.code.slice(0, 1).toUpperCase();
+}
+
+function StatusBadge({ active }: { active: boolean }) {
+  return <span className={`admin-config-status ${active ? "is-active" : "is-muted"}`}><span aria-hidden="true" />{active ? "已启用" : "已禁用"}</span>;
+}
+
+function ToggleBadge({ active, label }: { active: boolean; label: string }) {
+  return <span className={`admin-config-toggle-badge ${active ? "is-enabled" : "is-disabled"}`}>{active ? "✓" : "–"} {active ? "Enabled" : "Disabled"}<small>{label}</small></span>;
+}
+
 export default function NetworkConfigTab() {
-  const [rows, setRows] = useState<Network[]>([]);
+  const [rows, setRows] = useState<NetworkRow[]>([]);
   const [form, setForm] = useState(emptyForm);
   const [editing, setEditing] = useState<number | null>(null);
   const [error, setError] = useState("");
@@ -51,7 +67,7 @@ export default function NetworkConfigTab() {
     setError("");
   }
 
-  function edit(row: Network) {
+  function edit(row: NetworkRow) {
     setEditing(row.id);
     setForm({
       asset: row.asset,
@@ -98,40 +114,89 @@ export default function NetworkConfigTab() {
     }
   }
 
-  return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <section className="panel">
-        <div className="panel-head"><h2>统一网络配置</h2><span className="muted">Deposit 和 Withdraw 共用</span></div>
-        <div className="panel-body" style={{ display: "grid", gap: 12 }}>
-          <div className="form-grid">
-            <label>币种<input value={form.asset} disabled={editing !== null} onChange={(e) => setForm({ ...form, asset: e.target.value.toUpperCase() })} /></label>
-            <label>网络代码<input value={form.code} disabled={editing !== null} placeholder="例如 POLYGON" onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} /></label>
-            <label>网络名称<input value={form.name} placeholder="例如 Polygon" onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
-            <label>图标代码<input value={form.icon} placeholder="例如 polygon" onChange={(e) => setForm({ ...form, icon: e.target.value })} /></label>
-            <label>充值手续费<input type="number" min="0" step="any" value={form.depositFee} onChange={(e) => setForm({ ...form, depositFee: e.target.value })} /></label>
-            <label>提现手续费<input type="number" min="0" step="any" value={form.withdrawFee} onChange={(e) => setForm({ ...form, withdrawFee: e.target.value })} /></label>
-            <label>最低充值<input type="number" min="0" step="any" value={form.minDeposit} onChange={(e) => setForm({ ...form, minDeposit: e.target.value })} /></label>
-            <label>最低提现<input type="number" min="0" step="any" value={form.minWithdraw} onChange={(e) => setForm({ ...form, minWithdraw: e.target.value })} /></label>
+  const stats = useMemo(() => ({ total: rows.length, active: rows.filter((row) => !!row.is_active).length, enabledFlows: rows.filter((row) => !!row.deposit_enabled && !!row.withdraw_enabled).length }), [rows]);
+
+  return <div className="admin-config-page">
+    <section className="admin-config-hero">
+      <div>
+        <span className="admin-config-eyebrow">NETWORK DIRECTORY</span>
+        <h2>网络配置</h2>
+        <p>统一配置每个资产网络的费用、最低金额和 Deposit / Withdraw 开关。</p>
+      </div>
+      <div className="admin-config-hero-icon" aria-hidden="true"><Network /></div>
+    </section>
+
+    <div className="admin-config-stats" aria-label="网络统计">
+      <article className="admin-config-stat-card"><span>网络数量</span><strong>{stats.total}</strong><Network aria-hidden="true" /></article>
+      <article className="admin-config-stat-card is-positive"><span>启用网络</span><strong>{stats.active}</strong><span className="admin-config-stat-dot" aria-hidden="true" /></article>
+      <article className="admin-config-stat-card is-info"><span>充提均可用</span><strong>{stats.enabledFlows}</strong><span className="admin-config-stat-dot" aria-hidden="true" /></article>
+    </div>
+
+    <section className="admin-config-card">
+      <div className="admin-config-card-header">
+        <div><h3>{editing !== null ? "编辑网络" : "新增网络"}</h3><p>填写网络展示信息、费用与可用状态。</p></div>
+        {editing !== null && <span className="admin-config-editing">正在编辑</span>}
+      </div>
+      <div className="admin-config-card-body admin-config-network-form">
+        <div className="admin-config-form-columns">
+          <div className="admin-config-form-group">
+            <h4>网络信息</h4>
+            <div className="admin-config-field-grid">
+              <label className="admin-config-field"><span>币种</span><input value={form.asset} disabled={editing !== null} onChange={(e) => setForm({ ...form, asset: e.target.value.toUpperCase() })} /></label>
+              <label className="admin-config-field"><span>网络代码</span><input value={form.code} disabled={editing !== null} placeholder="例如 POLYGON" onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} /></label>
+              <label className="admin-config-field"><span>网络名称</span><input value={form.name} placeholder="例如 Polygon" onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+              <label className="admin-config-field"><span>图标</span><input value={form.icon} placeholder="例如 polygon" onChange={(e) => setForm({ ...form, icon: e.target.value })} /></label>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-            <label><input type="checkbox" checked={form.depositEnabled} onChange={(e) => setForm({ ...form, depositEnabled: e.target.checked })} /> 允许充值</label>
-            <label><input type="checkbox" checked={form.withdrawEnabled} onChange={(e) => setForm({ ...form, withdrawEnabled: e.target.checked })} /> 允许提现</label>
-            <label><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /> 启用网络</label>
-          </div>
-          {error && <div className="error">{error}</div>}
-          <div className="actions">
-            <button className="admin-button admin-button-primary" type="button" disabled={saving} onClick={() => void save()}>{saving ? "保存中..." : editing ? "保存修改" : "新增网络"}</button>
-            {editing !== null && <button className="admin-button admin-button-ghost" type="button" onClick={reset}>取消</button>}
+          <div className="admin-config-form-group">
+            <h4>费用与最低金额</h4>
+            <div className="admin-config-field-grid">
+              <label className="admin-config-field"><span>充值手续费</span><input type="number" min="0" step="any" value={form.depositFee} onChange={(e) => setForm({ ...form, depositFee: e.target.value })} /></label>
+              <label className="admin-config-field"><span>提现手续费</span><input type="number" min="0" step="any" value={form.withdrawFee} onChange={(e) => setForm({ ...form, withdrawFee: e.target.value })} /></label>
+              <label className="admin-config-field"><span>最低充值</span><input type="number" min="0" step="any" value={form.minDeposit} onChange={(e) => setForm({ ...form, minDeposit: e.target.value })} /></label>
+              <label className="admin-config-field"><span>最低提现</span><input type="number" min="0" step="any" value={form.minWithdraw} onChange={(e) => setForm({ ...form, minWithdraw: e.target.value })} /></label>
+            </div>
           </div>
         </div>
-      </section>
-      <section className="panel">
-        <div className="panel-head"><h2>网络列表</h2><span className="muted">{rows.length} 个配置</span></div>
-        <div className="table-wrap"><table className="table"><thead><tr><th>币种</th><th>代码</th><th>名称</th><th>图标</th><th>充值</th><th>提现</th><th>状态</th><th>操作</th></tr></thead><tbody>
-          {rows.map((row) => <tr key={row.id}><td>{row.asset}</td><td>{row.code}</td><td>{row.name}</td><td>{row.icon}</td><td>{row.deposit_enabled ? "启用" : "停用"} / {row.deposit_fee}</td><td>{row.withdraw_enabled ? "启用" : "停用"} / {row.withdraw_fee}</td><td>{row.is_active ? "启用" : "停用"}</td><td><button className="admin-button admin-button-ghost" type="button" onClick={() => edit(row)}>编辑</button></td></tr>)}
-          {!rows.length && <tr><td colSpan={8}>暂无网络配置</td></tr>}
-        </tbody></table></div>
-      </section>
-    </div>
-  );
+
+        <fieldset className="admin-config-switches">
+          <legend>网络开关</legend>
+          <div>
+            <label className="admin-config-check"><input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} /><span>启用网络</span></label>
+            <label className="admin-config-check"><input type="checkbox" checked={form.depositEnabled} onChange={(e) => setForm({ ...form, depositEnabled: e.target.checked })} /><span>允许充值</span></label>
+            <label className="admin-config-check"><input type="checkbox" checked={form.withdrawEnabled} onChange={(e) => setForm({ ...form, withdrawEnabled: e.target.checked })} /><span>允许提现</span></label>
+          </div>
+        </fieldset>
+
+        {error && <div className="admin-config-error" role="alert">{error}</div>}
+        <div className="admin-config-actions">
+          <button className="admin-button admin-button-primary" type="button" disabled={saving} onClick={() => void save()}><Plus size={16} />{saving ? "保存中..." : editing ? "保存修改" : "新增网络"}</button>
+          {editing !== null && <button className="admin-button admin-button-ghost" type="button" onClick={reset}>取消</button>}
+        </div>
+      </div>
+    </section>
+
+    <section className="admin-config-card admin-config-table-card">
+      <div className="admin-config-card-header admin-config-table-header">
+        <div><h3>网络列表</h3><p>各资产的网络可用性、费用与最低金额。</p></div>
+        <span className="admin-config-count">{rows.length} 个配置</span>
+      </div>
+      <div className="admin-config-table-scroll">
+        <table className="admin-config-table admin-config-network-table">
+          <thead><tr><th>网络</th><th>币种</th><th>充值</th><th>提现</th><th>状态</th><th className="is-actions">操作</th></tr></thead>
+          <tbody>
+            {rows.map((row) => <tr key={row.id}>
+              <td><div className="admin-config-identity"><span className="admin-config-token is-network" aria-hidden="true">{networkMark(row)}</span><div><strong>{row.name || row.code}</strong><small>{row.code}</small></div></div></td>
+              <td><code>{row.asset}</code></td>
+              <td><div className="admin-config-flow"><ToggleBadge label="充值" active={!!row.deposit_enabled}/><small><ArrowDownToLine size={13} /> 手续费 {row.deposit_fee} · 最低 {row.min_deposit}</small></div></td>
+              <td><div className="admin-config-flow"><ToggleBadge label="提现" active={!!row.withdraw_enabled}/><small><ArrowUpFromLine size={13} /> 手续费 {row.withdraw_fee} · 最低 {row.min_withdraw}</small></div></td>
+              <td><StatusBadge active={!!row.is_active}/></td>
+              <td className="is-actions"><button className="admin-config-edit-button" type="button" onClick={() => edit(row)}><Pencil size={14} />编辑</button></td>
+            </tr>)}
+            {!rows.length && <tr><td className="admin-config-empty-cell" colSpan={6}>暂无网络配置</td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>;
 }
