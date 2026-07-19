@@ -857,7 +857,7 @@
 .admin-confirm-layer {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 130;
 }
 
 .admin-drawer-backdrop,
