@@ -56,5 +56,6 @@ export function persistBusinessNotification(event: string, options: { room?: str
 }
 
 export function listUserNotifications(userId: number, limit = 50) { return (getDb().prepare("SELECT * FROM notifications WHERE audience='user' AND user_id=? ORDER BY id DESC LIMIT ?").all(userId, Math.min(Math.max(limit, 1), 100)) as Record<string, unknown>[]).map(mapRow); }
+export function listAdminNotifications(limit = 50) { return (getDb().prepare("SELECT * FROM notifications WHERE audience='admin' ORDER BY id DESC LIMIT ?").all(Math.min(Math.max(limit, 1), 100)) as Record<string, unknown>[]).map(mapRow); }
 export function markUserNotificationRead(userId: number, id: number) { getDb().prepare("UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE id=? AND audience='user' AND user_id=?").run(id, userId); }
 export function markAllUserNotificationsRead(userId: number) { getDb().prepare("UPDATE notifications SET read_at=CURRENT_TIMESTAMP WHERE audience='user' AND user_id=? AND read_at IS NULL").run(userId); }

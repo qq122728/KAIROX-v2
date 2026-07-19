@@ -321,6 +321,34 @@ export default function AdminPage() {
     }
   }
 
+  async function loadNotifications() {
+    try {
+      const res = await fetch("/api/admin/notifications", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = Array.isArray(data?.notifications) ? data.notifications : [];
+      const mapped: AdminNotification[] = list.map((n: Record<string, unknown>) => {
+        const entityType = String(n.entityType || "");
+        const tabId = entityType === "deposit" ? "deposits" as TabId : entityType === "withdrawal" ? "withdrawals" as TabId : entityType === "kyc" ? "kyc" as TabId : entityType === "support_message" ? "support" as TabId : entityType === "fiat_deposit" ? "fiatDeposits" as TabId : entityType === "binary_order" ? "orders" as TabId : undefined;
+        return {
+          id: String(n.id || ""),
+          type: String(n.type || "notification"),
+          title: String(n.title || ""),
+          meta: String(n.body || ""),
+          tabId,
+          ts: new Date(String(n.createdAt || "")).getTime() || Date.now(),
+          read: Boolean(n.readAt),
+        };
+      });
+      setNotifications((prev) => {
+        const existingIds = new Set(prev.map((p) => p.id));
+        const fresh = mapped.filter((m) => !existingIds.has(m.id));
+        const merged = [...fresh, ...prev].sort((a, b) => b.ts - a.ts);
+        return merged.length > NOTIFICATION_LIMIT ? merged.slice(0, NOTIFICATION_LIMIT) : merged;
+      });
+    } catch { /* non-critical */ }
+  }
+
   function buildNotificationContent(type: string, body: AdminRealtimePayload, snap: AdminData | null): { title: string; meta?: string; tabId?: TabId } {
     switch (type) {
       case "user:registered": {
@@ -442,6 +470,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     load();
+    loadNotifications();
   }, []);
 
   useEffect(() => {
