@@ -4026,11 +4026,11 @@ function SupportChatAdmin() {
               {loading && <div style={{ textAlign: "center", color: "#6e88a4" }}>加载中...</div>}
               {!loading && messages.length === 0 && <div style={{ textAlign: "center", color: "#6e88a4", padding: 20 }}>暂无消息</div>}
               {messages.map((m) => (
-                <div key={m.id} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+                <div key={m.id} style={{ display: "flex", justifyContent: m.role === "agent" ? "flex-end" : "flex-start" }}>
                   <div style={{
                     maxWidth: "72%", padding: "8px 12px", borderRadius: 12,
-                    background: m.role === "user" ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.06)",
-                    color: m.role === "user" ? "#e0eaf5" : "#c0d0e0",
+                    background: m.role === "agent" ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.06)",
+                    color: m.role === "agent" ? "#e0eaf5" : "#c0d0e0",
                     fontSize: 13, lineHeight: 1.45, wordBreak: "break-word",
                   }}>
                     <div>{m.text}</div>
