@@ -4,6 +4,7 @@ import { badRequest, handleError, json, requireSameOrigin } from "@/lib/api";
 import { getDb, inTransaction } from "@/lib/db";
 import { emitRealtime, userRoom } from "@/lib/realtime";
 import { moveToSubmissions, moveBackToTmp, verifyTmpFile, tmpFileExists } from "@/lib/kyc-image-processor";
+import { shouldFail, FAULT_POINTS, resetFaults } from "@/lib/kyc-fault-inject";
 
 const REQUIRED_FILE_TYPES = ["front", "back"] as const;
 
@@ -92,6 +93,8 @@ export async function POST(request: Request) {
         for (const entry of entries) {
           moveToSubmissions(entry.storageKey);
           movedFiles.push(entry.storageKey);
+          if (movedFiles.length === 1 && shouldFail(FAULT_POINTS.AFTER_FIRST_MOVE)) throw new Error("FAULT_AFTER_FIRST_MOVE");
+          if (movedFiles.length === 2 && shouldFail(FAULT_POINTS.AFTER_SECOND_MOVE)) throw new Error("FAULT_AFTER_SECOND_MOVE");
         }
 
         // Step 3: Insert submission + files
@@ -100,12 +103,17 @@ export async function POST(request: Request) {
           .run(user.id, legalName, documentType);
         submissionId = Number(result.lastInsertRowid);
 
+        if (shouldFail(FAULT_POINTS.AFTER_SUBMISSION_INSERT)) throw new Error("FAULT_AFTER_SUBMISSION_INSERT");
+
         const insertFile = getDb().prepare(
           "INSERT INTO kyc_files (submission_id, file_type, storage_key, mime_type, byte_size, width, height, sha256) VALUES (?, ?, ?, 'image/jpeg', ?, 0, 0, ?)"
         );
         for (const entry of entries) {
           insertFile.run(submissionId, entry.fileType, entry.storageKey, entry.byteSize, entry.sha256);
+          if (shouldFail(FAULT_POINTS.AFTER_FIRST_FILE_INSERT) && entries.indexOf(entry) === 0) throw new Error("FAULT_AFTER_FIRST_FILE_INSERT");
         }
+
+        if (shouldFail(FAULT_POINTS.BEFORE_COMMIT)) throw new Error("FAULT_BEFORE_COMMIT");
 
         getDb()
           .prepare("UPDATE users SET kyc_status = 'pending', kyc_rejected_reason = NULL, kyc_latest_submission_id = ? WHERE id = ?")
@@ -113,7 +121,13 @@ export async function POST(request: Request) {
       });
     } catch (err: any) {
       // --- Compensation: move files back to tmp/ ---
-      for (const key of movedFiles) { moveBackToTmp(key); }
+      for (const key of movedFiles) {
+        if (shouldFail(FAULT_POINTS.MOVE_BACK_FAILS)) {
+          console.error("[kyc] moveBackToTmp simulated failure for key:", key.substring(0, 8) + "...");
+          continue; // simulate failure
+        }
+        moveBackToTmp(key);
+      }
       if (err?.message === "TOKEN_ALREADY_CONSUMED") return badRequest("上传已过期，请重新上传证件照片");
       throw err;
     }
