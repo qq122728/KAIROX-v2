@@ -9,8 +9,7 @@ import {
   LayoutGrid, BarChart3, User as UserIcon,
   Star, BookOpen, LogOut,
   MessageCircle, Send, Paperclip,
-  Home, ClipboardList, Trophy, X, Banknote, CheckCircle2,
-  Loader2, AlertCircle
+  Home, ClipboardList, Trophy, X, Banknote, CheckCircle2
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MarketChartPanel } from "./MarketData";
@@ -1771,7 +1770,7 @@ function HomeTab({ rows, tickers, onSelect, goTab, push, kycStatus, totalEquity,
   );
 }
 
-function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake, setStake, duration, durations, setDuration, availableBalance, favorites, toggleFavorite }: { market: Market; tickers: Tickers; markets: Market[]; setCurrentSymbol: (symbol: string) => void; openSheet: (d: "call" | "put") => void; stake: number; setStake: (n: number) => void; duration: Duration; durations: Duration[]; setDuration: (d: Duration) => void; availableBalance: number; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
+export function TradeTab({ market, tickers, markets, setCurrentSymbol, openSheet, stake, setStake, duration, durations, setDuration, availableBalance, favorites, toggleFavorite }: { market: Market; tickers: Tickers; markets: Market[]; setCurrentSymbol: (symbol: string) => void; openSheet: (d: "call" | "put") => void; stake: number; setStake: (n: number) => void; duration: Duration; durations: Duration[]; setDuration: (d: Duration) => void; availableBalance: number; favorites: Set<string>; toggleFavorite: (symbol: string) => void }) {
   const price = tickers[market.symbol]?.price || market.price;
   const change = tickers[market.symbol]?.change || 0;
   const [pairMenuOpen, setPairMenuOpen] = useState(false);
@@ -2310,6 +2309,10 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect }: { rows: Ma
 
   return (
     <div className="tab-page markets-list-page">
+      <a className="rwa-perps-entry" href="/rwa-perps">
+        <span><b>RWA Perpetuals</b><small>Gold, oil, silver, FX and equities</small></span>
+        <span>Explore <ChevronRight size={15} /></span>
+      </a>
       <div className="markets-search-row">
         <Search size={16} className="markets-search-icon" aria-hidden="true" />
         <input
@@ -2379,7 +2382,7 @@ function MarketsListTab({ rows, tickers, query, setQuery, onSelect }: { rows: Ma
   );
 }
 
-function OrdersTab({ openOrders, history, now, onOpenRunningOrder }: { openOrders: BinaryOrder[]; history: BinaryOrder[]; now: number; onOpenRunningOrder: (order: BinaryOrder) => void }) {
+export function OrdersTab({ openOrders, history, now, onOpenRunningOrder }: { openOrders: BinaryOrder[]; history: BinaryOrder[]; now: number; onOpenRunningOrder: (order: BinaryOrder) => void }) {
   const [view, setView] = useState<"open" | "closed">("open");
   const orders = view === "open" ? openOrders : history;
   return (
@@ -2398,7 +2401,7 @@ function OrdersTab({ openOrders, history, now, onOpenRunningOrder }: { openOrder
   );
 }
 
-function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: StackPage) => void }) {
+export function AssetsTab({ assets, push }: { assets: AssetData | null; push: (p: StackPage) => void }) {
   const rows = mergedAssetRows(assets);
   const totalEquity = assets?.summary.totalEquity ?? 0;
   const available = assets?.summary.availableBalance ?? 0;
@@ -2581,7 +2584,7 @@ function KairoxAccountAvatar({ variant }: { variant: "verified" | "pending" | "u
   );
 }
 
-function AccountTab({ user, kycStatus, push, logout }: { user: User; kycStatus: string; push: (p: StackPage) => void; logout: () => void }) {
+export function AccountTab({ user, kycStatus, push, logout }: { user: User; kycStatus: string; push: (p: StackPage) => void; logout: () => void }) {
   const uid = displayUid(user);
   const email = user.email || "user@kairox.local";
   const displayName = email.split("@")[0] || `UID ${uid}`;
@@ -3692,12 +3695,12 @@ function SecurityChangeSuccessModal({ kind, onClose }: { kind: "login" | "withdr
       <div className="sec-success-card" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sec-success-title">
         <div className="sec-success-icon-wrap" aria-hidden="true">
           <svg className="sec-success-sparkles" viewBox="0 0 200 200">
-            <text x="20" y="40" fontSize="16" fill="#26E878">+</text>
-            <text x="170" y="40" fontSize="16" fill="#26E878">+</text>
-            <text x="20" y="170" fontSize="16" fill="#26E878">+</text>
-            <text x="170" y="170" fontSize="16" fill="#26E878">+</text>
-            <text x="100" y="20" fontSize="12" fill="#26E878">+</text>
-            <text x="100" y="195" fontSize="12" fill="#26E878">+</text>
+            <text x="20" y="40" fontSize="16" fill="var(--user-password-strong)">+</text>
+            <text x="170" y="40" fontSize="16" fill="var(--user-password-strong)">+</text>
+            <text x="20" y="170" fontSize="16" fill="var(--user-password-strong)">+</text>
+            <text x="170" y="170" fontSize="16" fill="var(--user-password-strong)">+</text>
+            <text x="100" y="20" fontSize="12" fill="var(--user-password-strong)">+</text>
+            <text x="100" y="195" fontSize="12" fill="var(--user-password-strong)">+</text>
           </svg>
           <div className="sec-success-icon">
             <BadgeCheck size={56} strokeWidth={2.2} />
@@ -3714,106 +3717,70 @@ function SecurityChangeSuccessModal({ kind, onClose }: { kind: "login" | "withdr
 function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycStatus: string; rejectedReason?: string | null; setKycStatus: (v: "none" | "pending" | "approved" | "rejected") => void; push: (p: StackPage) => void; done: () => void }) {
   const [legalName, setLegalName] = useState("");
   const [documentType, setDocumentType] = useState("Passport");
+  const [front, setFront] = useState<File | null>(null);
+  const [back, setBack] = useState<File | null>(null);
+  const [frontUploadId, setFrontUploadId] = useState<string | null>(null);
+  const [backUploadId, setBackUploadId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [imageError, setImageError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
-  // Upload state per side
-  const [frontToken, setFrontToken] = useState<string | null>(null);
-  const [backToken, setBackToken] = useState<string | null>(null);
-  const [frontStatus, setFrontStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
-  const [backStatus, setBackStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
-  const [frontError, setFrontError] = useState("");
-  const [backError, setBackError] = useState("");
-  const [frontName, setFrontName] = useState("");
-  const [backName, setBackName] = useState("");
-  const frontAbortRef = useRef<AbortController | null>(null);
-  const backAbortRef = useRef<AbortController | null>(null);
-
-  const RAW_MAX = 25 * 1024 * 1024;
-  const SUPPORTED = new Set(["image/jpeg","image/png","image/webp","image/heic","image/heif"]);
-
-  async function uploadSide(file: File, side: "front" | "back") {
-    const setStatus = side === "front" ? setFrontStatus : setBackStatus;
-    const setToken = side === "front" ? setFrontToken : setBackToken;
-    const setErr = side === "front" ? setFrontError : setBackError;
-    const setName = side === "front" ? setFrontName : setBackName;
-    const abortRef = side === "front" ? frontAbortRef : backAbortRef;
-
-    // Validate before upload
-    if (file.size > RAW_MAX) { setErr("文件超过 25MB"); setStatus("error"); return; }
-    if (!SUPPORTED.has(file.type)) { setErr("不支持的图片格式"); setStatus("error"); return; }
-
-    setErr("");
-    setStatus("uploading");
-    setToken(null);
-
-    const ctrl = new AbortController();
-    abortRef.current?.abort();
-    abortRef.current = ctrl;
-
-    try {
-      const form = new FormData();
-      form.set("file", file);
-      form.set("fileType", side);
-      const res = await fetch("/api/kyc/upload", { method: "POST", body: form, signal: ctrl.signal });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        const msg = typeof data.error === "string" ? data.error : "上传失败，请重试";
-        setErr(msg); setStatus("error"); return;
-      }
-      if (data.uploadToken) {
-        setToken(data.uploadToken);
-        setName(file.name);
-        setStatus("done");
-      } else {
-        setErr("上传失败，请重试"); setStatus("error");
-      }
-    } catch (e: any) {
-      if (e?.name === "AbortError") return;
-      setErr("网络错误，请重试"); setStatus("error");
-    }
-  }
-
-  function clearSide(side: "front" | "back") {
-    if (side === "front") {
-      frontAbortRef.current?.abort();
-      setFrontToken(null); setFrontStatus("idle"); setFrontError(""); setFrontName("");
-    } else {
-      backAbortRef.current?.abort();
-      setBackToken(null); setBackStatus("idle"); setBackError(""); setBackName("");
-    }
-  }
-
-  function retrySide(side: "front" | "back") {
-    if (side === "front") { setFrontStatus("idle"); setFrontError(""); }
-    else { setBackStatus("idle"); setBackError(""); }
-  }
-
+  const frontSelectionRef = useRef(0);
+  const backSelectionRef = useRef(0);
+  const createUploadId = () => {
+    if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+    return "kyc-" + Date.now() + "-" + Math.random().toString(36).slice(2);
+  };
   async function submit() {
-    if (legalName.trim().length <= 1) { setError("请输入法定姓名"); return; }
-    if (!frontToken || !backToken) { setError("请先上传证件正反面"); return; }
+    if (legalName.trim().length <= 1) {
+      setError("Please enter your legal name.");
+      return;
+    }
+    if (!front || !frontUploadId || !back || !backUploadId) {
+      setError("Please upload both sides of your document before submitting.");
+      return;
+    }
+    if (front.size > 2_000_000) {
+      setError("Front image is too large. Please choose or retake a clearer photo.");
+      return;
+    }
+    if (back.size > 2_000_000) {
+      setError("Back image is too large. Please choose or retake a clearer photo.");
+      return;
+    }
     setError("");
     setSubmitting(true);
     try {
-      const res = await fetch("/api/kyc", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ legalName: legalName.trim(), documentType, uploadTokens: [frontToken, backToken] }),
-      });
+      const form = new FormData();
+      form.set("legalName", legalName);
+      form.set("documentType", documentType);
+      form.set("front", front);
+      form.set("back", back);
+      const res = await fetch("/api/kyc", { method: "POST", body: form });
       const payload = await res.json().catch(() => null);
       if (!res.ok) {
-        const msg = typeof payload?.error === "string" ? payload.error : "提交失败，请重试";
-        setError(msg); return;
+        const message =
+          res.status === 401
+            ? "Session expired. Please sign in again."
+            : res.status === 413
+              ? "Image files are too large."
+              : res.status === 409
+                ? "A KYC review is already pending."
+                : typeof payload?.error === "string"
+                  ? payload.error
+                  : res.status >= 500
+                    ? "Unable to submit verification. Please try again."
+                    : "Unable to submit verification. Please try again.";
+        setError(message);
+        return;
       }
       setKycStatus("pending");
       done();
     } catch {
-      setError("网络错误，请重试");
+      setError("Unable to submit KYC. Please try again.");
     } finally {
       setSubmitting(false);
     }
   }
-
   if (kycStatus === "pending" || kycStatus === "approved") {
     const isApproved = kycStatus === "approved";
     return (
@@ -3849,50 +3816,7 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
     );
   }
   const isResubmit = kycStatus === "rejected";
-  const formValid = legalName.trim().length > 1 && frontStatus === "done" && backStatus === "done";
-
-  function renderUploadSide(side: "front" | "back", label: string, status: "idle" | "uploading" | "done" | "error", errMsg: string, name: string, token: string | null) {
-    return (
-      <div className="kyc-field">
-        <label className="kyc-label">{label}</label>
-        {status === "idle" && (
-          <label className="kyc-upload">
-            <input type="file" accept="image/*" onChange={async (e) => {
-              const f = e.target.files?.[0]; if (!f) return;
-              await uploadSide(f, side);
-            }} />
-            <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
-            <span className="kyc-upload-main">点击上传{label}</span>
-            <span className="kyc-upload-sub">支持 JPG、PNG、WebP、HEIC，最大 25MB</span>
-          </label>
-        )}
-        {status === "uploading" && (
-          <div className="kyc-upload kyc-upload-loading">
-            <Loader2 className="kyc-upload-icon kyc-spin" size={28} strokeWidth={1.6} aria-hidden="true" />
-            <span className="kyc-upload-main">上传中...</span>
-            <span className="kyc-upload-sub">{name || "请稍候"}</span>
-          </div>
-        )}
-        {status === "done" && token && (
-          <div className="kyc-upload kyc-upload-done">
-            <CheckCircle2 className="kyc-upload-icon" size={28} strokeWidth={1.6} color="#22C55E" aria-hidden="true" />
-            <span className="kyc-upload-main">{name}</span>
-            <span className="kyc-upload-sub">上传成功</span>
-            <button type="button" className="kyc-retry-btn" onClick={() => clearSide(side)}>重新选择</button>
-          </div>
-        )}
-        {status === "error" && (
-          <div className="kyc-upload kyc-upload-error">
-            <AlertCircle className="kyc-upload-icon" size={28} strokeWidth={1.6} color="#EF4444" aria-hidden="true" />
-            <span className="kyc-upload-main">上传失败</span>
-            <span className="kyc-upload-sub">{errMsg || "请重试"}</span>
-            <button type="button" className="kyc-retry-btn" onClick={() => retrySide(side)}>重试</button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
+  const formValid = legalName.trim().length > 1 && !!front && !!back && !!frontUploadId && !!backUploadId;
   return (
     <div className="stack-page kyc-stack">
       {isResubmit && (
@@ -3908,10 +3832,18 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
       <div className="kyc-field">
         <label className="kyc-label" htmlFor="kyc-legal-name">Legal Name</label>
         <div className="kyc-input-wrap">
-          <input id="kyc-legal-name" className="kyc-input" value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="As shown on your ID document" autoComplete="name" />
+          <input
+            id="kyc-legal-name"
+            className="kyc-input"
+            value={legalName}
+            onChange={(e) => setLegalName(e.target.value)}
+            placeholder="As shown on your ID document"
+            autoComplete="name"
+          />
           <BadgeCheck className="kyc-input-icon" size={18} strokeWidth={1.8} aria-hidden="true" />
         </div>
       </div>
+
       <div className="kyc-field">
         <label className="kyc-label" htmlFor="kyc-document-type">Document Type</label>
         <div className="kyc-select-wrap">
@@ -3924,8 +3856,69 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
           <ChevronRight className="kyc-select-caret" size={16} aria-hidden="true" />
         </div>
       </div>
-      {renderUploadSide("front", "Front Image", frontStatus, frontError, frontName, frontToken)}
-      {renderUploadSide("back", "Back Image", backStatus, backError, backName, backToken)}
+
+      <div className="kyc-field">
+        <label className="kyc-label">Front Image</label>
+        <label className="kyc-upload">
+          <input type="file" accept="image/*" onChange={async (e) => {
+            const f = e.target.files?.[0];
+            if (!f) return;
+            setImageError("");
+            const selection = frontSelectionRef.current + 1;
+            frontSelectionRef.current = selection;
+            setFront(null);
+            setFrontUploadId(null);
+            const r = await compressImage(f);
+            if (selection !== frontSelectionRef.current) return;
+            if (r.ok) {
+              if (r.file.size > 2_000_000) {
+                setImageError("Front image is too large. Please choose or retake a clearer photo.");
+                return;
+              }
+              setFront(r.file);
+              setFrontUploadId(createUploadId());
+            } else {
+              setImageError("Front image: " + r.error);
+            }
+          }} />
+          <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
+          <span className="kyc-upload-main">{front ? front.name : "Tap to upload front image"}</span>
+          <span className="kyc-upload-sub">JPG, PNG, WebP, HEIC or HEIF, up to 25MB. Large images will be compressed automatically.</span>
+        </label>
+      </div>
+
+      <div className="kyc-field">
+        <label className="kyc-label">Back Image</label>
+        <label className="kyc-upload">
+          <input type="file" accept="image/*" onChange={async (e) => {
+            const f = e.target.files?.[0];
+            if (!f) return;
+            setImageError("");
+            const selection = backSelectionRef.current + 1;
+            backSelectionRef.current = selection;
+            setBack(null);
+            setBackUploadId(null);
+            const r = await compressImage(f);
+            if (selection !== backSelectionRef.current) return;
+            if (r.ok) {
+              if (r.file.size > 2_000_000) {
+                setImageError("Back image is too large. Please choose or retake a clearer photo.");
+                return;
+              }
+              setBack(r.file);
+              setBackUploadId(createUploadId());
+            } else {
+              setImageError("Back image: " + r.error);
+            }
+          }} />
+          <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
+          <span className="kyc-upload-main">{back ? back.name : "Tap to upload back image"}</span>
+          <span className="kyc-upload-sub">JPG, PNG, WebP, HEIC or HEIF, up to 25MB. Large images will be compressed automatically.</span>
+        </label>
+      </div>
+
+      {imageError && <p className="auth-field-error">{imageError}</p>}
+
       <div className="kyc-security">
         <ShieldCheck size={20} strokeWidth={1.8} className="kyc-security-icon" aria-hidden="true" />
         <div className="kyc-security-body">
@@ -3933,7 +3926,9 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
           <em>We only use it for identity verification.</em>
         </div>
       </div>
+
       {error && <div className="form-error">{error}</div>}
+
       <button type="button" className="kyc-submit" disabled={submitting || !formValid} onClick={submit}>
         {submitting ? "Submitting..." : isResubmit ? "Resubmit Verification" : "Submit Verification"}
       </button>
@@ -4330,9 +4325,9 @@ function SupportChatPage() {
 
   const fiatStatusLabel = (status: string) => {
     switch (status) {
-      case "requested": return { text: "Waiting for bank details...", color: "#B8860B" };
-      case "bank_sent": return { text: "Bank details sent. Please transfer and submit your info.", color: "#2563FF" };
-      case "submitted": return { text: "Transfer info submitted. Waiting for confirmation.", color: "#2563FF" };
+      case "requested": return { text: "Waiting for bank details...", color: "var(--user-requested)" };
+      case "bank_sent": return { text: "Bank details sent. Please transfer and submit your info.", color: "var(--user-pending)" };
+      case "submitted": return { text: "Transfer info submitted. Waiting for confirmation.", color: "var(--user-pending)" };
       case "confirmed": return { text: "Deposit confirmed!", color: "#16A34A" };
       case "rejected": return { text: "Deposit rejected.", color: "#DC2626" };
       default: return null;
@@ -4346,10 +4341,10 @@ function SupportChatPage() {
     switch (msg.messageType) {
       case "fiat_request":
         return (
-          <div className="chat-bubble chat-bubble-user" style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.2)", color: "#e0eaf5" }}>
+          <div className="chat-bubble chat-bubble-user" style={{ background: "rgba(245,184,75,0.08)", border: "1px solid rgba(245,184,75,0.15)", color: "var(--user-text)" }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>🏦 Fiat Deposit Request</div>
-            <div style={{ fontSize: 12, color: "#8899B0" }}>Currency: {meta.currency as string || ""}</div>
-            <div style={{ fontSize: 12, color: "#8899B0" }}>Please wait for support to provide bank transfer details.</div>
+            <div style={{ fontSize: 12, color: "var(--user-text-secondary)" }}>Currency: {meta.currency as string || ""}</div>
+            <div style={{ fontSize: 12, color: "var(--user-text-secondary)" }}>Please wait for support to provide bank transfer details.</div>
           </div>
         );
       case "fiat_bank":
@@ -4358,7 +4353,7 @@ function SupportChatPage() {
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#22C55E" }}>🏦 Bank Transfer Details</div>
             <div style={{ fontSize: 12, lineHeight: 1.8, color: "#ccd6e0", whiteSpace: "pre-wrap" }}>{msg.text}</div>
             {msg.text.indexOf("Bank:") >= 0 && (
-              <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(255,255,255,0.04)", borderRadius: 8, fontSize: 11, color: "#8899B0" }}>
+              <div style={{ marginTop: 8, padding: "8px 10px", background: "rgba(255,255,255,0.04)", borderRadius: 8, fontSize: 11, color: "var(--user-text-secondary)" }}>
                 Please include the reference code in your transfer remark. After payment, use Submit Transfer Info.
               </div>
             )}
@@ -4366,9 +4361,9 @@ function SupportChatPage() {
         );
       case "fiat_transfer":
         return (
-          <div className="chat-bubble chat-bubble-user" style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.2)", color: "#e0eaf5" }}>
+          <div className="chat-bubble chat-bubble-user" style={{ background: "rgba(245,184,75,0.08)", border: "1px solid rgba(245,184,75,0.15)", color: "var(--user-text)" }}>
             <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>📤 Transfer Info Submitted</div>
-            <div style={{ fontSize: 12, color: "#8899B0" }}>Amount: {meta.amountFiat as string || ""} {meta.currency as string || ""}</div>
+            <div style={{ fontSize: 12, color: "var(--user-text-secondary)" }}>Amount: {meta.amountFiat as string || ""} {meta.currency as string || ""}</div>
             {(() => { const v = Number(meta.estimatedUsdt); return v ? <div style={{ fontSize: 12, color: "#22C55E" }}>≈ {v.toFixed(2)} USDT</div> : null; })()}
           </div>
         );
@@ -4431,7 +4426,7 @@ function SupportChatPage() {
       {fiatStatus && (
         <div className="fiat-status-banner" style={{
           margin: "8px 16px", padding: "10px 14px", borderRadius: 10,
-          background: `rgba(${fiatStatus.color === "#B8860B" ? "184,134,11" : fiatStatus.color === "#2563FF" ? "37,99,255" : fiatStatus.color === "#16A34A" ? "22,163,74" : "220,38,38"}, 0.1)`,
+          background: `rgba(${fiatStatus.color === "var(--user-requested)" ? "184,134,11" : fiatStatus.color === "var(--user-pending)" ? "245,184,75" : fiatStatus.color === "#16A34A" ? "22,163,74" : "220,38,38"}, 0.1)`,
           border: `1px solid ${fiatStatus.color}33`,
           color: fiatStatus.color, fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 8,
         }}>
@@ -4448,8 +4443,8 @@ function SupportChatPage() {
         </div>
       )}
       {showSubmitForm && fiatDeposit?.status === "bank_sent" && (
-        <div style={{ margin: "0 16px 8px", padding: "12px 14px", borderRadius: 10, background: "rgba(37,99,255,0.08)", border: "1px solid rgba(37,99,255,0.2)" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#2563FF", marginBottom: 10 }}>Submit Transfer Info</div>
+        <div style={{ margin: "0 16px 8px", padding: "12px 14px", borderRadius: 10, background: "rgba(245,184,75,0.08)", border: "1px solid rgba(245,184,75,0.2)" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--user-pending)", marginBottom: 10 }}>Submit Transfer Info</div>
           <input
             type="number" placeholder={`Amount in ${fiatDeposit.currency}`}
             value={submitForm.amountFiat}
@@ -4474,7 +4469,7 @@ function SupportChatPage() {
                 }
                 return null;
               })()}
-              <div style={{ color: "#445566", fontSize: 10 }}>Final credited amount may be adjusted by admin after review.</div>
+              <div style={{ color: "var(--user-text-muted)", fontSize: 10 }}>Final credited amount may be adjusted by admin after review.</div>
             </div>
           ) : null}
           <input
@@ -4490,7 +4485,7 @@ function SupportChatPage() {
             style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#e0eaf5", fontSize: 14, marginBottom: 10 }}
           />
           <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: "#8899B0", marginBottom: 4 }}>Upload transfer proof</div>
+            <div style={{ fontSize: 11, color: "var(--user-text-secondary)", marginBottom: 4 }}>Upload transfer proof</div>
             <input type="file" accept="image/jpeg,image/png,image/webp" id="fiat-proof-input" style={{ display: "none" }} onChange={(e) => handleProofPick(e.target.files?.[0])} />
             {proof ? (
               <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
@@ -4504,10 +4499,10 @@ function SupportChatPage() {
                 Tap to upload screenshot
               </label>
             )}
-            <div style={{ fontSize: 10, color: "#445566", marginTop: 3 }}>JPG, PNG or WEBP, max 5MB</div>
+            <div style={{ fontSize: 10, color: "var(--user-text-muted)", marginTop: 3 }}>JPG, PNG or WEBP, max 5MB</div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" onClick={doSubmitTransfer} disabled={!submitForm.amountFiat || submitting} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "#2563FF", color: "#fff", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (!submitForm.amountFiat || submitting) ? 0.5 : 1 }}>
+            <button type="button" onClick={doSubmitTransfer} disabled={!submitForm.amountFiat || submitting} style={{ flex: 1, padding: "8px", borderRadius: 8, background: "var(--user-accent)", color: "#000", border: "none", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: (!submitForm.amountFiat || submitting) ? 0.5 : 1 }}>
               {submitting ? "Submitting..." : "Submit"}
             </button>
             <button type="button" onClick={() => { setShowSubmitForm(false); setSubmitForm({ amountFiat: "", transferReference: "", remark: "" }); setSubmitError(null); }} style={{ padding: "8px 16px", borderRadius: 8, background: "rgba(255,255,255,0.05)", color: "#6e88a4", border: "1px solid rgba(255,255,255,0.1)", fontSize: 14, cursor: "pointer" }}>
