@@ -9,7 +9,8 @@ import {
   LayoutGrid, BarChart3, User as UserIcon,
   Star, BookOpen, LogOut,
   MessageCircle, Send, Paperclip,
-  Home, ClipboardList, Trophy, X, Banknote, CheckCircle2
+  Home, ClipboardList, Trophy, X, Banknote, CheckCircle2,
+  Loader2, AlertCircle
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MarketChartPanel } from "./MarketData";
