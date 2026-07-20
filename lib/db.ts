@@ -500,6 +500,40 @@ function initialize(database: DatabaseSync) {
     FOREIGN KEY (reviewed_by) REFERENCES users(id)
   );
 
+  CREATE TABLE IF NOT EXISTS kyc_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    submission_id INTEGER NOT NULL,
+    file_type TEXT NOT NULL CHECK(file_type IN ('front', 'back', 'selfie')),
+    storage_key TEXT NOT NULL UNIQUE,
+    mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+    byte_size INTEGER NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (submission_id) REFERENCES kyc_submissions(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_kyc_files_submission ON kyc_files(submission_id);
+
+  CREATE TABLE IF NOT EXISTS kyc_upload_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL,
+    file_type TEXT NOT NULL CHECK(file_type IN ('front', 'back', 'selfie')),
+    storage_key TEXT NOT NULL,
+    mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
+    byte_size INTEGER NOT NULL,
+    width INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    consumed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_kyc_upload_tokens_expires ON kyc_upload_tokens(expires_at);
+  CREATE INDEX IF NOT EXISTS idx_kyc_upload_tokens_user ON kyc_upload_tokens(user_id);
+
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL

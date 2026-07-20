@@ -1,65 +1,130 @@
+import { createHash } from "node:crypto";
 import { requireUser } from "@/lib/auth";
 import { badRequest, handleError, json, requireSameOrigin } from "@/lib/api";
 import { getDb, inTransaction } from "@/lib/db";
 import { emitRealtime, userRoom } from "@/lib/realtime";
+import { moveToSubmissions, moveBackToTmp, verifyTmpFile, tmpFileExists } from "@/lib/kyc-image-processor";
 
-class KycFileTooLargeError extends Error {
-  constructor(readonly side: "Front" | "Back") {
-    super(side + " image exceeds the 2 MB limit.");
-  }
-}
+const REQUIRED_FILE_TYPES = ["front", "back"] as const;
 
-async function fileToData(file: File | null, side: "Front" | "Back") {
-  if (!file || file.size === 0) return { name: null, mime: null, data: null };
-  if (file.size > 2_000_000) throw new KycFileTooLargeError(side);
-  const bytes = Buffer.from(await file.arrayBuffer());
-  return { name: file.name, mime: file.type || "application/octet-stream", data: `data:${file.type || "application/octet-stream"};base64,${bytes.toString("base64")}` };
-}
+function sha256hex(input: string): string { return createHash("sha256").update(input).digest("hex"); }
+
+type TokenEntry = { token: string; tokenHash: string; fileType: string; storageKey: string; sha256: string; byteSize: number };
 
 export async function GET() {
   try {
     const user = await requireUser();
-    const submission = getDb()
-      .prepare("SELECT * FROM kyc_submissions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1")
-      .get(user.id);
+    const submission = getDb().prepare("SELECT * FROM kyc_submissions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1").get(user.id);
     return json({ kycStatus: user.kyc_status || "none", submission });
-  } catch (error) {
-    return handleError(error);
-  }
+  } catch (error) { return handleError(error); }
 }
 
 export async function POST(request: Request) {
   try {
     requireSameOrigin(request);
     const user = await requireUser();
-    const form = await request.formData();
-    const legalName = String(form.get("legalName") || "").trim();
-    const documentType = String(form.get("documentType") || "").trim();
-    if (!legalName || !documentType) return badRequest("Legal name and document type are required");
-    const front = await fileToData(form.get("front") instanceof File ? form.get("front") as File : null, "Front");
-    const back = await fileToData(form.get("back") instanceof File ? form.get("back") as File : null, "Back");
+    const body = await request.json().catch(() => ({}));
+    const legalName = String(body.legalName || "").trim();
+    const documentType = String(body.documentType || "").trim();
+    const rawTokens: string[] = Array.isArray(body.uploadTokens) ? body.uploadTokens : [];
 
-    let submissionId = 0;
-    inTransaction(() => {
-      const result = getDb()
+    if (!legalName || !documentType) return badRequest("Legal name and document type are required");
+    if (!rawTokens.length) return badRequest("请先上传证件照片");
+
+    // --------------- Phase 1: Resolve & validate ALL tokens atomically ---------------
+
+    // Deduplicate
+    const uniqueTokens = [...new Set(rawTokens.map(t => String(t)))];
+    if (uniqueTokens.length !== rawTokens.length) return badRequest("发现重复的上传凭证");
+
+    const entries: TokenEntry[] = [];
+    const seenTypes = new Set<string>();
+
+    for (const token of uniqueTokens) {
+      const tokenHash = sha256hex(token);
+      const row = getDb()
         .prepare(
-          `INSERT INTO kyc_submissions (user_id, legal_name, document_type, front_name, front_data, front_mime, back_name, back_data, back_mime)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          `SELECT file_type, storage_key, sha256, byte_size FROM kyc_upload_tokens
+           WHERE token_hash = ? AND user_id = ? AND consumed_at IS NULL AND expires_at > datetime('now')
+           LIMIT 1`
         )
-        .run(user.id, legalName, documentType, front.name, front.data, front.mime, back.name, back.data, back.mime);
-      submissionId = Number(result.lastInsertRowid);
-      getDb()
-        .prepare("UPDATE users SET kyc_status = 'pending', kyc_rejected_reason = NULL, kyc_latest_submission_id = ? WHERE id = ?")
-        .run(submissionId, user.id);
-    });
+        .get(tokenHash, user.id) as { file_type: string; storage_key: string; sha256: string; byte_size: number } | undefined;
+
+      if (!row) return badRequest("上传已过期，请重新上传证件照片");
+      if (!REQUIRED_FILE_TYPES.includes(row.file_type as any)) return badRequest("无效的文件类型");
+
+      // Type must not repeat
+      if (seenTypes.has(row.file_type)) return badRequest("请勿重复上传同一面证件");
+      seenTypes.add(row.file_type);
+
+      // Verify file integrity
+      if (!verifyTmpFile(row.storage_key, row.sha256, row.byte_size)) {
+        return badRequest("上传文件已失效，请重新上传");
+      }
+
+      entries.push({ token, tokenHash, fileType: row.file_type, storageKey: row.storage_key, sha256: row.sha256, byteSize: row.byte_size });
+    }
+
+    // Must have both front and back
+    if (!seenTypes.has("front") || !seenTypes.has("back")) return badRequest("请上传证件正反面");
+
+    // --------------- Phase 2: Atomic transaction with file compensation ---------------
+
+    const movedFiles: string[] = []; // track files moved to submissions/
+    let submissionId = 0;
+
+    try {
+      inTransaction(() => {
+        // Step 1: Conditionally consume ALL tokens
+        for (const entry of entries) {
+          const result = getDb()
+            .prepare(
+              `UPDATE kyc_upload_tokens SET consumed_at = datetime('now')
+               WHERE token_hash = ? AND user_id = ? AND consumed_at IS NULL AND expires_at > datetime('now')`
+            )
+            .run(entry.tokenHash, user.id);
+          if (result.changes !== 1) {
+            throw new Error("TOKEN_ALREADY_CONSUMED");
+          }
+        }
+
+        // Step 2: Move files from tmp/ → submissions/
+        for (const entry of entries) {
+          moveToSubmissions(entry.storageKey);
+          movedFiles.push(entry.storageKey);
+        }
+
+        // Step 3: Insert submission + files
+        const result = getDb()
+          .prepare("INSERT INTO kyc_submissions (user_id, legal_name, document_type) VALUES (?, ?, ?)")
+          .run(user.id, legalName, documentType);
+        submissionId = Number(result.lastInsertRowid);
+
+        const insertFile = getDb().prepare(
+          "INSERT INTO kyc_files (submission_id, file_type, storage_key, mime_type, byte_size, width, height, sha256) VALUES (?, ?, ?, 'image/jpeg', ?, 0, 0, ?)"
+        );
+        for (const entry of entries) {
+          insertFile.run(submissionId, entry.fileType, entry.storageKey, entry.byteSize, entry.sha256);
+        }
+
+        getDb()
+          .prepare("UPDATE users SET kyc_status = 'pending', kyc_rejected_reason = NULL, kyc_latest_submission_id = ? WHERE id = ?")
+          .run(submissionId, user.id);
+      });
+    } catch (err: any) {
+      // --- Compensation: move files back to tmp/ ---
+      for (const key of movedFiles) { moveBackToTmp(key); }
+      if (err?.message === "TOKEN_ALREADY_CONSUMED") return badRequest("上传已过期，请重新上传证件照片");
+      throw err;
+    }
+
+    // --------------- Phase 3: Emit realtime ---------------
 
     emitRealtime("admin:update", { room: "admin", payload: { type: "kyc:created", submissionId, userId: user.id } });
     emitRealtime("user:update", { room: userRoom(user.id), payload: { type: "kyc:update", status: "pending" } });
     return json({ ok: true, submissionId });
+
   } catch (error) {
-    if (error instanceof KycFileTooLargeError) {
-      return json({ error: error.message }, 413);
-    }
     return handleError(error);
   }
 }

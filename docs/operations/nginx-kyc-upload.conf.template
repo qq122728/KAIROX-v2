@@ -1,0 +1,19 @@
+# KAIROX Nginx — KYC upload body size
+# Add this inside the main server {} block for kairoxmarkets.xyz:
+#
+#   location /api/kyc/upload {
+#       client_max_body_size 30m;
+#       proxy_pass http://127.0.0.1:3000;
+#       proxy_http_version 1.1;
+#       proxy_set_header Host $host;
+#       proxy_set_header X-Forwarded-Host $host;
+#       proxy_set_header X-Forwarded-Proto $scheme;
+#       proxy_set_header X-Real-IP $remote_addr;
+#       proxy_read_timeout 120s;
+#       proxy_send_timeout 120s;
+#   }
+#
+# DO NOT blindly add client_max_body_size 30m to the global/server level
+# — other endpoints must keep the default 1m limit.
+#
+# After editing: sudo nginx -t && sudo nginx -s reload

@@ -9,7 +9,8 @@ import {
   LayoutGrid, BarChart3, User as UserIcon,
   Star, BookOpen, LogOut,
   MessageCircle, Send, Paperclip,
-  Home, ClipboardList, Trophy, X, Banknote, CheckCircle2
+  Home, ClipboardList, Trophy, X, Banknote, CheckCircle2,
+  Loader2, AlertCircle
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MarketChartPanel } from "./MarketData";
@@ -3713,70 +3714,106 @@ function SecurityChangeSuccessModal({ kind, onClose }: { kind: "login" | "withdr
 function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycStatus: string; rejectedReason?: string | null; setKycStatus: (v: "none" | "pending" | "approved" | "rejected") => void; push: (p: StackPage) => void; done: () => void }) {
   const [legalName, setLegalName] = useState("");
   const [documentType, setDocumentType] = useState("Passport");
-  const [front, setFront] = useState<File | null>(null);
-  const [back, setBack] = useState<File | null>(null);
-  const [frontUploadId, setFrontUploadId] = useState<string | null>(null);
-  const [backUploadId, setBackUploadId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [imageError, setImageError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const frontSelectionRef = useRef(0);
-  const backSelectionRef = useRef(0);
-  const createUploadId = () => {
-    if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
-    return "kyc-" + Date.now() + "-" + Math.random().toString(36).slice(2);
-  };
+
+  // Upload state per side
+  const [frontToken, setFrontToken] = useState<string | null>(null);
+  const [backToken, setBackToken] = useState<string | null>(null);
+  const [frontStatus, setFrontStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [backStatus, setBackStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [frontError, setFrontError] = useState("");
+  const [backError, setBackError] = useState("");
+  const [frontName, setFrontName] = useState("");
+  const [backName, setBackName] = useState("");
+  const frontAbortRef = useRef<AbortController | null>(null);
+  const backAbortRef = useRef<AbortController | null>(null);
+
+  const RAW_MAX = 25 * 1024 * 1024;
+  const SUPPORTED = new Set(["image/jpeg","image/png","image/webp","image/heic","image/heif"]);
+
+  async function uploadSide(file: File, side: "front" | "back") {
+    const setStatus = side === "front" ? setFrontStatus : setBackStatus;
+    const setToken = side === "front" ? setFrontToken : setBackToken;
+    const setErr = side === "front" ? setFrontError : setBackError;
+    const setName = side === "front" ? setFrontName : setBackName;
+    const abortRef = side === "front" ? frontAbortRef : backAbortRef;
+
+    // Validate before upload
+    if (file.size > RAW_MAX) { setErr("文件超过 25MB"); setStatus("error"); return; }
+    if (!SUPPORTED.has(file.type)) { setErr("不支持的图片格式"); setStatus("error"); return; }
+
+    setErr("");
+    setStatus("uploading");
+    setToken(null);
+
+    const ctrl = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = ctrl;
+
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      form.set("fileType", side);
+      const res = await fetch("/api/kyc/upload", { method: "POST", body: form, signal: ctrl.signal });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = typeof data.error === "string" ? data.error : "上传失败，请重试";
+        setErr(msg); setStatus("error"); return;
+      }
+      if (data.uploadToken) {
+        setToken(data.uploadToken);
+        setName(file.name);
+        setStatus("done");
+      } else {
+        setErr("上传失败，请重试"); setStatus("error");
+      }
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
+      setErr("网络错误，请重试"); setStatus("error");
+    }
+  }
+
+  function clearSide(side: "front" | "back") {
+    if (side === "front") {
+      frontAbortRef.current?.abort();
+      setFrontToken(null); setFrontStatus("idle"); setFrontError(""); setFrontName("");
+    } else {
+      backAbortRef.current?.abort();
+      setBackToken(null); setBackStatus("idle"); setBackError(""); setBackName("");
+    }
+  }
+
+  function retrySide(side: "front" | "back") {
+    if (side === "front") { setFrontStatus("idle"); setFrontError(""); }
+    else { setBackStatus("idle"); setBackError(""); }
+  }
+
   async function submit() {
-    if (legalName.trim().length <= 1) {
-      setError("Please enter your legal name.");
-      return;
-    }
-    if (!front || !frontUploadId || !back || !backUploadId) {
-      setError("Please upload both sides of your document before submitting.");
-      return;
-    }
-    if (front.size > 2_000_000) {
-      setError("Front image is too large. Please choose or retake a clearer photo.");
-      return;
-    }
-    if (back.size > 2_000_000) {
-      setError("Back image is too large. Please choose or retake a clearer photo.");
-      return;
-    }
+    if (legalName.trim().length <= 1) { setError("请输入法定姓名"); return; }
+    if (!frontToken || !backToken) { setError("请先上传证件正反面"); return; }
     setError("");
     setSubmitting(true);
     try {
-      const form = new FormData();
-      form.set("legalName", legalName);
-      form.set("documentType", documentType);
-      form.set("front", front);
-      form.set("back", back);
-      const res = await fetch("/api/kyc", { method: "POST", body: form });
+      const res = await fetch("/api/kyc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ legalName: legalName.trim(), documentType, uploadTokens: [frontToken, backToken] }),
+      });
       const payload = await res.json().catch(() => null);
       if (!res.ok) {
-        const message =
-          res.status === 401
-            ? "Session expired. Please sign in again."
-            : res.status === 413
-              ? "Image files are too large."
-              : res.status === 409
-                ? "A KYC review is already pending."
-                : typeof payload?.error === "string"
-                  ? payload.error
-                  : res.status >= 500
-                    ? "Unable to submit verification. Please try again."
-                    : "Unable to submit verification. Please try again.";
-        setError(message);
-        return;
+        const msg = typeof payload?.error === "string" ? payload.error : "提交失败，请重试";
+        setError(msg); return;
       }
       setKycStatus("pending");
       done();
     } catch {
-      setError("Unable to submit KYC. Please try again.");
+      setError("网络错误，请重试");
     } finally {
       setSubmitting(false);
     }
   }
+
   if (kycStatus === "pending" || kycStatus === "approved") {
     const isApproved = kycStatus === "approved";
     return (
@@ -3812,7 +3849,50 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
     );
   }
   const isResubmit = kycStatus === "rejected";
-  const formValid = legalName.trim().length > 1 && !!front && !!back && !!frontUploadId && !!backUploadId;
+  const formValid = legalName.trim().length > 1 && frontStatus === "done" && backStatus === "done";
+
+  function renderUploadSide(side: "front" | "back", label: string, status: "idle" | "uploading" | "done" | "error", errMsg: string, name: string, token: string | null) {
+    return (
+      <div className="kyc-field">
+        <label className="kyc-label">{label}</label>
+        {status === "idle" && (
+          <label className="kyc-upload">
+            <input type="file" accept="image/*" onChange={async (e) => {
+              const f = e.target.files?.[0]; if (!f) return;
+              await uploadSide(f, side);
+            }} />
+            <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
+            <span className="kyc-upload-main">点击上传{label}</span>
+            <span className="kyc-upload-sub">支持 JPG、PNG、WebP、HEIC，最大 25MB</span>
+          </label>
+        )}
+        {status === "uploading" && (
+          <div className="kyc-upload kyc-upload-loading">
+            <Loader2 className="kyc-upload-icon kyc-spin" size={28} strokeWidth={1.6} aria-hidden="true" />
+            <span className="kyc-upload-main">上传中...</span>
+            <span className="kyc-upload-sub">{name || "请稍候"}</span>
+          </div>
+        )}
+        {status === "done" && token && (
+          <div className="kyc-upload kyc-upload-done">
+            <CheckCircle2 className="kyc-upload-icon" size={28} strokeWidth={1.6} color="#22C55E" aria-hidden="true" />
+            <span className="kyc-upload-main">{name}</span>
+            <span className="kyc-upload-sub">上传成功</span>
+            <button type="button" className="kyc-retry-btn" onClick={() => clearSide(side)}>重新选择</button>
+          </div>
+        )}
+        {status === "error" && (
+          <div className="kyc-upload kyc-upload-error">
+            <AlertCircle className="kyc-upload-icon" size={28} strokeWidth={1.6} color="#EF4444" aria-hidden="true" />
+            <span className="kyc-upload-main">上传失败</span>
+            <span className="kyc-upload-sub">{errMsg || "请重试"}</span>
+            <button type="button" className="kyc-retry-btn" onClick={() => retrySide(side)}>重试</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="stack-page kyc-stack">
       {isResubmit && (
@@ -3828,18 +3908,10 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
       <div className="kyc-field">
         <label className="kyc-label" htmlFor="kyc-legal-name">Legal Name</label>
         <div className="kyc-input-wrap">
-          <input
-            id="kyc-legal-name"
-            className="kyc-input"
-            value={legalName}
-            onChange={(e) => setLegalName(e.target.value)}
-            placeholder="As shown on your ID document"
-            autoComplete="name"
-          />
+          <input id="kyc-legal-name" className="kyc-input" value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="As shown on your ID document" autoComplete="name" />
           <BadgeCheck className="kyc-input-icon" size={18} strokeWidth={1.8} aria-hidden="true" />
         </div>
       </div>
-
       <div className="kyc-field">
         <label className="kyc-label" htmlFor="kyc-document-type">Document Type</label>
         <div className="kyc-select-wrap">
@@ -3852,69 +3924,8 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
           <ChevronRight className="kyc-select-caret" size={16} aria-hidden="true" />
         </div>
       </div>
-
-      <div className="kyc-field">
-        <label className="kyc-label">Front Image</label>
-        <label className="kyc-upload">
-          <input type="file" accept="image/*" onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            setImageError("");
-            const selection = frontSelectionRef.current + 1;
-            frontSelectionRef.current = selection;
-            setFront(null);
-            setFrontUploadId(null);
-            const r = await compressImage(f);
-            if (selection !== frontSelectionRef.current) return;
-            if (r.ok) {
-              if (r.file.size > 2_000_000) {
-                setImageError("Front image is too large. Please choose or retake a clearer photo.");
-                return;
-              }
-              setFront(r.file);
-              setFrontUploadId(createUploadId());
-            } else {
-              setImageError("Front image: " + r.error);
-            }
-          }} />
-          <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
-          <span className="kyc-upload-main">{front ? front.name : "Tap to upload front image"}</span>
-          <span className="kyc-upload-sub">JPG, PNG, WebP, HEIC or HEIF, up to 25MB. Large images will be compressed automatically.</span>
-        </label>
-      </div>
-
-      <div className="kyc-field">
-        <label className="kyc-label">Back Image</label>
-        <label className="kyc-upload">
-          <input type="file" accept="image/*" onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            setImageError("");
-            const selection = backSelectionRef.current + 1;
-            backSelectionRef.current = selection;
-            setBack(null);
-            setBackUploadId(null);
-            const r = await compressImage(f);
-            if (selection !== backSelectionRef.current) return;
-            if (r.ok) {
-              if (r.file.size > 2_000_000) {
-                setImageError("Back image is too large. Please choose or retake a clearer photo.");
-                return;
-              }
-              setBack(r.file);
-              setBackUploadId(createUploadId());
-            } else {
-              setImageError("Back image: " + r.error);
-            }
-          }} />
-          <FileText className="kyc-upload-icon" size={28} strokeWidth={1.6} aria-hidden="true" />
-          <span className="kyc-upload-main">{back ? back.name : "Tap to upload back image"}</span>
-          <span className="kyc-upload-sub">JPG, PNG, WebP, HEIC or HEIF, up to 25MB. Large images will be compressed automatically.</span>
-        </label>
-      </div>
-
-      {imageError && <p className="auth-field-error">{imageError}</p>}
-
+      {renderUploadSide("front", "Front Image", frontStatus, frontError, frontName, frontToken)}
+      {renderUploadSide("back", "Back Image", backStatus, backError, backName, backToken)}
       <div className="kyc-security">
         <ShieldCheck size={20} strokeWidth={1.8} className="kyc-security-icon" aria-hidden="true" />
         <div className="kyc-security-body">
@@ -3922,9 +3933,7 @@ function KycPage({ kycStatus, rejectedReason, setKycStatus, push, done }: { kycS
           <em>We only use it for identity verification.</em>
         </div>
       </div>
-
       {error && <div className="form-error">{error}</div>}
-
       <button type="button" className="kyc-submit" disabled={submitting || !formValid} onClick={submit}>
         {submitting ? "Submitting..." : isResubmit ? "Resubmit Verification" : "Submit Verification"}
       </button>
